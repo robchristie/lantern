@@ -1,12 +1,12 @@
 # CLI Contract
 
-This contract defines the first implemented Lantern command surface. It is the source of truth for `lantern-cli` until a later ExecPlan intentionally broadens the product scope.
+This contract defines the implemented Lantern command surface. It is the source of truth for `lantern-cli` until a later ExecPlan intentionally broadens the product scope.
 
-The shared human-output, JSON ordering, redaction, truncation, DOM, console, network, screenshot, persistence, and test policy lives in `docs/product-specs/output-policy.md`. This contract defines command-specific fields and first-milestone behavior.
+The shared human-output, JSON ordering, redaction, truncation, DOM, console, network, screenshot, persistence, and test policy lives in `docs/product-specs/output-policy.md`. This contract defines command-specific fields and current implemented behavior.
 
 ## Scope
 
-The first milestone is read-only browser inspection against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, navigate pages, mutate page state, evaluate JavaScript, capture screenshots, inspect DOM trees, inspect console logs, inspect network requests, or persist browser artifacts in this milestone.
+The command surface is read-only browser inspection against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, navigate pages, mutate page state, evaluate JavaScript, capture screenshots, inspect console logs, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -15,6 +15,7 @@ Implemented commands:
 - `lantern doctor`
 - `lantern targets`
 - `lantern page`
+- `lantern dom`
 
 Reserved for future milestones and not implemented yet:
 
@@ -22,7 +23,7 @@ Reserved for future milestones and not implemented yet:
 - navigation and page mutation commands
 - JavaScript evaluation
 - screenshot capture
-- DOM, console, and network inspection commands
+- console and network inspection commands
 - daemon, MCP, TUI, or web UI commands
 
 Each implemented command accepts the shared flags below. Unknown commands, unknown flags, invalid flag values, and unsupported combinations must fail with exit code `2`.
@@ -49,9 +50,11 @@ Emits stable machine-readable JSON to stdout. Human-readable progress text must 
 
 ### `--no-redact`
 
-Disables URL shape redaction and text truncation for fields that are otherwise redacted by default. This flag is intended for local debugging only. It must never change which browser artifacts Lantern persists, because first-milestone commands do not persist browser artifacts.
+Disables URL shape redaction and text truncation for fields that are otherwise redacted by default. This flag is intended for local debugging only. It must never change which browser artifacts Lantern persists, because implemented commands do not persist browser artifacts.
 
 When `--no-redact` is absent, commands must avoid full URLs and other high-risk browser data by default.
+
+For `lantern dom`, `--no-redact` may relax truncation and URL-shape redaction only where `docs/product-specs/output-policy.md` allows it. It must not cause Lantern to collect or print values the DOM policy forbids by design, including script contents, style contents, hidden form values, cookies, local storage, or credential-like attribute values.
 
 ### `-h`, `--help`
 
@@ -236,18 +239,157 @@ Required JSON fields:
 
 `page.title`, `page.url_shape`, and `page.loading_state` may be `null` when unavailable.
 
+### `lantern dom`
+
+Purpose: summarize the selected page target's rendered DOM tree with concise, redacted, bounded node metadata useful to a coding agent.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- Read-only CDP DOM-domain commands needed to produce the summary, such as `DOM.getDocument` and narrowly scoped follow-up node reads.
+
+Target selection:
+
+`lantern dom` uses the same page target selection behavior as `lantern page`:
+
+1. If exactly one `page` target exists, select it.
+2. If multiple `page` targets exist and exactly one is attached or active according to CDP metadata, select it.
+3. If multiple candidates remain, fail with exit code `2` and tell the operator to close extra pages or use the future explicit target selector.
+4. If no `page` target exists, fail with exit code `1`.
+
+After target selection, `lantern dom` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+The command must not define a `--target` flag in this slice. A target selector should be added only by a later contract update that defines precedence, validation, redaction, and ambiguity behavior.
+
+Human output should include:
+
+- selected target id short form
+- selected page title, truncated by default
+- URL shape, not the full URL by default
+- node count
+- maximum emitted depth
+- explicit truncation status
+- a short indented tree of summarized nodes
+
+Recommended human output shape:
+
+```text
+dom: ABCD1234 title="Example" url=https://example.test/path nodes=42 depth=3 truncated=true
+html
+  body
+    main#app
+      h1 "Dashboard"
+      button[data-testid=save-button] "Save"
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "dom",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "dom": {
+    "node_count": 42,
+    "max_depth": 3,
+    "truncated": true,
+    "nodes": [
+      {
+        "node_id": "n1",
+        "tag": "main",
+        "role": null,
+        "name": null,
+        "text": null,
+        "attributes": {
+          "id": "app"
+        },
+        "child_count": 3,
+        "children": []
+      }
+    ]
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `dom.node_count`
+- `dom.max_depth`
+- `dom.truncated`
+- `dom.nodes`
+- `dom.nodes[].node_id`
+- `dom.nodes[].tag`
+- `dom.nodes[].role`
+- `dom.nodes[].name`
+- `dom.nodes[].text`
+- `dom.nodes[].attributes`
+- `dom.nodes[].child_count`
+- `dom.nodes[].children`
+
+`page.title`, `page.url_shape`, `dom.nodes[].role`, `dom.nodes[].name`, and `dom.nodes[].text` may be `null` when unavailable. `dom.nodes[].attributes` must be an object, including when empty. `dom.nodes[].children` must be an array, including when empty.
+
+DOM summary bounds:
+
+- maximum depth: 4
+- maximum emitted nodes: 80
+- text snippets: 500 Unicode scalar values
+- attribute values: 200 Unicode scalar values
+- `class` attributes: at most 12 class tokens
+
+`dom.node_count` is the number of nodes emitted in the response, not a count of the full page DOM when traversal was truncated. `dom.truncated` must be `true` when Lantern stopped adding nodes because the depth cap, node cap, child traversal cap, or another documented bound was reached.
+
+Default output follows the DOM policy in `docs/product-specs/output-policy.md`. In particular, `lantern dom` must not emit full document HTML, full `textContent`, `<script>` contents, `<style>` contents, inline event-handler attribute values, hidden form values, cookies, local storage values, raw CDP payloads, full URLs, query strings, fragments, or password/token/secret/auth/session-like values.
+
+Safe attributes by default:
+
+- `id`
+- `class`
+- `role`
+- `aria-label`
+- `aria-labelledby`
+- `name`, only when it does not look sensitive
+- `type`
+- `href` and `src` as URL shapes only
+- `alt`
+- `title`
+- `data-testid`
+- `data-test`
+- `data-cy`
+
+Command-specific error cases:
+
+- no page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP DOM response: exit code `1`, error code `cdp_response_invalid`
+
 ## Redaction And Truncation
 
 Default output must be safe enough for routine agent transcripts. Command implementations must follow `docs/product-specs/output-policy.md`.
 
-First-milestone command-specific defaults:
+Command-specific defaults:
 
 - `endpoint.display` may include the local endpoint scheme, host, port, and configured path prefix, but must never include credentials, query strings, or fragments.
 - `targets[].url_shape` and `page.url_shape` use the URL shape policy.
 - `targets[].title` and `page.title` use the page or target title limit of 120 Unicode scalar values.
 - human output may abbreviate target ids, but JSON output must preserve exact CDP target ids.
-- `--no-redact` may expose full URLs and untruncated title fields to stdout for the current invocation only.
-- `--no-redact` must not change persistence behavior; first-milestone commands do not persist browser artifacts.
+- `page.url_shape`, `dom.nodes[].text`, and string values under `dom.nodes[].attributes` use the URL, text, and DOM policies.
+- `--no-redact` may expose full URLs and untruncated title, text, and safe attribute fields to stdout for the current invocation only.
+- `--no-redact` must not print fields forbidden by the DOM policy and must not change persistence behavior; implemented commands do not persist browser artifacts.
 
 ## JSON Conventions
 
@@ -336,8 +478,9 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`
+- `target_not_found`: no page target was available for `lantern page` or `lantern dom`
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`
 - `interrupted`: command was interrupted
 
 ## Environment
@@ -354,4 +497,5 @@ No other environment variables are part of the first-milestone public contract.
 lantern doctor --endpoint http://127.0.0.1:9222
 lantern targets --endpoint http://127.0.0.1:9222 --json
 LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
+lantern dom --endpoint http://127.0.0.1:9222 --json
 ```

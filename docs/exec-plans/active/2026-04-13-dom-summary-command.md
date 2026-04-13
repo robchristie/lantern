@@ -5,6 +5,7 @@ Status: active
 ## Progress Notes
 
 - 2026-04-13: created as the first follow-on command slice after the initial `doctor`, `targets`, and `page` inspection surface.
+- 2026-04-13: completed Slice 1 by updating `docs/product-specs/cli-contract.md` with the `lantern dom` command contract, including bounded human/JSON output, page target selection, and command-specific error cases.
 
 ## Goal
 
@@ -150,7 +151,7 @@ Sensitive attribute names or values must be omitted or replaced with a clear red
 
 ### Slice 1: Contract Update
 
-Status: pending
+Status: completed
 
 - update `docs/product-specs/cli-contract.md` to add `lantern dom` as the next implemented command
 - keep other reserved future commands out of scope
