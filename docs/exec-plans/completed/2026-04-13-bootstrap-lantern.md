@@ -1,6 +1,6 @@
 # ExecPlan: Bootstrap Lantern
 
-Status: active
+Status: completed
 
 ## Progress Notes
 
@@ -14,6 +14,7 @@ Status: active
 - 2026-04-13: documented operator-owned headless Linux, container, and VNC-compatible Chromium CDP setup in `docs/headless-chromium.md`, with `lantern doctor` as the verification step and no Lantern-owned browser lifecycle.
 - 2026-04-13: created the follow-on DOM summary command ExecPlan as the next read-only command slice after `doctor`, `targets`, and `page`.
 - 2026-04-14: reconciled implementation slice status with current main: endpoint/domain types, typed CDP metadata and transport errors, dormant first-milestone storage, and fixture-tested `doctor`, `targets`, and `page` flows have landed; no product scope changed.
+- 2026-04-14: closed the bootstrap plan after confirming the first inspection loop is represented by implemented `doctor`, `targets`, `page`, and follow-on `dom` work, with the next product direction captured in a new active frontend feedback loop ExecPlan.
 
 ## Goal
 
