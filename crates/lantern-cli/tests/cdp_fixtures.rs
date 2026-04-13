@@ -256,6 +256,61 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_console_response_with_interleaved_enable_events() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read runtime enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Runtime.consoleAPICalled","params":{"type":"error","args":[{"type":"string","value":"Interleaved token=supersecret"}],"stackTrace":{"callFrames":[{"functionName":"boot","url":"https://example.test/assets/runtime.js","lineNumber":12,"columnNumber":4}]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write interleaved runtime event");
+            socket
+                .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Runtime.enable response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read log enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Log.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Log.entryAdded","params":{"entry":{"level":"error","text":"Interleaved password=hunter2 at https://user:pass@example.test/private/abcdef123456abcdef123456?debug=1","url":"https://example.test/logs/abcdef123456abcdef123456?x=1","lineNumber":8}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write interleaved log event");
+            socket
+                .send(Message::Text(r#"{"id":2,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Log.enable response");
+            thread::sleep(Duration::from_millis(500));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -625,6 +680,27 @@ fn console_json_collects_errors_and_exceptions_with_redaction() {
     assert_eq!(
         stdout(&output),
         r#"{"schema_version":1,"command":"console","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"console":{"message_count":1,"exception_count":1,"max_entries":20,"message_text_limit":500,"truncated":false,"entries":[{"sequence":1,"kind":"console","severity":"error","message":"Failed token=:redacted at https://example.test/reset/:redacted 500","source_url_shape":"https://example.test/assets/app.js","line":42,"column":7,"argument_count":2,"stack_frame_count":1},{"sequence":2,"kind":"exception","severity":"error","message":"Error: password=:redacted from https://example.test/secret/:redacted","source_url_shape":"https://example.test/session/:redacted","line":9,"column":3,"argument_count":0,"stack_frame_count":2}]}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn console_json_collects_events_interleaved_with_enable_responses() {
+    let websocket = WebSocketFixture::one_console_response_with_interleaved_enable_events();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "console"],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"console","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"console":{"message_count":2,"exception_count":0,"max_entries":20,"message_text_limit":500,"truncated":false,"entries":[{"sequence":1,"kind":"console","severity":"error","message":"Interleaved token=:redacted","source_url_shape":"https://example.test/assets/runtime.js","line":12,"column":4,"argument_count":1,"stack_frame_count":1},{"sequence":2,"kind":"console","severity":"error","message":"Interleaved password=:redacted at https://example.test/private/:redacted","source_url_shape":"https://example.test/logs/:redacted","line":8,"column":null,"argument_count":0,"stack_frame_count":0}]}}"#.to_owned()
             + "\n"
     );
     fixture.finish();

@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     io::ErrorKind,
     net::{IpAddr, TcpStream},
     time::Duration,
@@ -89,6 +90,7 @@ pub struct TargetInfo {
 pub struct CdpWebSocket {
     socket: WebSocket<MaybeTlsStream<TcpStream>>,
     next_id: u64,
+    pending_events: VecDeque<CdpEvent>,
 }
 
 impl CdpWebSocket {
@@ -100,7 +102,11 @@ impl CdpWebSocket {
                 source: source.to_string(),
             })?;
 
-        Ok(Self { socket, next_id: 1 })
+        Ok(Self {
+            socket,
+            next_id: 1,
+            pending_events: VecDeque::new(),
+        })
     }
 
     pub fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, CdpError> {
@@ -142,6 +148,7 @@ impl CdpWebSocket {
                 })?;
 
             if response.id != Some(id) {
+                self.buffer_event_from_text(&text)?;
                 continue;
             }
 
@@ -157,6 +164,10 @@ impl CdpWebSocket {
     }
 
     pub fn read_event(&mut self, timeout: Duration) -> Result<Option<CdpEvent>, CdpError> {
+        if let Some(event) = self.pending_events.pop_front() {
+            return Ok(Some(event));
+        }
+
         self.set_read_timeout(Some(timeout))?;
 
         loop {
@@ -212,6 +223,29 @@ impl CdpWebSocket {
             }
             _ => {}
         }
+
+        Ok(())
+    }
+
+    fn buffer_event_from_text(&mut self, text: &str) -> Result<(), CdpError> {
+        let inbound: CdpInboundMessage =
+            serde_json::from_str(text).map_err(|source| CdpError::ResponseInvalid {
+                context: "failed to parse CDP WebSocket JSON response",
+                source: source.to_string(),
+            })?;
+
+        if inbound.id.is_some() {
+            return Ok(());
+        }
+
+        let Some(method) = inbound.method else {
+            return Ok(());
+        };
+
+        self.pending_events.push_back(CdpEvent {
+            method,
+            params: inbound.params.unwrap_or(Value::Null),
+        });
 
         Ok(())
     }
