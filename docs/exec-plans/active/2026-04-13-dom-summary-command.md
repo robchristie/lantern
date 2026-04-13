@@ -7,6 +7,7 @@ Status: active
 - 2026-04-13: created as the first follow-on command slice after the initial `doctor`, `targets`, and `page` inspection surface.
 - 2026-04-13: completed Slice 1 by updating `docs/product-specs/cli-contract.md` with the `lantern dom` command contract, including bounded human/JSON output, page target selection, and command-specific error cases.
 - 2026-04-13: completed Slice 2 by adding typed DOM summary serialization types in `lantern-core` and moving browser-derived text, URL, and DOM attribute sanitization into a reusable core redaction policy.
+- 2026-04-13: completed Slice 3 by adding a page-target WebSocket DOM read path based on `DOM.getDocument`, bounded structured traversal, target WebSocket availability handling, and DOM-specific CDP error mapping. The implementation also wires `lantern dom` through the CLI so the read path and error conventions are executable ahead of broader fixture coverage.
 
 ## Goal
 
@@ -169,7 +170,7 @@ Status: completed
 
 ### Slice 3: CDP DOM Read Path
 
-Status: pending
+Status: completed
 
 - select the page target using the existing page-selection rules
 - require a page WebSocket debugger URL and return a clear error when unavailable

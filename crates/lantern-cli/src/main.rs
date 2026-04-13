@@ -2,6 +2,7 @@ use std::{env, process::ExitCode};
 
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
+    dom::{DomCommandOutput, DomNodeSummary, DomReadError, read_dom_summary},
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
     redaction::{RedactionMode, sanitize_title, sanitize_url},
 };
@@ -26,6 +27,9 @@ const TARGET_NOT_FOUND_HINT: &str = "Open a page in the attached Chromium instan
 const TARGET_AMBIGUOUS_MESSAGE: &str = "Multiple page targets matched.";
 const TARGET_AMBIGUOUS_HINT: &str =
     "Close extra pages or leave exactly one attached page target before retrying.";
+const TARGET_WEBSOCKET_MISSING_MESSAGE: &str =
+    "Selected page target did not expose a WebSocket debugger URL.";
+const TARGET_WEBSOCKET_MISSING_HINT: &str = "Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -94,6 +98,15 @@ fn run_command(
                 .map_err(|error| CliError::from_cdp(error, json))?;
             let page = select_page_target(targets).map_err(|error| error.with_json(json))?;
             write_page(page, json, no_redact)?;
+        }
+        Command::Dom => {
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets).map_err(|error| error.with_json(json))?;
+            let output = read_dom_summary(&page, RedactionMode::from_no_redact(no_redact))
+                .map_err(|error| CliError::from_dom_read(error, json))?;
+            write_dom(output, json)?;
         }
     }
 
@@ -206,6 +219,56 @@ fn write_page(target: TargetInfo, json: bool, no_redact: bool) -> Result<(), Cli
     Ok(())
 }
 
+fn write_dom(output: DomCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "dom: {} title=\"{}\" url={} nodes={} depth={} truncated={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        output.dom.node_count,
+        output.dom.max_depth,
+        output.dom.truncated
+    );
+
+    for node in &output.dom.nodes {
+        write_dom_node(node, 0);
+    }
+
+    Ok(())
+}
+
+fn write_dom_node(node: &DomNodeSummary, indent: usize) {
+    let mut label = node.tag.clone();
+    if let Some(id) = node.attributes.get("id") {
+        label.push('#');
+        label.push_str(id);
+    }
+    for attr in ["data-testid", "data-test", "data-cy", "role"] {
+        if let Some(value) = node.attributes.get(attr) {
+            label.push('[');
+            label.push_str(attr);
+            label.push('=');
+            label.push_str(value);
+            label.push(']');
+        }
+    }
+    if let Some(text) = &node.text {
+        label.push_str(" \"");
+        label.push_str(&escape_human(text));
+        label.push('"');
+    }
+
+    println!("{}{}", "  ".repeat(indent), label);
+    for child in &node.children {
+        write_dom_node(child, indent + 1);
+    }
+}
+
 fn write_json<T: Serialize>(value: &T) -> Result<(), CliError> {
     let json = serde_json::to_string(value).map_err(|_| {
         CliError::runtime(
@@ -278,7 +341,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page> [--endpoint <URL>] [--json] [--no-redact]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom> [--endpoint <URL>] [--json] [--no-redact]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -381,7 +444,7 @@ impl Invocation {
                     };
                     invocation.endpoint = Some(endpoint);
                 }
-                "doctor" | "targets" | "page" => {
+                "doctor" | "targets" | "page" | "dom" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -417,6 +480,7 @@ enum Command {
     Doctor,
     Targets,
     Page,
+    Dom,
 }
 
 impl Command {
@@ -425,6 +489,7 @@ impl Command {
             "doctor" => Some(Self::Doctor),
             "targets" => Some(Self::Targets),
             "page" => Some(Self::Page),
+            "dom" => Some(Self::Dom),
             _ => None,
         }
     }
@@ -518,6 +583,38 @@ impl CliError {
                 CDP_RESPONSE_INVALID_MESSAGE,
                 CDP_RESPONSE_INVALID_HINT,
             ),
+        }
+    }
+
+    fn from_dom_read(error: DomReadError, json: bool) -> Self {
+        match error {
+            DomReadError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            DomReadError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            DomReadError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            DomReadError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            DomReadError::Cdp(error) => Self::from_cdp(error, json),
         }
     }
 

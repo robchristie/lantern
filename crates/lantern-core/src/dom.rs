@@ -1,6 +1,15 @@
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
 use serde::Serialize;
+use serde_json::json;
+
+use crate::{
+    cdp::{CdpError, CdpWebSocket, TargetInfo},
+    redaction::{
+        RedactionMode, sanitize_dom_attribute, sanitize_dom_text, sanitize_title, sanitize_url,
+    },
+};
 
 pub const DOM_SCHEMA_VERSION: u8 = 1;
 pub const DOM_MAX_DEPTH: usize = 4;
@@ -80,6 +89,211 @@ impl DomNodeSummary {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomReadError {
+    TargetWebSocketMissing,
+    Cdp(CdpError),
+}
+
+impl From<CdpError> for DomReadError {
+    fn from(error: CdpError) -> Self {
+        Self::Cdp(error)
+    }
+}
+
+pub fn read_dom_summary(
+    target: &TargetInfo,
+    mode: RedactionMode,
+) -> Result<DomCommandOutput, DomReadError> {
+    let web_socket_debugger_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or(DomReadError::TargetWebSocketMissing)?;
+
+    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let result = socket.call(
+        "DOM.getDocument",
+        Some(json!({
+            "depth": DOM_MAX_DEPTH,
+            "pierce": false
+        })),
+    )?;
+    let response: CdpGetDocumentResponse =
+        serde_json::from_value(result).map_err(|source| CdpError::ResponseInvalid {
+            context: "failed to parse CDP DOM.getDocument response",
+            source: source.to_string(),
+        })?;
+
+    let mut builder = DomSummaryBuilder::new(mode);
+    let nodes = builder.document_nodes(&response.root);
+    let dom = DomSummary::new(nodes, builder.max_emitted_depth, builder.truncated);
+    let page = DomPageSummary {
+        target_id: target.id.clone(),
+        title: target
+            .title
+            .as_ref()
+            .map(|title| sanitize_title(title, mode)),
+        url_shape: target.url.as_ref().and_then(|url| sanitize_url(url, mode)),
+    };
+
+    Ok(DomCommandOutput::success(page, dom))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CdpGetDocumentResponse {
+    root: CdpDomNode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CdpDomNode {
+    node_id: i64,
+    node_type: i64,
+    node_name: String,
+    local_name: Option<String>,
+    node_value: Option<String>,
+    attributes: Option<Vec<String>>,
+    child_node_count: Option<usize>,
+    children: Option<Vec<CdpDomNode>>,
+}
+
+struct DomSummaryBuilder {
+    mode: RedactionMode,
+    emitted: usize,
+    max_emitted_depth: usize,
+    truncated: bool,
+}
+
+impl DomSummaryBuilder {
+    fn new(mode: RedactionMode) -> Self {
+        Self {
+            mode,
+            emitted: 0,
+            max_emitted_depth: 0,
+            truncated: false,
+        }
+    }
+
+    fn document_nodes(&mut self, root: &CdpDomNode) -> Vec<DomNodeSummary> {
+        if root.node_type == 9 {
+            return root
+                .children
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|child| self.node_summary(child, 1))
+                .collect();
+        }
+
+        self.node_summary(root, 1).into_iter().collect()
+    }
+
+    fn node_summary(&mut self, node: &CdpDomNode, depth: usize) -> Option<DomNodeSummary> {
+        if self.emitted >= DOM_MAX_NODES {
+            self.truncated = true;
+            return None;
+        }
+
+        if node.node_type != 1 {
+            return None;
+        }
+
+        self.emitted += 1;
+        self.max_emitted_depth = self.max_emitted_depth.max(depth);
+        let mut summary = DomNodeSummary::new(format!("n{}", node.node_id), node_tag(node));
+        summary.attributes = sanitized_attributes(node.attributes.as_deref(), self.mode);
+        summary.text = element_text(node, self.mode);
+
+        let child_elements = node
+            .children
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|child| child.node_type == 1)
+            .collect::<Vec<_>>();
+        let child_element_count = child_elements.len();
+        summary.child_count = node.child_node_count.unwrap_or(child_element_count);
+
+        if depth >= DOM_MAX_DEPTH {
+            if !child_elements.is_empty() || summary.child_count > child_elements.len() {
+                self.truncated = true;
+            }
+            return Some(summary);
+        }
+
+        for child in child_elements {
+            if self.emitted >= DOM_MAX_NODES {
+                self.truncated = true;
+                break;
+            }
+            if let Some(child_summary) = self.node_summary(child, depth + 1) {
+                summary.children.push(child_summary);
+            }
+        }
+
+        if summary.children.len() < child_element_count
+            || summary.child_count > node.children.as_ref().map_or(0, Vec::len)
+        {
+            self.truncated = true;
+        }
+
+        Some(summary)
+    }
+}
+
+fn node_tag(node: &CdpDomNode) -> String {
+    node.local_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&node.node_name)
+        .to_ascii_lowercase()
+}
+
+fn sanitized_attributes(
+    attributes: Option<&[String]>,
+    mode: RedactionMode,
+) -> BTreeMap<String, String> {
+    let mut output = BTreeMap::new();
+    let Some(attributes) = attributes else {
+        return output;
+    };
+
+    for pair in attributes.chunks(2) {
+        let [name, value] = pair else {
+            continue;
+        };
+        if let Some((name, value)) = sanitize_dom_attribute(name, value, mode) {
+            output.insert(name, value);
+        }
+    }
+
+    output
+}
+
+fn element_text(node: &CdpDomNode, mode: RedactionMode) -> Option<String> {
+    if matches!(node_tag(node).as_str(), "script" | "style") {
+        return None;
+    }
+
+    let text = node
+        .children
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|child| child.node_type == 3)
+        .filter_map(|child| child.node_value.as_deref())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let text = sanitize_dom_text(&text, mode);
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 fn count_nodes(nodes: &[DomNodeSummary]) -> usize {
     nodes
         .iter()
@@ -90,6 +304,8 @@ fn count_nodes(nodes: &[DomNodeSummary]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{net::TcpListener, thread};
+    use tungstenite::Message;
 
     #[test]
     fn dom_command_output_serializes_in_contract_order() {
@@ -122,5 +338,135 @@ mod tests {
         let summary = DomSummary::new(vec![root], DOM_MAX_DEPTH, false);
 
         assert_eq!(summary.node_count, 2);
+    }
+
+    #[test]
+    fn builds_bounded_dom_summary_from_cdp_document() {
+        let response: CdpGetDocumentResponse = serde_json::from_str(
+            r##"{
+                "root": {
+                    "nodeId": 1,
+                    "nodeType": 9,
+                    "nodeName": "#document",
+                    "localName": "",
+                    "childNodeCount": 1,
+                    "children": [
+                        {
+                            "nodeId": 2,
+                            "nodeType": 1,
+                            "nodeName": "HTML",
+                            "localName": "html",
+                            "attributes": [],
+                            "childNodeCount": 1,
+                            "children": [
+                                {
+                                    "nodeId": 3,
+                                    "nodeType": 1,
+                                    "nodeName": "BODY",
+                                    "localName": "body",
+                                    "attributes": ["id", "app", "onclick", "steal()"],
+                                    "childNodeCount": 2,
+                                    "children": [
+                                        {"nodeId": 4, "nodeType": 3, "nodeName": "#text", "localName": "", "nodeValue": "Dashboard"},
+                                        {"nodeId": 5, "nodeType": 1, "nodeName": "A", "localName": "a", "attributes": ["href", "https://example.test/reset/abcdefabcdefabcdefabcdefabcdefab?token=secret"], "childNodeCount": 0}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }"##,
+        )
+        .expect("fixture should parse");
+
+        let mut builder = DomSummaryBuilder::new(RedactionMode::Redacted);
+        let summary = DomSummary::new(builder.document_nodes(&response.root), DOM_MAX_DEPTH, false);
+
+        assert_eq!(summary.node_count, 3);
+        assert_eq!(summary.nodes[0].tag, "html");
+        assert_eq!(
+            summary.nodes[0].children[0]
+                .attributes
+                .get("id")
+                .map(String::as_str),
+            Some("app")
+        );
+        assert!(
+            !summary.nodes[0].children[0]
+                .attributes
+                .contains_key("onclick")
+        );
+        assert_eq!(
+            summary.nodes[0].children[0].children[0]
+                .attributes
+                .get("href")
+                .map(String::as_str),
+            Some("https://example.test/reset/:redacted")
+        );
+    }
+
+    #[test]
+    fn read_dom_summary_uses_page_websocket_and_get_document() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+            let message = socket
+                .read()
+                .expect("fixture should read command")
+                .into_text()
+                .expect("command should be text");
+            assert!(message.contains(r#""method":"DOM.getDocument""#));
+            assert!(message.contains(r#""depth":4"#));
+
+            socket
+                .send(Message::Text(
+                    r##"{"id":1,"result":{"root":{"nodeId":1,"nodeType":9,"nodeName":"#document","localName":"","childNodeCount":1,"children":[{"nodeId":2,"nodeType":1,"nodeName":"HTML","localName":"html","attributes":[],"childNodeCount":0}]}}}"##
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write response");
+        });
+
+        let target = TargetInfo {
+            id: "PAGE_1234567890".to_owned(),
+            kind: "page".to_owned(),
+            title: Some("Example".to_owned()),
+            url: Some("https://example.test/path?token=secret".to_owned()),
+            attached: Some(true),
+            browser_context_id: None,
+            web_socket_debugger_url: Some(format!("ws://{address}/devtools/page/PAGE")),
+        };
+
+        let output =
+            read_dom_summary(&target, RedactionMode::Redacted).expect("summary should load");
+
+        assert_eq!(output.page.target_id, "PAGE_1234567890");
+        assert_eq!(
+            output.page.url_shape.as_deref(),
+            Some("https://example.test/path")
+        );
+        assert_eq!(output.dom.node_count, 1);
+        assert_eq!(output.dom.nodes[0].tag, "html");
+        handle.join().expect("fixture should finish");
+    }
+
+    #[test]
+    fn read_dom_summary_requires_page_websocket_url() {
+        let target = TargetInfo {
+            id: "PAGE_1234567890".to_owned(),
+            kind: "page".to_owned(),
+            title: None,
+            url: None,
+            attached: Some(true),
+            browser_context_id: None,
+            web_socket_debugger_url: None,
+        };
+
+        let error = read_dom_summary(&target, RedactionMode::Redacted)
+            .expect_err("missing websocket should fail");
+
+        assert_eq!(error, DomReadError::TargetWebSocketMissing);
     }
 }

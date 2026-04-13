@@ -176,6 +176,34 @@ fn page_json_selects_single_attached_page_from_target_fixture() {
     fixture.finish();
 }
 
+#[test]
+fn dom_json_reports_missing_page_websocket_url() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "PAGE_ATTACHED_1234567890",
+                "type": "page",
+                "title": "Attached page",
+                "url": "https://example.test/page",
+                "attached": true
+            }
+        ]"#,
+    );
+
+    let output = lantern(["--json", "--endpoint", fixture.endpoint(), "dom"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_websocket_missing","message":"Selected page target did not expose a WebSocket debugger URL.","hint":"Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled."}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+}
+
 fn lantern<const N: usize>(args: [&str; N], env_endpoint: Option<&str>) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_lantern"));
     command.args(args);
