@@ -1,3 +1,4 @@
+pub mod cdp;
 pub mod endpoint;
 
 pub const PROJECT_NAME: &str = "Lantern";
