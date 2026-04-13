@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::{Read, Write},
     net::TcpListener,
     process::{Command, Output},
@@ -483,6 +484,60 @@ impl WebSocketFixture {
             }
 
             thread::sleep(Duration::from_millis(100));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_screenshot_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read layout metrics command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.getLayoutMetrics""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"cssVisualViewport":{"clientWidth":1280,"clientHeight":720}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write layout metrics response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read screenshot command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.captureScreenshot""#),
+                "unexpected websocket command: {message:?}"
+            );
+            assert!(
+                message.contains(r#""format":"png""#),
+                "screenshot fixture should request PNG format: {message:?}"
+            );
+            assert!(
+                message.contains(r#""captureBeyondViewport":false"#),
+                "screenshot fixture should capture visible viewport only: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"data":"iVBORw0KGgo="}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write screenshot response");
         });
 
         Self {
@@ -1146,6 +1201,194 @@ fn console_json_reports_missing_page_websocket_url() {
 }
 
 #[test]
+fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
+    let websocket = WebSocketFixture::one_screenshot_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+    let output_path = unique_temp_png_path("capture");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "screenshot",
+            "--output",
+            &output_path_string,
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["command"], "screenshot");
+    assert_eq!(json["page"]["target_id"], "PAGE_ATTACHED_1234567890");
+    assert_eq!(
+        json["page"]["url_shape"],
+        "https://example.test/reset/:redacted"
+    );
+    assert_eq!(json["screenshot"]["format"], "png");
+    assert_eq!(json["screenshot"]["width"], 1280);
+    assert_eq!(json["screenshot"]["height"], 720);
+    assert_eq!(json["screenshot"]["byte_count"], 8);
+    assert_eq!(json["screenshot"]["path"], output_path_string);
+    assert_eq!(json["screenshot"]["overwritten"], false);
+    assert_eq!(
+        json["screenshot"]["redaction_caveat"],
+        "screenshot_contains_visible_page_pixels"
+    );
+    assert_eq!(
+        fs::read(&output_path).expect("screenshot file should be written"),
+        b"\x89PNG\r\n\x1a\n"
+    );
+    fs::remove_file(&output_path).expect("screenshot file should clean up");
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn screenshot_human_reports_short_metadata_and_path() {
+    let websocket = WebSocketFixture::one_screenshot_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+    let output_path = unique_temp_png_path("human");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--endpoint",
+            fixture.endpoint(),
+            "screenshot",
+            "--output",
+            &output_path_string,
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "screenshot: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted dimensions=1280x720 bytes=8 path={} overwritten=false caveat=screenshot_contains_visible_page_pixels\n",
+            output_path_string
+        )
+    );
+    fs::remove_file(&output_path).expect("screenshot file should clean up");
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn screenshot_json_rejects_existing_output_without_overwrite_before_cdp() {
+    let output_path = unique_temp_png_path("exists");
+    fs::write(&output_path, b"existing").expect("fixture should write existing file");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "screenshot",
+            "--output",
+            &output_path_string,
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"screenshot_output_exists","message":"Screenshot output path already exists.","hint":"Pass --overwrite to replace the file, or choose a different --output path."}}"#.to_owned()
+            + "\n"
+    );
+    assert_eq!(
+        fs::read(&output_path).expect("existing file should remain"),
+        b"existing"
+    );
+    fs::remove_file(&output_path).expect("fixture should clean up");
+}
+
+#[test]
+fn screenshot_json_overwrites_existing_output_when_requested() {
+    let websocket = WebSocketFixture::one_screenshot_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+    let output_path = unique_temp_png_path("overwrite");
+    fs::write(&output_path, b"existing").expect("fixture should write existing file");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "screenshot",
+            "--output",
+            &output_path_string,
+            "--overwrite",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["screenshot"]["overwritten"], true);
+    assert_eq!(
+        fs::read(&output_path).expect("screenshot file should be overwritten"),
+        b"\x89PNG\r\n\x1a\n"
+    );
+    fs::remove_file(&output_path).expect("screenshot file should clean up");
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn screenshot_json_reports_missing_page_websocket_url() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "PAGE_ATTACHED_1234567890",
+                "type": "page",
+                "title": "Attached page",
+                "url": "https://example.test/page",
+                "attached": true
+            }
+        ]"#,
+    );
+    let output_path = unique_temp_png_path("missing-websocket");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "screenshot",
+            "--output",
+            &output_path_string,
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_websocket_missing","message":"Selected page target did not expose a WebSocket debugger URL.","hint":"Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled."}}"#.to_owned()
+            + "\n"
+    );
+    assert!(!output_path.exists());
+    fixture.finish();
+}
+
+#[test]
 fn dom_json_selects_explicit_target_id_from_multiple_pages() {
     let websocket = WebSocketFixture::one_dom_response(dom_document_response());
     let fixture = HttpFixture::one_response(
@@ -1343,6 +1586,22 @@ fn target_list_with_websocket(web_socket_debugger_url: &str) -> String {
 
 fn dom_document_response() -> &'static str {
     r##"{"id":1,"result":{"root":{"nodeId":1,"nodeType":9,"nodeName":"#document","localName":"","childNodeCount":1,"children":[{"nodeId":2,"nodeType":1,"nodeName":"HTML","localName":"html","attributes":["class","root shell"],"childNodeCount":1,"children":[{"nodeId":3,"nodeType":1,"nodeName":"BODY","localName":"body","attributes":["id","app","role","document","onclick","steal()","data-token","secret"],"childNodeCount":1,"children":[{"nodeId":5,"nodeType":1,"nodeName":"MAIN","localName":"main","attributes":["data-testid","dashboard","aria-label","Main panel","name","search","href","https://example.test/reset/abcdabcdabcdabcdabcdabcd?token=secret#frag","src","https://cdn.example.test/assets/app.js?version=123","title","Main title","password","hunter2","name","session"],"childNodeCount":2,"children":[{"nodeId":6,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"Dashboard"},{"nodeId":7,"nodeType":1,"nodeName":"SCRIPT","localName":"script","childNodeCount":1,"children":[{"nodeId":70,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"secretScript()"}]},{"nodeId":8,"nodeType":1,"nodeName":"SECTION","localName":"section","attributes":["data-cy","primary-section"],"childNodeCount":1,"children":[{"nodeId":9,"nodeType":1,"nodeName":"BUTTON","localName":"button","attributes":["data-test","save-button"],"childNodeCount":0}]}]}]}]}]}}}"##
+}
+
+fn unique_temp_png_path(label: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "lantern-{label}-{}-{}.png",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos()
+    ));
+    if path.exists() {
+        fs::remove_file(&path).expect("stale temp path should be removable");
+    }
+    path
 }
 
 fn lantern<const N: usize>(args: [&str; N], env_endpoint: Option<&str>) -> Output {

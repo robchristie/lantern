@@ -246,6 +246,7 @@ dependencies = [
 name = "lantern-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "serde",
  "serde_json",
  "tungstenite",

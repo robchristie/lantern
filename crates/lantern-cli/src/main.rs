@@ -1,4 +1,4 @@
-use std::{env, process::ExitCode, time::Duration};
+use std::{env, fs, io::ErrorKind, path::Path, process::ExitCode, time::Duration};
 
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
@@ -9,6 +9,10 @@ use lantern_core::{
         NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
     },
     redaction::{RedactionMode, sanitize_title, sanitize_url},
+    screenshot::{
+        SCREENSHOT_REDACTION_CAVEAT, ScreenshotCommandOutput, ScreenshotError, ScreenshotSummary,
+        capture_visible_viewport_screenshot,
+    },
     wait::{
         ReadyState, WAIT_MAX_TIMEOUT_MS, WaitCommandOutput, WaitCondition, WaitConditionName,
         WaitError, wait_for_condition,
@@ -48,6 +52,12 @@ const NAVIGATION_FAILED_MESSAGE: &str = "Chromium failed the requested page navi
 const NAVIGATION_FAILED_HINT: &str = "Check that the URL is reachable from Chromium, then retry.";
 const WAIT_TIMEOUT_INVALID_MESSAGE: &str = "Invalid wait timeout.";
 const WAIT_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000; for quiet waits, --quiet-ms must also be in range and no larger than --timeout-ms.";
+const SCREENSHOT_OUTPUT_EXISTS_MESSAGE: &str = "Screenshot output path already exists.";
+const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
+    "Pass --overwrite to replace the file, or choose a different --output path.";
+const SCREENSHOT_WRITE_FAILED_MESSAGE: &str = "Screenshot could not be written.";
+const SCREENSHOT_WRITE_FAILED_HINT: &str =
+    "Check that the parent directory exists and the output path is writable.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -94,12 +104,17 @@ fn run(
     if invocation.target_id.is_some()
         && !matches!(
             command,
-            Command::Page | Command::Dom | Command::Open | Command::Wait | Command::Console
+            Command::Page
+                | Command::Dom
+                | Command::Open
+                | Command::Wait
+                | Command::Console
+                | Command::Screenshot
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, and console.",
+            "--target-id is only supported by page, dom, open, wait, console, and screenshot.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -120,6 +135,22 @@ fn run(
         ));
     }
 
+    if command != Command::Screenshot && invocation.has_screenshot_flags() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Screenshot flags are only supported by screenshot.",
+            "Run lantern screenshot --output <PATH>.",
+        ));
+    }
+
+    if command == Command::Screenshot && invocation.screenshot_output.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing --output for screenshot.",
+            "Run lantern screenshot --output <PATH>.",
+        ));
+    }
+
     let endpoint = resolve_endpoint(invocation.endpoint.as_deref(), env_endpoint.as_deref())
         .map_err(|error| CliError::from_endpoint(error, invocation.json))?;
 
@@ -137,6 +168,8 @@ fn run(
         invocation.wait_selector,
         invocation.wait_text,
         invocation.quiet_ms,
+        invocation.screenshot_output,
+        invocation.screenshot_overwrite,
     )
 }
 
@@ -154,6 +187,8 @@ fn run_command(
     wait_selector: Option<String>,
     wait_text: Option<String>,
     quiet_ms: Option<u64>,
+    screenshot_output: Option<String>,
+    screenshot_overwrite: bool,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -242,6 +277,37 @@ fn run_command(
             let output = read_console_errors(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_console_read(error, json))?;
             write_console(output, json)?;
+        }
+        Command::Screenshot => {
+            let output_path = screenshot_output
+                .as_deref()
+                .expect("screenshot output checked before endpoint");
+            validate_screenshot_output_path(output_path, screenshot_overwrite, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let capture = capture_visible_viewport_screenshot(
+                &page,
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_screenshot(error, json))?;
+            let overwritten =
+                write_screenshot_file(output_path, &capture.bytes, screenshot_overwrite, json)?;
+            let output = ScreenshotCommandOutput::success(
+                capture.page,
+                ScreenshotSummary {
+                    format: capture.format,
+                    width: capture.width,
+                    height: capture.height,
+                    byte_count: capture.bytes.len(),
+                    path: output_path.to_owned(),
+                    overwritten,
+                    redaction_caveat: SCREENSHOT_REDACTION_CAVEAT,
+                },
+            );
+            write_screenshot(output, json)?;
         }
     }
 
@@ -546,6 +612,102 @@ fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    let dimensions = match (output.screenshot.width, output.screenshot.height) {
+        (Some(width), Some(height)) => format!("{width}x{height}"),
+        _ => "unknown".to_owned(),
+    };
+
+    println!(
+        "screenshot: {} title=\"{}\" url={} dimensions={} bytes={} path={} overwritten={} caveat={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        dimensions,
+        output.screenshot.byte_count,
+        output.screenshot.path,
+        output.screenshot.overwritten,
+        output.screenshot.redaction_caveat
+    );
+    Ok(())
+}
+
+fn validate_screenshot_output_path(
+    output_path: &str,
+    overwrite: bool,
+    json: bool,
+) -> Result<(), CliError> {
+    if !overwrite && Path::new(output_path).exists() {
+        return Err(CliError {
+            exit_code: 2,
+            json,
+            code: "screenshot_output_exists",
+            message: SCREENSHOT_OUTPUT_EXISTS_MESSAGE,
+            hint: SCREENSHOT_OUTPUT_EXISTS_HINT,
+        });
+    }
+
+    Ok(())
+}
+
+fn write_screenshot_file(
+    output_path: &str,
+    bytes: &[u8],
+    overwrite: bool,
+    json: bool,
+) -> Result<bool, CliError> {
+    let path = Path::new(output_path);
+    let existed = path.exists();
+    if overwrite {
+        fs::write(path, bytes).map_err(|_| {
+            CliError::runtime(
+                json,
+                "screenshot_write_failed",
+                SCREENSHOT_WRITE_FAILED_MESSAGE,
+                SCREENSHOT_WRITE_FAILED_HINT,
+            )
+        })?;
+        return Ok(existed);
+    }
+
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(bytes).map_err(|_| {
+                CliError::runtime(
+                    json,
+                    "screenshot_write_failed",
+                    SCREENSHOT_WRITE_FAILED_MESSAGE,
+                    SCREENSHOT_WRITE_FAILED_HINT,
+                )
+            })?;
+            Ok(false)
+        }
+        Err(source) if source.kind() == ErrorKind::AlreadyExists => Err(CliError {
+            exit_code: 2,
+            json,
+            code: "screenshot_output_exists",
+            message: SCREENSHOT_OUTPUT_EXISTS_MESSAGE,
+            hint: SCREENSHOT_OUTPUT_EXISTS_HINT,
+        }),
+        Err(_) => Err(CliError::runtime(
+            json,
+            "screenshot_write_failed",
+            SCREENSHOT_WRITE_FAILED_MESSAGE,
+            SCREENSHOT_WRITE_FAILED_HINT,
+        )),
+    }
+}
+
 fn wait_condition_label(condition: WaitConditionName) -> &'static str {
     match condition {
         WaitConditionName::Ready => "ready",
@@ -720,7 +882,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, and console\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|screenshot> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, console, and screenshot\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -739,6 +901,8 @@ struct Invocation {
     wait_selector: Option<String>,
     wait_text: Option<String>,
     quiet_ms: Option<u64>,
+    screenshot_output: Option<String>,
+    screenshot_overwrite: bool,
     help: bool,
     version: bool,
 }
@@ -815,6 +979,10 @@ impl Invocation {
             || self.quiet_ms.is_some()
     }
 
+    fn has_screenshot_flags(&self) -> bool {
+        self.screenshot_output.is_some() || self.screenshot_overwrite
+    }
+
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
         let mut invocation = Self {
             command: None,
@@ -830,6 +998,8 @@ impl Invocation {
             wait_selector: None,
             wait_text: None,
             quiet_ms: None,
+            screenshot_output: None,
+            screenshot_overwrite: false,
             help: false,
             version: false,
         };
@@ -921,7 +1091,19 @@ impl Invocation {
                     };
                     invocation.quiet_ms = Some(parse_wait_millis(&quiet_ms, invocation.json)?);
                 }
-                "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" => {
+                "--output" => {
+                    let Some(output) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --output.",
+                            "Pass a local screenshot output path.",
+                        ));
+                    };
+                    invocation.screenshot_output = Some(output);
+                }
+                "--overwrite" => invocation.screenshot_overwrite = true,
+                "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console"
+                | "screenshot" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -1008,6 +1190,7 @@ enum Command {
     Open,
     Wait,
     Console,
+    Screenshot,
 }
 
 impl Command {
@@ -1020,6 +1203,7 @@ impl Command {
             "open" => Some(Self::Open),
             "wait" => Some(Self::Wait),
             "console" => Some(Self::Console),
+            "screenshot" => Some(Self::Screenshot),
             _ => None,
         }
     }
@@ -1261,6 +1445,38 @@ impl CliError {
         }
     }
 
+    fn from_screenshot(error: ScreenshotError, json: bool) -> Self {
+        match error {
+            ScreenshotError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            ScreenshotError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            ScreenshotError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            ScreenshotError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            ScreenshotError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
     fn write_stderr(&self) {
         if self.json {
             let error = ErrorOutput {
@@ -1352,6 +1568,24 @@ mod tests {
         assert_eq!(invocation.wait_selector.as_deref(), Some("main"));
         assert_eq!(invocation.wait_text.as_deref(), Some("Ready"));
         assert_eq!(invocation.timeout_ms, Some(5000));
+    }
+
+    #[test]
+    fn parses_screenshot_output_and_overwrite_flags() {
+        let invocation = Invocation::parse([
+            "screenshot".to_string(),
+            "--output".to_string(),
+            "artifacts/page.png".to_string(),
+            "--overwrite".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Screenshot));
+        assert_eq!(
+            invocation.screenshot_output.as_deref(),
+            Some("artifacts/page.png")
+        );
+        assert!(invocation.screenshot_overwrite);
     }
 
     #[test]

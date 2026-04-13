@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, and selected-page console feedback against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, capture screenshots, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, and explicit selected-page screenshot capture against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, inspect network requests, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -19,12 +19,12 @@ Implemented commands:
 - `lantern open <URL>`
 - `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
+- `lantern screenshot --output <PATH>`
 
 Reserved for future milestones and not implemented yet:
 
 - browser launch or attach lifecycle commands
 - JavaScript evaluation
-- screenshot capture
 - network inspection commands
 - daemon, MCP, TUI, or web UI commands
 
@@ -69,6 +69,7 @@ Supported commands:
 - `lantern open`
 - `lantern wait`
 - `lantern console`
+- `lantern screenshot`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
@@ -610,6 +611,118 @@ Redaction behavior:
 - `--no-redact` may expose full URLs and untruncated console message text for this invocation only.
 - `--no-redact` does not cause Lantern to collect or print full object graphs, stack traces, cookies, local storage, or raw CDP payloads.
 
+### `lantern screenshot`
+
+Purpose: capture the selected page target's current visible viewport as a local PNG artifact for frontend feedback.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- `Page.getLayoutMetrics` for best-effort viewport dimensions.
+- `Page.captureScreenshot` with PNG output, `fromSurface=true`, and `captureBeyondViewport=false`.
+
+Target selection:
+
+`lantern screenshot` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern screenshot` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Artifact path and overwrite behavior:
+
+- `--output <PATH>` is required. Lantern never chooses a screenshot path implicitly and never writes image bytes to stdout.
+- Relative output paths are resolved by the operating system relative to the current working directory. JSON and human output report the path as supplied by the operator.
+- Parent directories must already exist. Lantern does not create artifact directories in v1.
+- Existing files are not overwritten unless `--overwrite` is supplied.
+- On success, Lantern writes exactly one PNG file to the requested path. It does not create screenshot history, sidecar metadata, visual diffs, thumbnails, galleries, or cleanup jobs.
+- Cleanup is operator-owned: Lantern reports the output path and does not delete successful screenshots automatically.
+
+Viewport assumptions:
+
+- `lantern screenshot` captures the target's current visible viewport.
+- The command does not resize the browser, alter device emulation, scroll, capture a full page, or stitch multiple images.
+- `width` and `height` are best-effort viewport dimensions from `Page.getLayoutMetrics` when Chromium provides them; they may be `null`.
+
+Human output should include:
+
+- selected target id short form
+- selected page title, truncated by default
+- URL shape, not the full URL by default
+- viewport dimensions when known
+- image byte count
+- output path
+- screenshot redaction caveat
+
+Recommended human output shape:
+
+```text
+screenshot: ABCD1234 title="Example" url=https://example.test/path dimensions=1280x720 bytes=123456 path=artifacts/page.png caveat=screenshot_contains_visible_page_pixels
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "screenshot",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "screenshot": {
+    "format": "png",
+    "width": 1280,
+    "height": 720,
+    "byte_count": 123456,
+    "path": "artifacts/page.png",
+    "overwritten": false,
+    "redaction_caveat": "screenshot_contains_visible_page_pixels"
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `screenshot.format`
+- `screenshot.width`
+- `screenshot.height`
+- `screenshot.byte_count`
+- `screenshot.path`
+- `screenshot.overwritten`
+- `screenshot.redaction_caveat`
+
+`page.title`, `page.url_shape`, `screenshot.width`, and `screenshot.height` may be `null` when unavailable.
+
+Default output follows the screenshot policy in `docs/product-specs/output-policy.md`. In particular, `lantern screenshot` must not embed image bytes in JSON, print base64 image data to stdout, upload screenshots, keep screenshot history, or imply that visible page pixels are redacted. `--no-redact` may expose the selected page's full URL shape metadata only; it does not alter screenshot pixels or artifact persistence behavior.
+
+Command-specific error cases:
+
+- missing `--output`: exit code `2`, error code `usage`
+- output path already exists without `--overwrite`: exit code `2`, error code `screenshot_output_exists`
+- output path parent is missing or the file cannot be written: exit code `1`, error code `screenshot_write_failed`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error, malformed CDP screenshot response, or invalid screenshot base64: exit code `1`, error code `cdp_response_invalid`
+
 ### `lantern dom`
 
 Purpose: summarize the selected page target's rendered DOM tree with concise, redacted, bounded node metadata useful to a coding agent.
@@ -760,6 +873,7 @@ Command-specific defaults:
 - `endpoint.display` may include the local endpoint scheme, host, port, and configured path prefix, but must never include credentials, query strings, or fragments.
 - `targets[].url_shape` and `page.url_shape` use the URL shape policy.
 - `navigation.requested_url_shape` and `navigation.final_url_shape` use the URL shape policy for `http` and `https` URLs and preserve `about:blank`.
+- `screenshot.path` is the operator-provided local artifact path; `screenshot.redaction_caveat` must state that screenshot pixels are not redacted.
 - `targets[].title` and `page.title` use the page or target title limit of 120 Unicode scalar values.
 - human output may abbreviate target ids, but JSON output must preserve exact CDP target ids.
 - `console.entries[].source_url_shape` and URL-like substrings inside `console.entries[].message` use the URL shape policy by default.
@@ -855,11 +969,14 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, or `lantern open`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, or `lantern screenshot`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom` or `lantern open`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, or `lantern screenshot`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
+- `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range
+- `screenshot_output_exists`: screenshot output path already exists and `--overwrite` was not supplied
+- `screenshot_write_failed`: screenshot output path could not be written
 - `interrupted`: command was interrupted
 
 ## Environment

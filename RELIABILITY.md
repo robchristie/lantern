@@ -6,9 +6,9 @@ This file records the repository's current reliability contract. Keep it focused
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-13**
+Last reviewed: **2026-04-14**
 
-Rationale: `Lantern` starts with local-first docs, a generated Rust workspace, seed tasks, prompt templates, validation profile scripts, and conservative harness defaults. The grade starts at `C` until real workflows prove state durability, validation, and recovery behavior.
+Rationale: `Lantern` starts with local-first docs, a generated Rust workspace, seed tasks, prompt templates, validation profile scripts, feature fixture coverage, and conservative harness defaults. The grade remains `C` until real workflows prove state durability, validation, and recovery behavior.
 
 ## Grade Scale
 
@@ -47,7 +47,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 ## Known Reliability Gaps
 
 - The generated product assumptions have had an initial scope review, but implementation behavior is not proven yet.
-- Feature-specific tests and smoke paths have not been written yet.
+- Feature-specific fixture tests now cover the implemented CLI loop, but real-browser smoke coverage is still limited.
 - The first milestone has not yet proven recovery and landing behavior.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the matrix has not been smoke-tested across representative hosts and images yet.
 - Optional quality-sweep tools may not be installed on every machine.

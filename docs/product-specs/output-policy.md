@@ -282,7 +282,7 @@ Body snippets require an explicit command option in a future design. When enable
 
 ## Screenshot Policy
 
-Screenshot capture is outside the first milestone. Future screenshot commands must treat screenshots as sensitive artifacts.
+Screenshot capture is available only through explicit selected-page commands and must treat screenshots as sensitive artifacts.
 
 Default screenshot behavior:
 
@@ -292,11 +292,11 @@ Default screenshot behavior:
 - do not print base64 image data to stdout
 - return metadata only by default, such as width, height, format, byte count, and output path when one was explicitly requested
 
-Screenshot paths in JSON should be operator-provided paths or paths under Lantern-managed local state. They should not be uploaded or linked to external services by default.
+Screenshot paths in JSON should be operator-provided paths or paths under Lantern-managed local state. They should not be uploaded or linked to external services by default. Screenshots are not redacted: transcript output must include a caveat that the artifact contains visible page pixels.
 
 ## Persistence
 
-Output redaction is separate from persistence. First-milestone commands do not persist browser artifacts.
+Output redaction is separate from persistence. First-milestone commands do not persist browser artifacts except for screenshots written to an explicit operator-provided output path.
 
 Future persistence must not store credentials, cookies, local storage, DOM dumps, screenshots, full URLs, console payloads, network bodies, or sensitive browser artifacts unless a later design explicitly defines:
 
