@@ -239,6 +239,7 @@ dependencies = [
  "lantern-storage",
  "serde",
  "serde_json",
+ "tungstenite",
 ]
 
 [[package]]

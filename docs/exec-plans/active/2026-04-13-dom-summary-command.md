@@ -8,6 +8,8 @@ Status: active
 - 2026-04-13: completed Slice 1 by updating `docs/product-specs/cli-contract.md` with the `lantern dom` command contract, including bounded human/JSON output, page target selection, and command-specific error cases.
 - 2026-04-13: completed Slice 2 by adding typed DOM summary serialization types in `lantern-core` and moving browser-derived text, URL, and DOM attribute sanitization into a reusable core redaction policy.
 - 2026-04-13: completed Slice 3 by adding a page-target WebSocket DOM read path based on `DOM.getDocument`, bounded structured traversal, target WebSocket availability handling, and DOM-specific CDP error mapping. The implementation also wires `lantern dom` through the CLI so the read path and error conventions are executable ahead of broader fixture coverage.
+- 2026-04-14: started Slice 5 by adding CLI fixture coverage for successful human and JSON DOM output, page-target error cases, truncation, safe and sensitive attribute handling, URL shaping, and CDP command errors.
+- 2026-04-14: completed Slice 5 after `scripts/validate.sh fast`, focused DOM fixture tests, and full `scripts/validate.sh` passed.
 
 ## Goal
 
@@ -189,7 +191,7 @@ Status: pending
 
 ### Slice 5: Fixtures And Validation
 
-Status: pending
+Status: completed
 
 - add deterministic fixture tests for successful human and JSON output
 - cover unavailable page target, missing WebSocket URL, ambiguous page target, truncation, safe attributes, sensitive attributes, URL-shape handling, and CDP command errors
