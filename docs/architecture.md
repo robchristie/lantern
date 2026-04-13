@@ -64,6 +64,8 @@ The initial CLI contract is limited to:
 
 Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
 
+The exact first-milestone command and output contract is maintained in `docs/product-specs/cli-contract.md`.
+
 ## Integration Boundaries
 
 - CLI commands consume domain services rather than raw CDP responses

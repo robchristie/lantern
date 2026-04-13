@@ -6,6 +6,7 @@ Status: active
 
 - 2026-04-13: generated the initial docs contract, Rust workspace skeleton, validation profile scripts, and seed tasks from the bootstrap interview.
 - 2026-04-13: reviewed and narrowed the generated contract around the first milestone: `doctor`, `targets`, and `page` only; operator-managed Chromium/CDP lifecycle; SQLite reserved for later local state rather than required for the first inspection loop.
+- 2026-04-13: defined the first-milestone CLI contract covering implemented commands, shared flags, endpoint precedence, JSON conventions, redaction defaults, error shape, and exit codes.
 
 ## Goal
 

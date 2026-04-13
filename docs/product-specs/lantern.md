@@ -36,6 +36,8 @@ The first milestone is intentionally limited to browser inspection against an op
 
 Commands that navigate, mutate page state, evaluate JavaScript, collect screenshots, or inspect DOM, console, and network details are future capabilities unless a later ExecPlan explicitly pulls one into scope.
 
+The exact command, shared flag, endpoint resolution, JSON output, redaction, and exit-code contract lives in `docs/product-specs/cli-contract.md`.
+
 ## Non-Goals
 
 - multi-user sync
