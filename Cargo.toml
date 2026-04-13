@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/lantern-cli",
+    "crates/lantern-core",
+    "crates/lantern-storage",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+rust-version = "1.85"
+license = "MIT"

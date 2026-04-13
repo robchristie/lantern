@@ -1,0 +1,23 @@
+# PLANS.md
+
+This repository uses ExecPlans for substantial work.
+
+## When To Use An ExecPlan
+
+Create or update an ExecPlan before starting work that spans multiple sessions, crosses major modules, changes architecture or storage, or is risky enough that a later agent should understand it first.
+
+## Locations
+
+- Active plans: `docs/exec-plans/active/`
+- Completed plans: `docs/exec-plans/completed/`
+- Tech debt tracker: `docs/exec-plans/tech-debt-tracker.md`
+
+## Quality And Hygiene
+
+- Keep `QUALITY_SCORE.md`, `RELIABILITY.md`, and `SECURITY.md` current when changes affect quality, validation, reliability, threat model, or automation boundaries.
+- Put non-blocking findings in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
+- Run `smoogle docs check` after changing scorecards, ExecPlan links, prompt templates, or core docs structure. In Codex child runs, use the injected `smoogle` shim or `"$SMOOGLE_BIN" docs check` fallback.
+
+## Current Active Plan
+
+- `docs/exec-plans/active/2026-04-13-bootstrap-lantern.md`

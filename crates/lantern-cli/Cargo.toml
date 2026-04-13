@@ -1,0 +1,10 @@
+[package]
+name = "lantern-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lantern-core = { path = "../lantern-core" }
+lantern-storage = { path = "../lantern-storage" }

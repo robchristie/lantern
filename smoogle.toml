@@ -1,0 +1,50 @@
+version = 1
+
+[tracker]
+kind = "smoogle"
+
+[tracker.laneway]
+command = "laneway-cli"
+db = ".smoogle/laneway.db"
+
+[defaults]
+reasoning_effort = "medium"
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+max_idle_seconds = 900
+landing_policy = "assisted"
+worktree_cleanup = "never"
+branch_cleanup = "never"
+review_block_policy = "manual"
+max_review_rescue_attempts = 1
+commit = false
+push = false
+mark_done = false
+
+[profiles.implement]
+reasoning_effort = "high"
+commit = true
+
+[profiles.queue]
+reasoning_effort = "medium"
+commit = true
+worktree_cleanup = "landed-clean"
+branch_cleanup = "landed-merged"
+
+[profiles.recovery]
+reasoning_effort = "high"
+web_search = "live"
+
+[profiles.reflection]
+reasoning_effort = "medium"
+web_search = "disabled"
+max_idle_seconds = 300
+landing_policy = "manual"
+
+[profiles.review]
+reasoning_effort = "high"
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+max_idle_seconds = 300
+landing_policy = "manual"
