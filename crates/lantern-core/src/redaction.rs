@@ -215,27 +215,36 @@ fn redact_url_tokens(value: &str) -> String {
 }
 
 fn redact_url_token(token: &str) -> String {
-    let prefix_len = token
-        .find(|ch: char| ch.is_ascii_alphanumeric())
-        .unwrap_or(0);
-    let suffix_len = token
-        .chars()
-        .rev()
-        .take_while(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\''))
-        .map(char::len_utf8)
-        .sum::<usize>();
-    let (prefix, rest) = token.split_at(prefix_len.min(token.len()));
+    let Some(start) = find_url_start(token) else {
+        return token.to_owned();
+    };
+    let (prefix, rest) = token.split_at(start);
+    let suffix_len = url_token_suffix_len(rest);
     let core_end = rest.len().saturating_sub(suffix_len);
     let (core, suffix) = rest.split_at(core_end);
-
-    if !core.starts_with("http://") && !core.starts_with("https://") {
-        return token.to_owned();
-    }
 
     match sanitize_url(core, RedactionMode::Redacted) {
         Some(shape) => format!("{prefix}{shape}{suffix}"),
         None => format!("{prefix}:redacted-url{suffix}"),
     }
+}
+
+fn find_url_start(token: &str) -> Option<usize> {
+    match (token.find("http://"), token.find("https://")) {
+        (Some(http), Some(https)) => Some(http.min(https)),
+        (Some(http), None) => Some(http),
+        (None, Some(https)) => Some(https),
+        (None, None) => None,
+    }
+}
+
+fn url_token_suffix_len(token: &str) -> usize {
+    token
+        .chars()
+        .rev()
+        .take_while(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\''))
+        .map(char::len_utf8)
+        .sum::<usize>()
 }
 
 fn redact_sensitive_message_tokens(value: &str) -> String {
@@ -420,6 +429,22 @@ mod tests {
             message,
             "failed https://example.test/reset/:redacted token=:redacted"
         );
+    }
+
+    #[test]
+    fn console_messages_redact_embedded_url_assignments() {
+        let message = sanitize_console_message(
+            "failed url=https://user:pass@example.test/reset/abcdabcdabcdabcdabcdabcd?token=secret#frag next=(https://example.test/private/session/abc123?secret=yes),",
+            RedactionMode::Redacted,
+        );
+
+        assert_eq!(
+            message,
+            "failed url=https://example.test/reset/:redacted next=(https://example.test/private/session/:redacted),"
+        );
+        assert!(!message.contains("user:pass"));
+        assert!(!message.contains("token=secret"));
+        assert!(!message.contains("#frag"));
     }
 
     #[test]
