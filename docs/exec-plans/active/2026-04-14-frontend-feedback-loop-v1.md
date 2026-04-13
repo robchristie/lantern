@@ -8,6 +8,7 @@ Status: active
 - 2026-04-14: implemented Slice 1 explicit target selection with `--target-id` for `page` and `dom`, exact CDP page target id matching, stable not-found errors for non-page or missing ids, updated CLI contract coverage, and fixture tests for explicit selection.
 - 2026-04-14: implemented Slice 2 navigation/open with `lantern open <URL>`, exact selected page target reuse, supported `http`, `https`, and `about:blank` URLs, bounded CDP `Page.navigate` plus page-state reads, redacted JSON output, and fixture coverage for success, `--no-redact`, invalid URLs, and navigation failure.
 - 2026-04-14: implemented Slice 3 console feedback with `lantern console`, exact selected page target reuse, bounded Runtime/Log event collection, redacted and truncated console/error messages, explicit truncation metadata, and fixture coverage for JSON, human output, and missing WebSocket errors.
+- 2026-04-14: implemented Slice 4 wait conditions with `lantern wait <ready|url|selector|text|quiet>`, explicit bounded `--timeout-ms`, selected target identity, elapsed time, matched/timed-out condition results, concise observed state, and fixture coverage for readiness, URL shape, selector presence, selector text, quiet-period waits, and invalid timeout bounds.
 
 ## Goal
 
@@ -91,7 +92,7 @@ Status: completed
 
 ### Slice 4: Wait Conditions
 
-Status: pending
+Status: completed
 
 - add explicit wait conditions useful after navigation or interaction
 - cover document readiness, URL shape match, selector presence, selector text, and quiet-period waits where practical

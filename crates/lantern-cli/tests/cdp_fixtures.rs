@@ -311,6 +311,186 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_wait_ready_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            for (id, ready_state) in [(1, "loading"), (2, "complete")] {
+                let message = socket
+                    .read()
+                    .expect("fixture should read ready-state command")
+                    .into_text()
+                    .expect("command should be text");
+                assert!(
+                    message.contains(r#""method":"Runtime.evaluate""#),
+                    "unexpected websocket command: {message:?}"
+                );
+                assert!(
+                    message.contains(r#""expression":"document.readyState""#),
+                    "ready fixture should only request readyState: {message:?}"
+                );
+                socket
+                    .send(Message::Text(
+                        format!(
+                            r#"{{"id":{id},"result":{{"result":{{"type":"string","value":"{ready_state}"}}}}}}"#
+                        )
+                        .into(),
+                    ))
+                    .expect("fixture should write ready-state response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_wait_url_response(final_url: &'static str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read history command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.getNavigationHistory""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    format!(
+                        r#"{{"id":1,"result":{{"currentIndex":0,"entries":[{{"id":1,"url":"{final_url}","title":"Loaded"}}]}}}}"#
+                    )
+                    .into(),
+                ))
+                .expect("fixture should write history response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_wait_selector_response(present: bool) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read selector command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.evaluate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            assert!(
+                message.contains(r#"document.querySelector(\"[data-testid=dashboard]\")"#),
+                "selector fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    format!(
+                        r#"{{"id":1,"result":{{"result":{{"type":"boolean","value":{present}}}}}}}"#
+                    )
+                    .into(),
+                ))
+                .expect("fixture should write selector response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_wait_text_response(text: &'static str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read text command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.evaluate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            assert!(
+                message.contains(r#"document.querySelector(\"main\")"#),
+                "text fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    format!(
+                        r#"{{"id":1,"result":{{"result":{{"type":"string","value":"{text}"}}}}}}"#
+                    )
+                    .into(),
+                ))
+                .expect("fixture should write text response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_wait_quiet_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            for (id, method) in [
+                (1, "Runtime.enable"),
+                (2, "Log.enable"),
+                (3, "Page.enable"),
+                (4, "Page.setLifecycleEventsEnabled"),
+            ] {
+                let message = socket
+                    .read()
+                    .expect("fixture should read quiet setup command")
+                    .into_text()
+                    .expect("command should be text");
+                assert!(
+                    message.contains(&format!(r#""method":"{method}""#)),
+                    "unexpected websocket command: {message:?}"
+                );
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                    ))
+                    .expect("fixture should write quiet setup response");
+            }
+
+            thread::sleep(Duration::from_millis(100));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -645,6 +825,213 @@ fn open_json_reports_navigation_failure() {
     );
     fixture.finish();
     websocket.finish();
+}
+
+#[test]
+fn wait_ready_json_reports_match_elapsed_timeout_and_observed_state() {
+    let websocket = WebSocketFixture::one_wait_ready_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wait",
+            "ready",
+            "--state",
+            "complete",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["command"], "wait");
+    assert_eq!(json["page"]["target_id"], "PAGE_ATTACHED_1234567890");
+    assert_eq!(json["wait"]["condition"], "ready");
+    assert_eq!(json["wait"]["matched"], true);
+    assert_eq!(json["wait"]["timed_out"], false);
+    assert_eq!(json["wait"]["timeout_ms"], 1000);
+    assert_eq!(json["wait"]["observed"]["ready_state"], "complete");
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wait_url_json_matches_redacted_current_url_shape() {
+    let websocket = WebSocketFixture::one_wait_url_response(
+        "https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+    );
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wait",
+            "url",
+            "--url-shape",
+            "https://example.test/reset/:redacted",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["wait"]["condition"], "url");
+    assert_eq!(json["wait"]["matched"], true);
+    assert_eq!(
+        json["wait"]["observed"]["expected_url_shape"],
+        "https://example.test/reset/:redacted"
+    );
+    assert_eq!(
+        json["wait"]["observed"]["current_url_shape"],
+        "https://example.test/reset/:redacted"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wait_selector_json_reports_timeout_as_condition_result() {
+    let websocket = WebSocketFixture::one_wait_selector_response(false);
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wait",
+            "selector",
+            "--selector",
+            "[data-testid=dashboard]",
+            "--timeout-ms",
+            "1",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["wait"]["condition"], "selector");
+    assert_eq!(json["wait"]["matched"], false);
+    assert_eq!(json["wait"]["timed_out"], true);
+    assert_eq!(
+        json["wait"]["observed"]["selector"],
+        "[data-testid=dashboard]"
+    );
+    assert_eq!(json["wait"]["observed"]["present"], false);
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wait_text_json_matches_text_content_substring() {
+    let websocket = WebSocketFixture::one_wait_text_response("Checkout Dashboard Ready");
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wait",
+            "text",
+            "--selector",
+            "main",
+            "--text",
+            "Dashboard",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["wait"]["condition"], "text");
+    assert_eq!(json["wait"]["matched"], true);
+    assert_eq!(json["wait"]["observed"]["selector"], "main");
+    assert_eq!(json["wait"]["observed"]["expected_text"], "Dashboard");
+    assert_eq!(
+        json["wait"]["observed"]["current_text"],
+        "Checkout Dashboard Ready"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wait_quiet_json_reports_quiet_period_without_events() {
+    let websocket = WebSocketFixture::one_wait_quiet_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wait",
+            "quiet",
+            "--quiet-ms",
+            "10",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["wait"]["condition"], "quiet");
+    assert_eq!(json["wait"]["matched"], true);
+    assert_eq!(json["wait"]["timed_out"], false);
+    assert_eq!(json["wait"]["observed"]["quiet_ms"], 10);
+    assert_eq!(json["wait"]["observed"]["event_count"], 0);
+    assert_eq!(
+        json["wait"]["observed"]["last_event"],
+        serde_json::Value::Null
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wait_json_rejects_invalid_timeout_bounds() {
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "ready",
+            "--timeout-ms",
+            "0",
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"wait_timeout_invalid","message":"Invalid wait timeout.","hint":"Pass --timeout-ms from 1 through 30000; for quiet waits, --quiet-ms must also be in range and no larger than --timeout-ms."}}"#.to_owned()
+            + "\n"
+    );
 }
 
 #[test]
@@ -986,4 +1373,8 @@ fn stdout(output: &Output) -> String {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn json_stdout(output: &Output) -> serde_json::Value {
+    serde_json::from_str(&stdout(output)).expect("stdout should be JSON")
 }

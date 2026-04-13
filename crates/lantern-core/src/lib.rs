@@ -4,6 +4,7 @@ pub mod dom;
 pub mod endpoint;
 pub mod navigation;
 pub mod redaction;
+pub mod wait;
 
 pub const PROJECT_NAME: &str = "Lantern";
 

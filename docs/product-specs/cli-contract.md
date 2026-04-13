@@ -17,6 +17,7 @@ Implemented commands:
 - `lantern page`
 - `lantern dom`
 - `lantern open <URL>`
+- `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
 
 Reserved for future milestones and not implemented yet:
@@ -66,6 +67,7 @@ Supported commands:
 - `lantern page`
 - `lantern dom`
 - `lantern open`
+- `lantern wait`
 - `lantern console`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
@@ -351,6 +353,129 @@ Redaction behavior:
 - `about:blank` is emitted as `about:blank`.
 - `--no-redact` may expose the full requested and final URLs for this invocation only.
 - CDP navigation error text is not included in JSON success output and is not echoed in stable error output by default.
+
+### `lantern wait <ready|url|selector|text|quiet>`
+
+Purpose: wait a bounded amount of time for useful selected-page state after navigation or interaction.
+
+`lantern wait` is a polling and event-quietness helper, not a test runner. It does not launch Chromium, navigate pages, dispatch interactions, execute operator-supplied JavaScript, persist artifacts, or keep a long-running watch open. The command returns a condition result even when the condition is not met before timeout; unmet conditions are reported in stdout with `matched=false` and `timed_out=true`, while CLI usage, target, endpoint, and CDP failures use the normal non-zero error path.
+
+Supported conditions:
+
+- `lantern wait ready --timeout-ms <MS> [--state <loading|interactive|complete>]`
+- `lantern wait url --timeout-ms <MS> --url-shape <URL_SHAPE>`
+- `lantern wait selector --timeout-ms <MS> --selector <CSS_SELECTOR>`
+- `lantern wait text --timeout-ms <MS> --selector <CSS_SELECTOR> --text <TEXT>`
+- `lantern wait quiet --timeout-ms <MS> --quiet-ms <MS>`
+
+Timeouts are explicit and bounded. `--timeout-ms` is required for every wait condition and must be from `1` through `30000`. `--quiet-ms` is required only for `quiet`, must be from `1` through `30000`, and must be less than or equal to `--timeout-ms`.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- For `ready`, bounded `Runtime.evaluate` reads of `document.readyState`.
+- For `url`, bounded `Page.getNavigationHistory` reads of the current entry URL.
+- For `selector`, bounded `Runtime.evaluate` reads of `document.querySelector(<selector>)`.
+- For `text`, bounded `Runtime.evaluate` reads of the selected element's `textContent`.
+- For `quiet`, `Runtime.enable`, `Log.enable`, `Page.enable`, best-effort `Page.setLifecycleEventsEnabled`, and bounded event reads until no Runtime, Log, or Page lifecycle event is observed for the requested quiet period.
+
+Target selection:
+
+`lantern wait` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern wait` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Human output should include:
+
+- selected target id short form
+- condition kind
+- whether the condition matched
+- timeout and elapsed milliseconds
+- concise observed state
+
+Recommended human output shape:
+
+```text
+wait: ABCD1234 condition=ready matched=true timed_out=false elapsed_ms=214 timeout_ms=5000 observed=complete
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "wait",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "wait": {
+    "condition": "ready",
+    "matched": true,
+    "timed_out": false,
+    "elapsed_ms": 214,
+    "timeout_ms": 5000,
+    "observed": {
+      "ready_state": "complete"
+    }
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `wait.condition`
+- `wait.matched`
+- `wait.timed_out`
+- `wait.elapsed_ms`
+- `wait.timeout_ms`
+- `wait.observed`
+
+`page.title` and `page.url_shape` may be `null` when unavailable. `wait.observed` is condition-specific but must remain concise:
+
+- `ready`: `ready_state`
+- `url`: `expected_url_shape`, `current_url_shape`
+- `selector`: `selector`, `present`
+- `text`: `selector`, `expected_text`, `current_text`
+- `quiet`: `quiet_ms`, `event_count`, `last_event`
+
+URL shape matching compares against the command's redaction mode. By default, `--url-shape` should be the redacted URL shape Lantern would print elsewhere, such as `https://example.test/reset/:redacted`. With `--no-redact`, URL shape matching uses the full observed URL.
+
+Command-specific error cases:
+
+- missing or invalid wait condition: exit code `2`, error code `usage`
+- missing required condition flag: exit code `2`, error code `usage`
+- invalid timeout or quiet-period bounds: exit code `2`, error code `wait_timeout_invalid`
+- invalid ready state: exit code `2`, error code `usage`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP wait response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- page `url_shape`, URL-condition `current_url_shape`, and `expected_url_shape` follow the URL shape policy by default.
+- selector strings and expected/current text snippets are echoed because they are operator-supplied or page-visible condition state; callers should avoid passing secrets in selectors or text.
+- `--no-redact` may expose full URLs for URL matching and output for this invocation only.
 
 ### `lantern console`
 

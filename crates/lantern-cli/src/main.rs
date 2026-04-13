@@ -1,4 +1,4 @@
-use std::{env, process::ExitCode};
+use std::{env, process::ExitCode, time::Duration};
 
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
@@ -9,6 +9,10 @@ use lantern_core::{
         NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
     },
     redaction::{RedactionMode, sanitize_title, sanitize_url},
+    wait::{
+        ReadyState, WAIT_MAX_TIMEOUT_MS, WaitCommandOutput, WaitCondition, WaitConditionName,
+        WaitError, wait_for_condition,
+    },
 };
 use serde::Serialize;
 
@@ -42,6 +46,8 @@ const URL_INVALID_HINT: &str =
     "Pass an absolute http:// or https:// URL, or the exact URL about:blank.";
 const NAVIGATION_FAILED_MESSAGE: &str = "Chromium failed the requested page navigation.";
 const NAVIGATION_FAILED_HINT: &str = "Check that the URL is reachable from Chromium, then retry.";
+const WAIT_TIMEOUT_INVALID_MESSAGE: &str = "Invalid wait timeout.";
+const WAIT_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000; for quiet waits, --quiet-ms must also be in range and no larger than --timeout-ms.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -88,13 +94,29 @@ fn run(
     if invocation.target_id.is_some()
         && !matches!(
             command,
-            Command::Page | Command::Dom | Command::Open | Command::Console
+            Command::Page | Command::Dom | Command::Open | Command::Wait | Command::Console
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, and console.",
-            "Run lantern page --target-id <CDP_TARGET_ID>, lantern dom --target-id <CDP_TARGET_ID>, lantern open --target-id <CDP_TARGET_ID> <URL>, or lantern console --target-id <CDP_TARGET_ID>.",
+            "--target-id is only supported by page, dom, open, wait, and console.",
+            "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
+        ));
+    }
+
+    if command != Command::Wait && invocation.has_wait_flags() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Wait flags are only supported by wait.",
+            "Run lantern wait <ready|url|selector|text|quiet> with wait-specific flags.",
+        ));
+    }
+
+    if command == Command::Wait && invocation.wait_kind.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing wait condition.",
+            "Run lantern wait <ready|url|selector|text|quiet> with --timeout-ms.",
         ));
     }
 
@@ -108,6 +130,13 @@ fn run(
         invocation.no_redact,
         invocation.target_id,
         invocation.open_url,
+        invocation.wait_kind,
+        invocation.timeout_ms,
+        invocation.wait_state,
+        invocation.wait_url_shape,
+        invocation.wait_selector,
+        invocation.wait_text,
+        invocation.quiet_ms,
     )
 }
 
@@ -118,6 +147,13 @@ fn run_command(
     no_redact: bool,
     target_id: Option<String>,
     open_url: Option<String>,
+    wait_kind: Option<WaitConditionName>,
+    timeout_ms: Option<u64>,
+    wait_state: Option<String>,
+    wait_url_shape: Option<String>,
+    wait_selector: Option<String>,
+    wait_text: Option<String>,
+    quiet_ms: Option<u64>,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -171,6 +207,32 @@ fn run_command(
             .map_err(|error| CliError::from_navigation(error, json))?;
             write_open(output, json)?;
         }
+        Command::Wait => {
+            let condition = build_wait_condition(
+                wait_kind.expect("wait kind checked before endpoint"),
+                wait_state,
+                wait_url_shape,
+                wait_selector,
+                wait_text,
+                quiet_ms,
+                timeout_ms,
+                json,
+            )?;
+            let timeout_ms = timeout_ms.expect("wait timeout checked with condition");
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = wait_for_condition(
+                &page,
+                condition,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_wait(error, json))?;
+            write_wait(output, json)?;
+        }
         Command::Console => {
             let targets = client
                 .targets()
@@ -184,6 +246,113 @@ fn run_command(
     }
 
     Ok(())
+}
+
+fn build_wait_condition(
+    wait_kind: WaitConditionName,
+    wait_state: Option<String>,
+    wait_url_shape: Option<String>,
+    wait_selector: Option<String>,
+    wait_text: Option<String>,
+    quiet_ms: Option<u64>,
+    timeout_ms: Option<u64>,
+    json: bool,
+) -> Result<WaitCondition, CliError> {
+    let timeout_ms = timeout_ms.ok_or_else(|| {
+        CliError::usage(
+            json,
+            "Missing --timeout-ms for wait.",
+            "Run lantern wait <condition> --timeout-ms <MS>.",
+        )
+    })?;
+    validate_wait_timeout(timeout_ms, None, json)?;
+
+    match wait_kind {
+        WaitConditionName::Ready => {
+            let state = match wait_state.as_deref() {
+                Some(value) => ReadyState::parse(value).ok_or_else(|| {
+                    CliError::usage(
+                        json,
+                        "Invalid ready state.",
+                        "Use --state loading, --state interactive, or --state complete.",
+                    )
+                })?,
+                None => ReadyState::Complete,
+            };
+            Ok(WaitCondition::Ready { state })
+        }
+        WaitConditionName::Url => {
+            let expected_url_shape = wait_url_shape.ok_or_else(|| {
+                CliError::usage(
+                    json,
+                    "Missing --url-shape for wait url.",
+                    "Run lantern wait url --url-shape <URL_SHAPE> --timeout-ms <MS>.",
+                )
+            })?;
+            Ok(WaitCondition::Url { expected_url_shape })
+        }
+        WaitConditionName::Selector => {
+            let selector = wait_selector.ok_or_else(|| {
+                CliError::usage(
+                    json,
+                    "Missing --selector for wait selector.",
+                    "Run lantern wait selector --selector <CSS_SELECTOR> --timeout-ms <MS>.",
+                )
+            })?;
+            Ok(WaitCondition::Selector { selector })
+        }
+        WaitConditionName::Text => {
+            let selector = wait_selector.ok_or_else(|| {
+                CliError::usage(
+                    json,
+                    "Missing --selector for wait text.",
+                    "Run lantern wait text --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+                )
+            })?;
+            let text = wait_text.ok_or_else(|| {
+                CliError::usage(
+                    json,
+                    "Missing --text for wait text.",
+                    "Run lantern wait text --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+                )
+            })?;
+            Ok(WaitCondition::Text { selector, text })
+        }
+        WaitConditionName::Quiet => {
+            let quiet_ms = quiet_ms.ok_or_else(|| {
+                CliError::usage(
+                    json,
+                    "Missing --quiet-ms for wait quiet.",
+                    "Run lantern wait quiet --quiet-ms <MS> --timeout-ms <MS>.",
+                )
+            })?;
+            validate_wait_timeout(timeout_ms, Some(quiet_ms), json)?;
+            Ok(WaitCondition::Quiet { quiet_ms })
+        }
+    }
+}
+
+fn validate_wait_timeout(
+    timeout_ms: u64,
+    quiet_ms: Option<u64>,
+    json: bool,
+) -> Result<(), CliError> {
+    let timeout_ok = (1..=WAIT_MAX_TIMEOUT_MS).contains(&timeout_ms);
+    let quiet_ok = quiet_ms
+        .map(|quiet_ms| (1..=WAIT_MAX_TIMEOUT_MS).contains(&quiet_ms) && quiet_ms <= timeout_ms)
+        .unwrap_or(true);
+
+    if timeout_ok && quiet_ok {
+        return Ok(());
+    }
+
+    Err(CliError {
+        exit_code: 2,
+        json,
+        code: "wait_timeout_invalid",
+        message: WAIT_TIMEOUT_INVALID_MESSAGE,
+        hint: WAIT_TIMEOUT_INVALID_HINT,
+    })
 }
 
 fn write_doctor(
@@ -335,6 +504,25 @@ fn write_open(output: NavigationCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_wait(output: WaitCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "wait: {} condition={} matched={} timed_out={} elapsed_ms={} timeout_ms={} observed={}",
+        short_target_id(&output.page.target_id),
+        wait_condition_label(output.wait.condition),
+        output.wait.matched,
+        output.wait.timed_out,
+        output.wait.elapsed_ms,
+        output.wait.timeout_ms,
+        wait_observed_human(&output.wait.observed)
+    );
+    Ok(())
+}
+
 fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliError> {
     if json {
         write_json(&output)?;
@@ -356,6 +544,46 @@ fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliErro
     }
 
     Ok(())
+}
+
+fn wait_condition_label(condition: WaitConditionName) -> &'static str {
+    match condition {
+        WaitConditionName::Ready => "ready",
+        WaitConditionName::Url => "url",
+        WaitConditionName::Selector => "selector",
+        WaitConditionName::Text => "text",
+        WaitConditionName::Quiet => "quiet",
+    }
+}
+
+fn wait_observed_human(observed: &lantern_core::wait::WaitObservedState) -> String {
+    match observed {
+        lantern_core::wait::WaitObservedState::Ready { ready_state } => ready_state
+            .as_deref()
+            .unwrap_or("ready_state=null")
+            .to_owned(),
+        lantern_core::wait::WaitObservedState::Url {
+            current_url_shape, ..
+        } => current_url_shape
+            .as_deref()
+            .unwrap_or("current_url_shape=null")
+            .to_owned(),
+        lantern_core::wait::WaitObservedState::Selector { present, .. } => {
+            format!("present={present}")
+        }
+        lantern_core::wait::WaitObservedState::Text { current_text, .. } => format!(
+            "text=\"{}\"",
+            escape_human(current_text.as_deref().unwrap_or("null"))
+        ),
+        lantern_core::wait::WaitObservedState::Quiet {
+            quiet_ms,
+            event_count,
+            last_event,
+        } => format!(
+            "quiet_ms={quiet_ms} events={event_count} last_event={}",
+            last_event.as_deref().unwrap_or("null")
+        ),
+    }
 }
 
 fn write_console_entry(entry: &ConsoleEntry) {
@@ -492,7 +720,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|console> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, open, and console\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, and console\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -504,6 +732,13 @@ struct Invocation {
     no_redact: bool,
     target_id: Option<String>,
     open_url: Option<String>,
+    wait_kind: Option<WaitConditionName>,
+    timeout_ms: Option<u64>,
+    wait_state: Option<String>,
+    wait_url_shape: Option<String>,
+    wait_selector: Option<String>,
+    wait_text: Option<String>,
+    quiet_ms: Option<u64>,
     help: bool,
     version: bool,
 }
@@ -570,6 +805,16 @@ struct PageOutput {
 }
 
 impl Invocation {
+    fn has_wait_flags(&self) -> bool {
+        self.wait_kind.is_some()
+            || self.timeout_ms.is_some()
+            || self.wait_state.is_some()
+            || self.wait_url_shape.is_some()
+            || self.wait_selector.is_some()
+            || self.wait_text.is_some()
+            || self.quiet_ms.is_some()
+    }
+
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
         let mut invocation = Self {
             command: None,
@@ -578,6 +823,13 @@ impl Invocation {
             no_redact: false,
             target_id: None,
             open_url: None,
+            wait_kind: None,
+            timeout_ms: None,
+            wait_state: None,
+            wait_url_shape: None,
+            wait_selector: None,
+            wait_text: None,
+            quiet_ms: None,
             help: false,
             version: false,
         };
@@ -609,7 +861,67 @@ impl Invocation {
                     };
                     invocation.target_id = Some(target_id);
                 }
-                "doctor" | "targets" | "page" | "dom" | "open" | "console" => {
+                "--timeout-ms" => {
+                    let Some(timeout_ms) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --timeout-ms.",
+                            "Pass --timeout-ms from 1 through 30000.",
+                        ));
+                    };
+                    invocation.timeout_ms = Some(parse_wait_millis(&timeout_ms, invocation.json)?);
+                }
+                "--state" => {
+                    let Some(state) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --state.",
+                            "Use --state loading, --state interactive, or --state complete.",
+                        ));
+                    };
+                    invocation.wait_state = Some(state);
+                }
+                "--url-shape" => {
+                    let Some(url_shape) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --url-shape.",
+                            "Pass the URL shape to wait for.",
+                        ));
+                    };
+                    invocation.wait_url_shape = Some(url_shape);
+                }
+                "--selector" => {
+                    let Some(selector) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --selector.",
+                            "Pass a CSS selector.",
+                        ));
+                    };
+                    invocation.wait_selector = Some(selector);
+                }
+                "--text" => {
+                    let Some(text) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --text.",
+                            "Pass text to wait for.",
+                        ));
+                    };
+                    invocation.wait_text = Some(text);
+                }
+                "--quiet-ms" => {
+                    let Some(quiet_ms) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --quiet-ms.",
+                            "Pass --quiet-ms from 1 through 30000.",
+                        ));
+                    };
+                    invocation.quiet_ms = Some(parse_wait_millis(&quiet_ms, invocation.json)?);
+                }
+                "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -636,6 +948,18 @@ impl Invocation {
                         "Run lantern open with exactly one URL.",
                     ));
                 }
+                _ if invocation.command == Some(Command::Wait)
+                    && invocation.wait_kind.is_none() =>
+                {
+                    invocation.wait_kind = Some(parse_wait_condition(&arg, invocation.json)?);
+                }
+                _ if invocation.command == Some(Command::Wait) => {
+                    return Err(CliError::usage(
+                        invocation.json,
+                        "Multiple wait conditions provided.",
+                        "Run lantern wait with exactly one condition.",
+                    ));
+                }
                 _ => {
                     return Err(CliError::usage(
                         invocation.json,
@@ -650,6 +974,31 @@ impl Invocation {
     }
 }
 
+fn parse_wait_millis(value: &str, json: bool) -> Result<u64, CliError> {
+    value.parse::<u64>().map_err(|_| CliError {
+        exit_code: 2,
+        json,
+        code: "wait_timeout_invalid",
+        message: WAIT_TIMEOUT_INVALID_MESSAGE,
+        hint: WAIT_TIMEOUT_INVALID_HINT,
+    })
+}
+
+fn parse_wait_condition(value: &str, json: bool) -> Result<WaitConditionName, CliError> {
+    match value {
+        "ready" => Ok(WaitConditionName::Ready),
+        "url" => Ok(WaitConditionName::Url),
+        "selector" => Ok(WaitConditionName::Selector),
+        "text" => Ok(WaitConditionName::Text),
+        "quiet" => Ok(WaitConditionName::Quiet),
+        _ => Err(CliError::usage(
+            json,
+            "Unknown wait condition.",
+            "Use ready, url, selector, text, or quiet.",
+        )),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Doctor,
@@ -657,6 +1006,7 @@ enum Command {
     Page,
     Dom,
     Open,
+    Wait,
     Console,
 }
 
@@ -668,6 +1018,7 @@ impl Command {
             "page" => Some(Self::Page),
             "dom" => Some(Self::Dom),
             "open" => Some(Self::Open),
+            "wait" => Some(Self::Wait),
             "console" => Some(Self::Console),
             _ => None,
         }
@@ -878,6 +1229,38 @@ impl CliError {
         }
     }
 
+    fn from_wait(error: WaitError, json: bool) -> Self {
+        match error {
+            WaitError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            WaitError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            WaitError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            WaitError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            WaitError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
     fn write_stderr(&self) {
         if self.json {
             let error = ErrorOutput {
@@ -948,6 +1331,27 @@ mod tests {
 
         assert_eq!(invocation.command, Some(Command::Page));
         assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
+    }
+
+    #[test]
+    fn parses_wait_condition_and_timeout_flags() {
+        let invocation = Invocation::parse([
+            "wait".to_string(),
+            "text".to_string(),
+            "--selector".to_string(),
+            "main".to_string(),
+            "--text".to_string(),
+            "Ready".to_string(),
+            "--timeout-ms".to_string(),
+            "5000".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Wait));
+        assert_eq!(invocation.wait_kind, Some(WaitConditionName::Text));
+        assert_eq!(invocation.wait_selector.as_deref(), Some("main"));
+        assert_eq!(invocation.wait_text.as_deref(), Some("Ready"));
+        assert_eq!(invocation.timeout_ms, Some(5000));
     }
 
     #[test]
