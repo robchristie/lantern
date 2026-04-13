@@ -35,15 +35,21 @@ Greenfield projects stall when the repo has no docs contract, no clear milestone
 
 ### Slice 1: Assumption Review
 
+Status: pending
+
 - confirm the generated product spec and architecture assumptions
 - correct only the parts that are materially wrong
 
 ### Slice 2: Core Foundations
 
+Status: pending
+
 - implement domain types and persistence boundaries
 - keep the first slice aligned to the first milestone
 
 ### Slice 3: First End-to-End Flow
+
+Status: pending
 
 - deliver one usable `cli` workflow
 - validate it with a small smoke path
