@@ -427,4 +427,44 @@ mod tests {
         assert_eq!(result["targetInfo"]["targetId"], "ABC");
         handle.join().expect("fixture should finish");
     }
+
+    #[test]
+    fn websocket_client_returns_command_error_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+            let message = socket
+                .read()
+                .expect("fixture should read command")
+                .into_text()
+                .expect("command should be text");
+            assert!(message.contains(r#""id":1"#));
+            assert!(message.contains(r#""method":"Runtime.evaluate""#));
+
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"error":{"code":-32601,"message":"Method not found"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write response");
+        });
+
+        let mut client = CdpWebSocket::connect(&format!("ws://{address}/devtools/page/ABC"))
+            .expect("websocket should connect");
+        let error = client
+            .call("Runtime.evaluate", None)
+            .expect_err("command should fail");
+
+        assert_eq!(
+            error,
+            CdpError::Command {
+                code: -32601,
+                message: "Method not found".to_owned(),
+            }
+        );
+        handle.join().expect("fixture should finish");
+    }
 }

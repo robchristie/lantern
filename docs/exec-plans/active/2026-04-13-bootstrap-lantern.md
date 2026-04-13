@@ -10,6 +10,7 @@ Status: active
 - 2026-04-13: defined the shared output policy for concise human output, stable JSON field ordering, URL/text redaction and truncation, and future DOM, console, network, and screenshot artifacts.
 - 2026-04-13: implemented first-milestone endpoint resolution as `--endpoint` then `LANTERN_CDP_ENDPOINT`, with local HTTP validation and contract-compatible `endpoint_missing`/`endpoint_invalid` CLI errors; config-file fallback remains intentionally out of scope.
 - 2026-04-13: implemented the minimal CDP transport boundary in `lantern-core`, covering `GET /json/version`, `GET /json/list`, local `ws://` command/response calls, and typed CLI consumption for `doctor`, `targets`, and the first deterministic `page` target summary.
+- 2026-04-13: added deterministic local CDP fixture tests for command-level `doctor`, `targets`, and `page` JSON output, endpoint-source discovery, browser metadata, target ordering, default redaction, `--no-redact`, and WebSocket command error handling.
 
 ## Goal
 
