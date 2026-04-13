@@ -3,6 +3,7 @@ use std::{
     net::TcpListener,
     process::{Command, Output},
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use tungstenite::Message;
@@ -191,6 +192,62 @@ impl WebSocketFixture {
                         .into(),
                 ))
                 .expect("fixture should write navigate response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_console_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read runtime enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Runtime.enable response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read log enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Log.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":2,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Log.enable response");
+
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Runtime.consoleAPICalled","params":{"type":"error","args":[{"type":"string","value":"Failed token=supersecret at https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag"},{"type":"number","value":500}],"stackTrace":{"callFrames":[{"functionName":"render","url":"https://example.test/assets/app.js?build=123#main","lineNumber":42,"columnNumber":7}]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write console event");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Runtime.exceptionThrown","params":{"exceptionDetails":{"text":"Uncaught","url":"https://example.test/session/abcdef123456abcdef123456abcdef12?debug=1","lineNumber":9,"columnNumber":3,"exception":{"type":"object","subtype":"error","description":"Error: password=hunter2 from https://example.test/secret/abcdabcdabcdabcdabcdabcd?x=1"},"stackTrace":{"callFrames":[{"functionName":"boot","url":"https://example.test/session/abcdef123456abcdef123456abcdef12?debug=1","lineNumber":9,"columnNumber":3},{"functionName":"main","url":"https://example.test/main.js","lineNumber":1,"columnNumber":1}]}}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write exception event");
+            thread::sleep(Duration::from_millis(500));
         });
 
         Self {
@@ -551,6 +608,78 @@ fn dom_json_summarizes_document_and_redacts_sensitive_values() {
     );
     fixture.finish();
     websocket.finish();
+}
+
+#[test]
+fn console_json_collects_errors_and_exceptions_with_redaction() {
+    let websocket = WebSocketFixture::one_console_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "console"],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"console","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"console":{"message_count":1,"exception_count":1,"max_entries":20,"message_text_limit":500,"truncated":false,"entries":[{"sequence":1,"kind":"console","severity":"error","message":"Failed token=:redacted at https://example.test/reset/:redacted 500","source_url_shape":"https://example.test/assets/app.js","line":42,"column":7,"argument_count":2,"stack_frame_count":1},{"sequence":2,"kind":"exception","severity":"error","message":"Error: password=:redacted from https://example.test/secret/:redacted","source_url_shape":"https://example.test/session/:redacted","line":9,"column":3,"argument_count":0,"stack_frame_count":2}]}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn console_human_reports_counts_and_entries() {
+    let websocket = WebSocketFixture::one_console_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(["--endpoint", fixture.endpoint(), "console"], None);
+
+    assert_success(&output);
+    assert!(
+        stdout(&output).starts_with(
+            "console: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted messages=1 exceptions=1 truncated=false\n"
+        ),
+        "unexpected stdout: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn console_json_reports_missing_page_websocket_url() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "PAGE_ATTACHED_1234567890",
+                "type": "page",
+                "title": "Attached page",
+                "url": "https://example.test/page",
+                "attached": true
+            }
+        ]"#,
+    );
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "console"],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_websocket_missing","message":"Selected page target did not expose a WebSocket debugger URL.","hint":"Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled."}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
 }
 
 #[test]

@@ -7,6 +7,7 @@ Status: active
 - 2026-04-14: seeded this plan as the next product sequence after the bootstrap, page summary, and DOM summary work. No product code has been changed for this plan yet.
 - 2026-04-14: implemented Slice 1 explicit target selection with `--target-id` for `page` and `dom`, exact CDP page target id matching, stable not-found errors for non-page or missing ids, updated CLI contract coverage, and fixture tests for explicit selection.
 - 2026-04-14: implemented Slice 2 navigation/open with `lantern open <URL>`, exact selected page target reuse, supported `http`, `https`, and `about:blank` URLs, bounded CDP `Page.navigate` plus page-state reads, redacted JSON output, and fixture coverage for success, `--no-redact`, invalid URLs, and navigation failure.
+- 2026-04-14: implemented Slice 3 console feedback with `lantern console`, exact selected page target reuse, bounded Runtime/Log event collection, redacted and truncated console/error messages, explicit truncation metadata, and fixture coverage for JSON, human output, and missing WebSocket errors.
 
 ## Goal
 
@@ -80,7 +81,7 @@ Status: completed
 
 ### Slice 3: Console And Page Errors
 
-Status: pending
+Status: completed
 
 - collect recent console errors and page runtime exceptions from the selected page target
 - keep output bounded by count and text length

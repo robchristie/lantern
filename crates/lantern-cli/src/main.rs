@@ -2,6 +2,7 @@ use std::{env, process::ExitCode};
 
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
+    console::{ConsoleCommandOutput, ConsoleEntry, ConsoleReadError, read_console_errors},
     dom::{DomCommandOutput, DomNodeSummary, DomReadError, read_dom_summary},
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
     navigation::{
@@ -85,12 +86,15 @@ fn run(
     }
 
     if invocation.target_id.is_some()
-        && !matches!(command, Command::Page | Command::Dom | Command::Open)
+        && !matches!(
+            command,
+            Command::Page | Command::Dom | Command::Open | Command::Console
+        )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, and open.",
-            "Run lantern page --target-id <CDP_TARGET_ID>, lantern dom --target-id <CDP_TARGET_ID>, or lantern open --target-id <CDP_TARGET_ID> <URL>.",
+            "--target-id is only supported by page, dom, open, and console.",
+            "Run lantern page --target-id <CDP_TARGET_ID>, lantern dom --target-id <CDP_TARGET_ID>, lantern open --target-id <CDP_TARGET_ID> <URL>, or lantern console --target-id <CDP_TARGET_ID>.",
         ));
     }
 
@@ -166,6 +170,16 @@ fn run_command(
             )
             .map_err(|error| CliError::from_navigation(error, json))?;
             write_open(output, json)?;
+        }
+        Command::Console => {
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = read_console_errors(&page, RedactionMode::from_no_redact(no_redact))
+                .map_err(|error| CliError::from_console_read(error, json))?;
+            write_console(output, json)?;
         }
     }
 
@@ -321,6 +335,47 @@ fn write_open(output: NavigationCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "console: {} title=\"{}\" url={} messages={} exceptions={} truncated={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        output.console.message_count,
+        output.console.exception_count,
+        output.console.truncated
+    );
+
+    for entry in &output.console.entries {
+        write_console_entry(entry);
+    }
+
+    Ok(())
+}
+
+fn write_console_entry(entry: &ConsoleEntry) {
+    let location = match (&entry.source_url_shape, entry.line, entry.column) {
+        (Some(url), Some(line), Some(column)) => format!("{url}:{line}:{column}"),
+        (Some(url), Some(line), None) => format!("{url}:{line}"),
+        (Some(url), None, _) => url.clone(),
+        (None, _, _) => "source=null".to_owned(),
+    };
+    println!(
+        "{} {:?} {} args={} frames={} \"{}\"",
+        entry.sequence,
+        entry.kind,
+        location,
+        entry.argument_count,
+        entry.stack_frame_count,
+        escape_human(&entry.message)
+    );
+}
+
 fn write_dom_node(node: &DomNodeSummary, indent: usize) {
     let mut label = node.tag.clone();
     if let Some(id) = node.attributes.get("id") {
@@ -437,7 +492,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, and open\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|console> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, open, and console\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -554,7 +609,7 @@ impl Invocation {
                     };
                     invocation.target_id = Some(target_id);
                 }
-                "doctor" | "targets" | "page" | "dom" | "open" => {
+                "doctor" | "targets" | "page" | "dom" | "open" | "console" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -602,6 +657,7 @@ enum Command {
     Page,
     Dom,
     Open,
+    Console,
 }
 
 impl Command {
@@ -612,6 +668,7 @@ impl Command {
             "page" => Some(Self::Page),
             "dom" => Some(Self::Dom),
             "open" => Some(Self::Open),
+            "console" => Some(Self::Console),
             _ => None,
         }
     }
@@ -786,6 +843,38 @@ impl CliError {
                 CDP_UNHEALTHY_HINT,
             ),
             NavigationError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
+    fn from_console_read(error: ConsoleReadError, json: bool) -> Self {
+        match error {
+            ConsoleReadError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            ConsoleReadError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            ConsoleReadError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            ConsoleReadError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            ConsoleReadError::Cdp(error) => Self::from_cdp(error, json),
         }
     }
 

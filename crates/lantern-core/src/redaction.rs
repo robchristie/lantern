@@ -1,6 +1,7 @@
 use url::{Host, Url};
 
 pub const TITLE_TEXT_LIMIT: usize = 120;
+pub const CONSOLE_MESSAGE_LIMIT: usize = 500;
 pub const DOM_TEXT_LIMIT: usize = 500;
 pub const DOM_ATTRIBUTE_VALUE_LIMIT: usize = 200;
 pub const DOM_CLASS_TOKEN_LIMIT: usize = 12;
@@ -27,6 +28,16 @@ pub fn sanitize_title(value: &str, mode: RedactionMode) -> String {
 
 pub fn sanitize_dom_text(value: &str, mode: RedactionMode) -> String {
     sanitize_text(value, DOM_TEXT_LIMIT, mode)
+}
+
+pub fn sanitize_console_message(value: &str, mode: RedactionMode) -> String {
+    if mode == RedactionMode::Unredacted {
+        return sanitize_text(value, CONSOLE_MESSAGE_LIMIT, mode);
+    }
+
+    let normalized = sanitize_text(value, usize::MAX, mode);
+    let redacted = redact_sensitive_message_tokens(&redact_url_tokens(&normalized));
+    truncate_scalars(&redacted, CONSOLE_MESSAGE_LIMIT)
 }
 
 pub fn sanitize_dom_attribute(
@@ -195,6 +206,89 @@ fn sanitized_path(path: &str) -> String {
     format!("/{}", segments.join("/"))
 }
 
+fn redact_url_tokens(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(redact_url_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn redact_url_token(token: &str) -> String {
+    let prefix_len = token
+        .find(|ch: char| ch.is_ascii_alphanumeric())
+        .unwrap_or(0);
+    let suffix_len = token
+        .chars()
+        .rev()
+        .take_while(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\''))
+        .map(char::len_utf8)
+        .sum::<usize>();
+    let (prefix, rest) = token.split_at(prefix_len.min(token.len()));
+    let core_end = rest.len().saturating_sub(suffix_len);
+    let (core, suffix) = rest.split_at(core_end);
+
+    if !core.starts_with("http://") && !core.starts_with("https://") {
+        return token.to_owned();
+    }
+
+    match sanitize_url(core, RedactionMode::Redacted) {
+        Some(shape) => format!("{prefix}{shape}{suffix}"),
+        None => format!("{prefix}:redacted-url{suffix}"),
+    }
+}
+
+fn redact_sensitive_message_tokens(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|token| {
+            let lower = token.to_ascii_lowercase();
+            if contains_sensitive_assignment(&lower) {
+                redact_assignment_token(token)
+            } else {
+                token.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn contains_sensitive_assignment(lower: &str) -> bool {
+    [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "auth",
+        "session",
+        "cookie",
+        "key",
+        "jwt",
+        "credential",
+        "csrf",
+        "nonce",
+        "signature",
+    ]
+    .iter()
+    .any(|needle| {
+        lower.starts_with(&format!("{needle}="))
+            || lower.starts_with(&format!("{needle}:"))
+            || lower.contains(&format!("_{needle}="))
+            || lower.contains(&format!("-{needle}="))
+    })
+}
+
+fn redact_assignment_token(token: &str) -> String {
+    for separator in ['=', ':'] {
+        if let Some(index) = token.find(separator) {
+            let (key, _) = token.split_at(index + separator.len_utf8());
+            return format!("{key}:redacted");
+        }
+    }
+
+    ":redacted".to_owned()
+}
+
 fn is_default_port(scheme: &str, port: u16) -> bool {
     matches!(
         (scheme, port),
@@ -312,6 +406,19 @@ mod tests {
         assert_eq!(
             sanitize_dom_attribute("data-token", "secret", RedactionMode::Redacted),
             None
+        );
+    }
+
+    #[test]
+    fn console_messages_redact_urls_and_sensitive_assignments() {
+        let message = sanitize_console_message(
+            "failed https://user:pass@example.test/reset/abcdabcdabcdabcdabcdabcd?token=secret#frag token=secret",
+            RedactionMode::Redacted,
+        );
+
+        assert_eq!(
+            message,
+            "failed https://example.test/reset/:redacted token=:redacted"
         );
     }
 

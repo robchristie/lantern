@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection and selected-page navigation against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, capture screenshots, inspect console logs, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, and selected-page console feedback against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, capture screenshots, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -17,13 +17,14 @@ Implemented commands:
 - `lantern page`
 - `lantern dom`
 - `lantern open <URL>`
+- `lantern console`
 
 Reserved for future milestones and not implemented yet:
 
 - browser launch or attach lifecycle commands
 - JavaScript evaluation
 - screenshot capture
-- console and network inspection commands
+- network inspection commands
 - daemon, MCP, TUI, or web UI commands
 
 Each implemented command accepts the shared flags below. Unknown commands, unknown flags, invalid flag values, and unsupported combinations must fail with exit code `2`.
@@ -65,6 +66,7 @@ Supported commands:
 - `lantern page`
 - `lantern dom`
 - `lantern open`
+- `lantern console`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
@@ -350,6 +352,139 @@ Redaction behavior:
 - `--no-redact` may expose the full requested and final URLs for this invocation only.
 - CDP navigation error text is not included in JSON success output and is not echoed in stable error output by default.
 
+### `lantern console`
+
+Purpose: collect a bounded snapshot of recent console errors and page runtime exceptions from the selected page target.
+
+`lantern console` is not a streaming log tail. It briefly enables the CDP Runtime and Log domains for the selected target, drains immediately available error events, then exits. It does not evaluate JavaScript, serialize arbitrary object graphs, read cookies or storage, persist logs, or keep a long-running WebSocket session open.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- `Runtime.enable`
+- `Log.enable`
+- Bounded reads of `Runtime.consoleAPICalled`, `Runtime.exceptionThrown`, and `Log.entryAdded` events.
+
+Target selection:
+
+`lantern console` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern console` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Human output should include:
+
+- selected target id short form
+- selected page title, truncated by default
+- URL shape, not the full URL by default
+- console error message count
+- runtime exception count
+- explicit truncation status
+- one bounded line per entry
+
+Recommended human output shape:
+
+```text
+console: ABCD1234 title="Example" url=https://example.test/path messages=1 exceptions=1 truncated=false
+1 Console https://example.test/app.js:42:7 args=2 frames=1 "Failed to load"
+2 Exception https://example.test/app.js:9:3 args=0 frames=2 "Error: crashed"
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "console",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "console": {
+    "message_count": 1,
+    "exception_count": 1,
+    "max_entries": 20,
+    "message_text_limit": 500,
+    "truncated": false,
+    "entries": [
+      {
+        "sequence": 1,
+        "kind": "console",
+        "severity": "error",
+        "message": "Failed to load",
+        "source_url_shape": "https://example.test/app.js",
+        "line": 42,
+        "column": 7,
+        "argument_count": 2,
+        "stack_frame_count": 1
+      }
+    ]
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `console.message_count`
+- `console.exception_count`
+- `console.max_entries`
+- `console.message_text_limit`
+- `console.truncated`
+- `console.entries`
+- `console.entries[].sequence`
+- `console.entries[].kind`
+- `console.entries[].severity`
+- `console.entries[].message`
+- `console.entries[].source_url_shape`
+- `console.entries[].line`
+- `console.entries[].column`
+- `console.entries[].argument_count`
+- `console.entries[].stack_frame_count`
+
+`page.title`, `page.url_shape`, `console.entries[].source_url_shape`, `console.entries[].line`, and `console.entries[].column` may be `null` when unavailable. `console.entries` must be an array, including when empty.
+
+Console feedback bounds:
+
+- maximum entries: 20
+- message text snippets: 500 Unicode scalar values by default
+- event drain window: short and bounded; v1 does not provide a long-running streaming mode
+
+`console.truncated` must be `true` when Lantern omitted matching entries because of the entry cap or truncated any console message text because of the text limit. `message_count` and `exception_count` count emitted entries, not the full browser history.
+
+Default output follows the console policy in `docs/product-specs/output-policy.md`. In particular, `lantern console` must not emit full serialized JavaScript objects, full stack traces, full source URLs, query strings, fragments, credentials, cookie or storage values, or raw CDP payloads.
+
+Command-specific error cases:
+
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP console event response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- `source_url_shape` uses the URL shape policy by default.
+- message text is normalized, sensitive-looking assignment values are replaced with `:redacted`, URLs inside messages are converted to URL shapes, and text is truncated to 500 Unicode scalar values by default.
+- `--no-redact` may expose full URLs and untruncated console message text for this invocation only.
+- `--no-redact` does not cause Lantern to collect or print full object graphs, stack traces, cookies, local storage, or raw CDP payloads.
+
 ### `lantern dom`
 
 Purpose: summarize the selected page target's rendered DOM tree with concise, redacted, bounded node metadata useful to a coding agent.
@@ -502,8 +637,10 @@ Command-specific defaults:
 - `navigation.requested_url_shape` and `navigation.final_url_shape` use the URL shape policy for `http` and `https` URLs and preserve `about:blank`.
 - `targets[].title` and `page.title` use the page or target title limit of 120 Unicode scalar values.
 - human output may abbreviate target ids, but JSON output must preserve exact CDP target ids.
+- `console.entries[].source_url_shape` and URL-like substrings inside `console.entries[].message` use the URL shape policy by default.
+- `console.entries[].message` is normalized, sensitive-looking assignment values are redacted, and text is truncated to 500 Unicode scalar values by default.
 - `page.url_shape`, `dom.nodes[].text`, and string values under `dom.nodes[].attributes` use the URL, text, and DOM policies.
-- `--no-redact` may expose full URLs and untruncated title, text, and safe attribute fields to stdout for the current invocation only.
+- `--no-redact` may expose full URLs and untruncated title, console message, DOM text, and safe attribute fields to stdout for the current invocation only.
 - `--no-redact` must not print fields forbidden by the DOM policy and must not change persistence behavior; implemented commands do not persist browser artifacts.
 
 ## JSON Conventions

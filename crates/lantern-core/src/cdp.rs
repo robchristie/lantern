@@ -1,4 +1,5 @@
 use std::{
+    io::ErrorKind,
     net::{IpAddr, TcpStream},
     time::Duration,
 };
@@ -103,6 +104,7 @@ impl CdpWebSocket {
     }
 
     pub fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, CdpError> {
+        self.set_read_timeout(Some(Duration::from_secs(10)))?;
         let id = self.next_id;
         self.next_id += 1;
 
@@ -153,6 +155,72 @@ impl CdpWebSocket {
             return Ok(response.result.unwrap_or(Value::Null));
         }
     }
+
+    pub fn read_event(&mut self, timeout: Duration) -> Result<Option<CdpEvent>, CdpError> {
+        self.set_read_timeout(Some(timeout))?;
+
+        loop {
+            let message = match self.socket.read() {
+                Ok(message) => message,
+                Err(tungstenite::Error::Io(source))
+                    if matches!(source.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+                {
+                    return Ok(None);
+                }
+                Err(source) => {
+                    return Err(CdpError::WebSocketTransport {
+                        context: "failed to read CDP WebSocket event",
+                        source: source.to_string(),
+                    });
+                }
+            };
+
+            let Message::Text(text) = message else {
+                continue;
+            };
+
+            let inbound: CdpInboundMessage =
+                serde_json::from_str(&text).map_err(|source| CdpError::ResponseInvalid {
+                    context: "failed to parse CDP WebSocket JSON event",
+                    source: source.to_string(),
+                })?;
+
+            if inbound.id.is_some() {
+                continue;
+            }
+
+            let Some(method) = inbound.method else {
+                continue;
+            };
+
+            return Ok(Some(CdpEvent {
+                method,
+                params: inbound.params.unwrap_or(Value::Null),
+            }));
+        }
+    }
+
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> Result<(), CdpError> {
+        match self.socket.get_mut() {
+            MaybeTlsStream::Plain(stream) => {
+                stream.set_read_timeout(timeout).map_err(|source| {
+                    CdpError::WebSocketTransport {
+                        context: "failed to configure CDP WebSocket read timeout",
+                        source: source.to_string(),
+                    }
+                })?;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CdpEvent {
+    pub method: String,
+    pub params: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,6 +236,13 @@ struct CdpCommandResponse {
     id: Option<u64>,
     result: Option<Value>,
     error: Option<CdpCommandError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CdpInboundMessage {
+    id: Option<u64>,
+    method: Option<String>,
+    params: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
