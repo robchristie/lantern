@@ -78,6 +78,4 @@ Lantern gives coding agents a compact, predictable, text-first browser interface
 
 ## Open Questions
 
-- How should Lantern choose the current page target when multiple page targets are open?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?
-- Should config fallback read from a standard file path in v1, and if so what path?
