@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "lantern"
+path = "src/main.rs"
+
 [dependencies]
 lantern-core = { path = "../lantern-core" }
 lantern-storage = { path = "../lantern-storage" }

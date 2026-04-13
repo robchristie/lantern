@@ -8,6 +8,7 @@ Status: active
 - 2026-04-13: reviewed and narrowed the generated contract around the first milestone: `doctor`, `targets`, and `page` only; operator-managed Chromium/CDP lifecycle; SQLite reserved for later local state rather than required for the first inspection loop.
 - 2026-04-13: defined the first-milestone CLI contract covering implemented commands, shared flags, endpoint precedence, JSON conventions, redaction defaults, error shape, and exit codes.
 - 2026-04-13: defined the shared output policy for concise human output, stable JSON field ordering, URL/text redaction and truncation, and future DOM, console, network, and screenshot artifacts.
+- 2026-04-13: implemented first-milestone endpoint resolution as `--endpoint` then `LANTERN_CDP_ENDPOINT`, with local HTTP validation and contract-compatible `endpoint_missing`/`endpoint_invalid` CLI errors; config-file fallback remains intentionally out of scope.
 
 ## Goal
 
@@ -100,4 +101,4 @@ Status: pending
 
 - How should Lantern choose the current page target when multiple page targets are open?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?
-- Should config fallback read from a standard file path in v1, and if so what path?
+- If config fallback is added after the first milestone, which file path, precedence, and redaction behavior should the later design specify?

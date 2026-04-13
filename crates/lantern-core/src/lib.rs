@@ -1,3 +1,5 @@
+pub mod endpoint;
+
 pub const PROJECT_NAME: &str = "Lantern";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
