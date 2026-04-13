@@ -21,4 +21,3 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 ## Current Active Plans
 
 - `docs/exec-plans/active/2026-04-13-bootstrap-lantern.md`
-- `docs/exec-plans/active/2026-04-13-dom-summary-command.md`

@@ -1,6 +1,6 @@
 # ExecPlan: DOM Summary Command
 
-Status: active
+Status: completed
 
 ## Progress Notes
 
@@ -10,6 +10,7 @@ Status: active
 - 2026-04-13: completed Slice 3 by adding a page-target WebSocket DOM read path based on `DOM.getDocument`, bounded structured traversal, target WebSocket availability handling, and DOM-specific CDP error mapping. The implementation also wires `lantern dom` through the CLI so the read path and error conventions are executable ahead of broader fixture coverage.
 - 2026-04-14: started Slice 5 by adding CLI fixture coverage for successful human and JSON DOM output, page-target error cases, truncation, safe and sensitive attribute handling, URL shaping, and CDP command errors.
 - 2026-04-14: completed Slice 5 after `scripts/validate.sh fast`, focused DOM fixture tests, and full `scripts/validate.sh` passed.
+- 2026-04-14: reconciled stale Slice 4 state through the task harness. Current implementation already parses `lantern dom`, includes help text, emits concise human output and stable JSON output, wires endpoint, `--json`, and `--no-redact` handling through the shared CLI path, and is covered by the Slice 5 fixtures. Marked Slice 4 complete and closed this ExecPlan.
 
 ## Goal
 
@@ -181,7 +182,7 @@ Status: completed
 
 ### Slice 4: CLI Output
 
-Status: pending
+Status: completed
 
 - add `lantern dom` parsing and help text
 - emit concise human output
