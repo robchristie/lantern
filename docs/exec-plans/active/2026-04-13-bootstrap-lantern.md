@@ -13,6 +13,7 @@ Status: active
 - 2026-04-13: added deterministic local CDP fixture tests for command-level `doctor`, `targets`, and `page` JSON output, endpoint-source discovery, browser metadata, target ordering, default redaction, `--no-redact`, and WebSocket command error handling.
 - 2026-04-13: documented operator-owned headless Linux, container, and VNC-compatible Chromium CDP setup in `docs/headless-chromium.md`, with `lantern doctor` as the verification step and no Lantern-owned browser lifecycle.
 - 2026-04-13: created the follow-on DOM summary command ExecPlan as the next read-only command slice after `doctor`, `targets`, and `page`.
+- 2026-04-14: reconciled implementation slice status with current main: endpoint/domain types, typed CDP metadata and transport errors, dormant first-milestone storage, and fixture-tested `doctor`, `targets`, and `page` flows have landed; no product scope changed.
 
 ## Goal
 
@@ -50,14 +51,14 @@ Status: complete
 
 ### Slice 2: Core Foundations
 
-Status: pending
+Status: complete
 
 - implement domain types and keep persistence boundaries dormant unless endpoint configuration needs explicit local fallback
 - keep the first slice aligned to the first milestone
 
 ### Slice 3: First End-to-End Flow
 
-Status: pending
+Status: complete
 
 - deliver one usable `cli` workflow
 - validate it with a small smoke path
