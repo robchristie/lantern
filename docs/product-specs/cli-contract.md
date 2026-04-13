@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is read-only browser inspection against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, navigate pages, mutate page state, evaluate JavaScript, capture screenshots, inspect console logs, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection and selected-page navigation against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, capture screenshots, inspect console logs, inspect network requests, or persist browser artifacts. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -16,11 +16,11 @@ Implemented commands:
 - `lantern targets`
 - `lantern page`
 - `lantern dom`
+- `lantern open <URL>`
 
 Reserved for future milestones and not implemented yet:
 
 - browser launch or attach lifecycle commands
-- navigation and page mutation commands
 - JavaScript evaluation
 - screenshot capture
 - console and network inspection commands
@@ -64,6 +64,7 @@ Supported commands:
 
 - `lantern page`
 - `lantern dom`
+- `lantern open`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
@@ -254,6 +255,101 @@ Required JSON fields:
 
 `page.title`, `page.url_shape`, and `page.loading_state` may be `null` when unavailable.
 
+### `lantern open <URL>`
+
+Purpose: navigate the selected existing page target to an operator-supplied URL.
+
+`lantern open` does not launch Chromium, create a new page, close pages, manage profiles, or retry browser startup. It operates only on a page target that already exists in the configured local CDP endpoint.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- `Page.navigate` with the supplied URL.
+- Bounded follow-up page-state reads, such as `Page.getNavigationHistory` and a fixed `document.readyState` read, when CDP makes those values available.
+
+Allowed URL schemes:
+
+- `http://...`
+- `https://...`
+- `about:blank`
+
+The URL must be absolute. `about:` is accepted only for the exact URL `about:blank`. `file:`, `data:`, `javascript:`, `blob:`, `chrome:`, `devtools:`, relative URLs, credentials-only forms, and malformed URLs fail with exit code `2` and error code `url_invalid`.
+
+Target selection:
+
+`lantern open` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern open` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Human output should include:
+
+- selected target id short form
+- requested URL shape, not the full URL by default
+- final URL shape when available, not the full URL by default
+- loading state when available
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "open",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/old"
+  },
+  "navigation": {
+    "requested_url_shape": "https://example.test/new",
+    "final_url_shape": "https://example.test/new",
+    "loading_state": "loading"
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `navigation.requested_url_shape`
+- `navigation.final_url_shape`
+- `navigation.loading_state`
+
+`page.title`, `page.url_shape`, `navigation.final_url_shape`, and `navigation.loading_state` may be `null` when unavailable.
+
+Command-specific error cases:
+
+- invalid or unsupported requested URL: exit code `2`, error code `url_invalid`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP navigation failure: exit code `1`, error code `navigation_failed`
+- malformed CDP navigation or page-state response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- `requested_url_shape` and `final_url_shape` use the URL shape policy by default.
+- query strings, fragments, credentials, and sensitive-looking path segments are omitted or redacted by default.
+- `about:blank` is emitted as `about:blank`.
+- `--no-redact` may expose the full requested and final URLs for this invocation only.
+- CDP navigation error text is not included in JSON success output and is not echoed in stable error output by default.
+
 ### `lantern dom`
 
 Purpose: summarize the selected page target's rendered DOM tree with concise, redacted, bounded node metadata useful to a coding agent.
@@ -403,6 +499,7 @@ Command-specific defaults:
 
 - `endpoint.display` may include the local endpoint scheme, host, port, and configured path prefix, but must never include credentials, query strings, or fragments.
 - `targets[].url_shape` and `page.url_shape` use the URL shape policy.
+- `navigation.requested_url_shape` and `navigation.final_url_shape` use the URL shape policy for `http` and `https` URLs and preserve `about:blank`.
 - `targets[].title` and `page.title` use the page or target title limit of 120 Unicode scalar values.
 - human output may abbreviate target ids, but JSON output must preserve exact CDP target ids.
 - `page.url_shape`, `dom.nodes[].text`, and string values under `dom.nodes[].attributes` use the URL, text, and DOM policies.
@@ -496,9 +593,11 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page` or `lantern dom`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, or `lantern open`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom` or `lantern open`
+- `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
+- `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `interrupted`: command was interrupted
 
 ## Environment
@@ -516,5 +615,6 @@ lantern doctor --endpoint http://127.0.0.1:9222
 lantern targets --endpoint http://127.0.0.1:9222 --json
 LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
 lantern page --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890
+lantern open --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 http://localhost:5173/
 lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 ```

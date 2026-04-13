@@ -91,6 +91,114 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_navigation_response(final_url: &'static str, ready_state: &'static str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read navigate command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.navigate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            assert!(
+                message.contains(
+                    r#""url":"https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag""#
+                ),
+                "navigation fixture should send the original requested URL: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"frameId":"FRAME_123","loaderId":"LOADER_123"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write navigate response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read history command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.getNavigationHistory""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    format!(
+                        r#"{{"id":2,"result":{{"currentIndex":0,"entries":[{{"id":1,"url":"{final_url}","title":"Loaded"}}]}}}}"#
+                    )
+                    .into(),
+                ))
+                .expect("fixture should write history response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read ready state command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.evaluate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            assert!(
+                message.contains(r#""expression":"document.readyState""#),
+                "navigation fixture should only request readyState: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    format!(
+                        r#"{{"id":3,"result":{{"result":{{"type":"string","value":"{ready_state}"}}}}}}"#
+                    )
+                    .into(),
+                ))
+                .expect("fixture should write ready state response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_navigation_error() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+            let message = socket
+                .read()
+                .expect("fixture should read navigate command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.navigate""#),
+                "unexpected websocket command: {message:?}"
+            );
+
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"frameId":"FRAME_123","errorText":"net::ERR_NAME_NOT_RESOLVED"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write navigate response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -311,6 +419,120 @@ fn page_json_reports_explicit_target_id_that_is_not_a_page() {
             + "\n"
     );
     fixture.finish();
+}
+
+#[test]
+fn open_json_navigates_selected_page_and_redacts_url_shapes() {
+    let websocket = WebSocketFixture::one_navigation_response(
+        "https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        "loading",
+    );
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "open",
+            "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"open","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"navigation":{"requested_url_shape":"https://example.test/reset/:redacted","final_url_shape":"https://example.test/reset/:redacted","loading_state":"loading"}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn open_json_no_redact_preserves_requested_and_final_urls() {
+    let requested =
+        "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag";
+    let websocket = WebSocketFixture::one_navigation_response(requested, "complete");
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--no-redact",
+            "--endpoint",
+            fixture.endpoint(),
+            "open",
+            requested,
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert!(
+        stdout(&output).contains(
+            r#""requested_url_shape":"https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag","final_url_shape":"https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag""#
+        ),
+        "unexpected stdout: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn open_json_reports_invalid_navigation_url_before_cdp_websocket() {
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "open",
+            "javascript:alert(1)",
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"url_invalid","message":"Invalid navigation URL.","hint":"Pass an absolute http:// or https:// URL, or the exact URL about:blank."}}"#.to_owned()
+            + "\n"
+    );
+}
+
+#[test]
+fn open_json_reports_navigation_failure() {
+    let websocket = WebSocketFixture::one_navigation_error();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "open",
+            "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"navigation_failed","message":"Chromium failed the requested page navigation.","hint":"Check that the URL is reachable from Chromium, then retry."}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
 }
 
 #[test]

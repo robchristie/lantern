@@ -2,7 +2,7 @@
 
 This policy defines how Lantern writes human and JSON output, and how it redacts or truncates browser-derived data. It applies to first-milestone commands and to reserved future commands for DOM, console, network, and screenshot inspection.
 
-The first milestone still implements only `lantern doctor`, `lantern targets`, and `lantern page`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
+Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, and `lantern open`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
 ## Goals
 
@@ -319,4 +319,3 @@ Implementation tests should cover:
 - null handling for unavailable fields
 - concise human output that avoids raw CDP payloads
 - error output split between stdout and stderr
-

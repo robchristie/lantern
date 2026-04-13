@@ -4,6 +4,9 @@ use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
     dom::{DomCommandOutput, DomNodeSummary, DomReadError, read_dom_summary},
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
+    navigation::{
+        NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
+    },
     redaction::{RedactionMode, sanitize_title, sanitize_url},
 };
 use serde::Serialize;
@@ -33,6 +36,11 @@ const TARGET_AMBIGUOUS_HINT: &str =
 const TARGET_WEBSOCKET_MISSING_MESSAGE: &str =
     "Selected page target did not expose a WebSocket debugger URL.";
 const TARGET_WEBSOCKET_MISSING_HINT: &str = "Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled.";
+const URL_INVALID_MESSAGE: &str = "Invalid navigation URL.";
+const URL_INVALID_HINT: &str =
+    "Pass an absolute http:// or https:// URL, or the exact URL about:blank.";
+const NAVIGATION_FAILED_MESSAGE: &str = "Chromium failed the requested page navigation.";
+const NAVIGATION_FAILED_HINT: &str = "Check that the URL is reachable from Chromium, then retry.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -68,11 +76,21 @@ fn run(
         )
     })?;
 
-    if invocation.target_id.is_some() && !matches!(command, Command::Page | Command::Dom) {
+    if command == Command::Open && invocation.open_url.is_none() {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page and dom.",
-            "Run lantern page --target-id <CDP_TARGET_ID> or lantern dom --target-id <CDP_TARGET_ID>.",
+            "Missing URL for open.",
+            "Run lantern open <URL> with an absolute http:// or https:// URL, or about:blank.",
+        ));
+    }
+
+    if invocation.target_id.is_some()
+        && !matches!(command, Command::Page | Command::Dom | Command::Open)
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--target-id is only supported by page, dom, and open.",
+            "Run lantern page --target-id <CDP_TARGET_ID>, lantern dom --target-id <CDP_TARGET_ID>, or lantern open --target-id <CDP_TARGET_ID> <URL>.",
         ));
     }
 
@@ -85,6 +103,7 @@ fn run(
         invocation.json,
         invocation.no_redact,
         invocation.target_id,
+        invocation.open_url,
     )
 }
 
@@ -94,6 +113,7 @@ fn run_command(
     json: bool,
     no_redact: bool,
     target_id: Option<String>,
+    open_url: Option<String>,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -127,6 +147,25 @@ fn run_command(
             let output = read_dom_summary(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_dom_read(error, json))?;
             write_dom(output, json)?;
+        }
+        Command::Open => {
+            let requested_url = open_url
+                .as_deref()
+                .expect("open URL checked before endpoint");
+            validate_navigation_url(requested_url)
+                .map_err(|error| CliError::from_navigation(error, json))?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = navigate_page(
+                &page,
+                requested_url,
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_navigation(error, json))?;
+            write_open(output, json)?;
         }
     }
 
@@ -262,6 +301,26 @@ fn write_dom(output: DomCommandOutput, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
+fn write_open(output: NavigationCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "open: {} requested={} final={} loading={}",
+        short_target_id(&output.page.target_id),
+        output.navigation.requested_url_shape,
+        output
+            .navigation
+            .final_url_shape
+            .as_deref()
+            .unwrap_or("null"),
+        output.navigation.loading_state.as_deref().unwrap_or("null")
+    );
+    Ok(())
+}
+
 fn write_dom_node(node: &DomNodeSummary, indent: usize) {
     let mut label = node.tag.clone();
     if let Some(id) = node.attributes.get("id") {
@@ -378,7 +437,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page and dom\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page, dom, and open\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -389,6 +448,7 @@ struct Invocation {
     json: bool,
     no_redact: bool,
     target_id: Option<String>,
+    open_url: Option<String>,
     help: bool,
     version: bool,
 }
@@ -462,6 +522,7 @@ impl Invocation {
             json: false,
             no_redact: false,
             target_id: None,
+            open_url: None,
             help: false,
             version: false,
         };
@@ -493,7 +554,7 @@ impl Invocation {
                     };
                     invocation.target_id = Some(target_id);
                 }
-                "doctor" | "targets" | "page" | "dom" => {
+                "doctor" | "targets" | "page" | "dom" | "open" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -508,6 +569,16 @@ impl Invocation {
                         invocation.json,
                         "Unknown flag.",
                         "Run lantern --help for supported flags.",
+                    ));
+                }
+                _ if invocation.command == Some(Command::Open) && invocation.open_url.is_none() => {
+                    invocation.open_url = Some(arg);
+                }
+                _ if invocation.command == Some(Command::Open) => {
+                    return Err(CliError::usage(
+                        invocation.json,
+                        "Multiple URLs provided for open.",
+                        "Run lantern open with exactly one URL.",
                     ));
                 }
                 _ => {
@@ -530,6 +601,7 @@ enum Command {
     Targets,
     Page,
     Dom,
+    Open,
 }
 
 impl Command {
@@ -539,6 +611,7 @@ impl Command {
             "targets" => Some(Self::Targets),
             "page" => Some(Self::Page),
             "dom" => Some(Self::Dom),
+            "open" => Some(Self::Open),
             _ => None,
         }
     }
@@ -664,6 +737,55 @@ impl CliError {
                 CDP_UNHEALTHY_HINT,
             ),
             DomReadError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
+    fn from_navigation(error: NavigationError, json: bool) -> Self {
+        match error {
+            NavigationError::UrlInvalid => Self {
+                exit_code: 2,
+                json,
+                code: "url_invalid",
+                message: URL_INVALID_MESSAGE,
+                hint: URL_INVALID_HINT,
+            },
+            NavigationError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            NavigationError::NavigationFailed => Self::runtime(
+                json,
+                "navigation_failed",
+                NAVIGATION_FAILED_MESSAGE,
+                NAVIGATION_FAILED_HINT,
+            ),
+            NavigationError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            NavigationError::Cdp(CdpError::Command { .. }) => Self::runtime(
+                json,
+                "navigation_failed",
+                NAVIGATION_FAILED_MESSAGE,
+                NAVIGATION_FAILED_HINT,
+            ),
+            NavigationError::Cdp(CdpError::ResponseInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_response_invalid",
+                CDP_RESPONSE_INVALID_MESSAGE,
+                CDP_RESPONSE_INVALID_HINT,
+            ),
+            NavigationError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            NavigationError::Cdp(error) => Self::from_cdp(error, json),
         }
     }
 
