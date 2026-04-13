@@ -24,9 +24,12 @@ const CDP_RESPONSE_INVALID_HINT: &str =
     "Retry against a fresh Chromium DevTools endpoint or inspect /json/version and /json/list.";
 const TARGET_NOT_FOUND_MESSAGE: &str = "No page target was available.";
 const TARGET_NOT_FOUND_HINT: &str = "Open a page in the attached Chromium instance and retry.";
+const TARGET_ID_NOT_FOUND_MESSAGE: &str = "No page target matched the requested target id.";
+const TARGET_ID_NOT_FOUND_HINT: &str =
+    "Run lantern targets and pass the exact id of a page target.";
 const TARGET_AMBIGUOUS_MESSAGE: &str = "Multiple page targets matched.";
 const TARGET_AMBIGUOUS_HINT: &str =
-    "Close extra pages or leave exactly one attached page target before retrying.";
+    "Close extra pages, leave exactly one attached page target, or pass --target-id.";
 const TARGET_WEBSOCKET_MISSING_MESSAGE: &str =
     "Selected page target did not expose a WebSocket debugger URL.";
 const TARGET_WEBSOCKET_MISSING_HINT: &str = "Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled.";
@@ -65,10 +68,24 @@ fn run(
         )
     })?;
 
+    if invocation.target_id.is_some() && !matches!(command, Command::Page | Command::Dom) {
+        return Err(CliError::usage(
+            invocation.json,
+            "--target-id is only supported by page and dom.",
+            "Run lantern page --target-id <CDP_TARGET_ID> or lantern dom --target-id <CDP_TARGET_ID>.",
+        ));
+    }
+
     let endpoint = resolve_endpoint(invocation.endpoint.as_deref(), env_endpoint.as_deref())
         .map_err(|error| CliError::from_endpoint(error, invocation.json))?;
 
-    run_command(command, endpoint, invocation.json, invocation.no_redact)
+    run_command(
+        command,
+        endpoint,
+        invocation.json,
+        invocation.no_redact,
+        invocation.target_id,
+    )
 }
 
 fn run_command(
@@ -76,6 +93,7 @@ fn run_command(
     endpoint: ResolvedEndpoint,
     json: bool,
     no_redact: bool,
+    target_id: Option<String>,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -96,14 +114,16 @@ fn run_command(
             let targets = client
                 .targets()
                 .map_err(|error| CliError::from_cdp(error, json))?;
-            let page = select_page_target(targets).map_err(|error| error.with_json(json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
             write_page(page, json, no_redact)?;
         }
         Command::Dom => {
             let targets = client
                 .targets()
                 .map_err(|error| CliError::from_cdp(error, json))?;
-            let page = select_page_target(targets).map_err(|error| error.with_json(json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
             let output = read_dom_summary(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_dom_read(error, json))?;
             write_dom(output, json)?;
@@ -288,7 +308,24 @@ fn ordered_targets(mut targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     targets
 }
 
-fn select_page_target(targets: Vec<TargetInfo>) -> Result<TargetInfo, CliError> {
+fn select_page_target(
+    targets: Vec<TargetInfo>,
+    target_id: Option<&str>,
+) -> Result<TargetInfo, CliError> {
+    if let Some(target_id) = target_id {
+        return targets
+            .into_iter()
+            .find(|target| target.id == target_id && target.kind == "page")
+            .ok_or_else(|| {
+                CliError::runtime(
+                    false,
+                    "target_not_found",
+                    TARGET_ID_NOT_FOUND_MESSAGE,
+                    TARGET_ID_NOT_FOUND_HINT,
+                )
+            });
+    }
+
     let page_targets: Vec<TargetInfo> = targets
         .into_iter()
         .filter(|target| target.kind == "page")
@@ -341,7 +378,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom> [--endpoint <URL>] [--json] [--no-redact]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output\n  --target-id <ID>  Exact CDP page target id for page and dom\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -351,6 +388,7 @@ struct Invocation {
     endpoint: Option<String>,
     json: bool,
     no_redact: bool,
+    target_id: Option<String>,
     help: bool,
     version: bool,
 }
@@ -423,6 +461,7 @@ impl Invocation {
             endpoint: None,
             json: false,
             no_redact: false,
+            target_id: None,
             help: false,
             version: false,
         };
@@ -443,6 +482,16 @@ impl Invocation {
                         ));
                     };
                     invocation.endpoint = Some(endpoint);
+                }
+                "--target-id" => {
+                    let Some(target_id) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --target-id.",
+                            "Pass --target-id with the exact id from lantern targets.",
+                        ));
+                    };
+                    invocation.target_id = Some(target_id);
                 }
                 "doctor" | "targets" | "page" | "dom" => {
                     if invocation.command.is_some() {
@@ -674,6 +723,20 @@ mod tests {
             Some("http://127.0.0.1:9222")
         );
         assert!(invocation.json);
+        assert_eq!(invocation.target_id, None);
+    }
+
+    #[test]
+    fn parses_exact_target_id_selector() {
+        let invocation = Invocation::parse([
+            "page".to_string(),
+            "--target-id".to_string(),
+            "PAGE_123".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Page));
+        assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
     }
 
     #[test]
@@ -697,22 +760,58 @@ mod tests {
 
     #[test]
     fn page_selection_uses_single_attached_page_when_multiple_pages_exist() {
-        let selected = select_page_target(vec![
-            target("PAGE_A", "page", Some(false)),
-            target("PAGE_B", "page", Some(true)),
-            target("WORKER", "service_worker", Some(true)),
-        ])
+        let selected = select_page_target(
+            vec![
+                target("PAGE_A", "page", Some(false)),
+                target("PAGE_B", "page", Some(true)),
+                target("WORKER", "service_worker", Some(true)),
+            ],
+            None,
+        )
         .expect("one attached page should be selected");
 
         assert_eq!(selected.id, "PAGE_B");
     }
 
     #[test]
+    fn page_selection_uses_exact_target_id_when_provided() {
+        let selected = select_page_target(
+            vec![
+                target("PAGE_A", "page", Some(false)),
+                target("PAGE_B", "page", Some(true)),
+            ],
+            Some("PAGE_A"),
+        )
+        .expect("requested page target should be selected");
+
+        assert_eq!(selected.id, "PAGE_A");
+    }
+
+    #[test]
+    fn page_selection_rejects_exact_target_id_for_non_page_target() {
+        let error = select_page_target(
+            vec![
+                target("PAGE_A", "page", Some(true)),
+                target("WORKER", "service_worker", Some(true)),
+            ],
+            Some("WORKER"),
+        )
+        .expect_err("non-page target id should not match");
+
+        assert_eq!(error.exit_code, 1);
+        assert_eq!(error.code, "target_not_found");
+        assert_eq!(error.message, TARGET_ID_NOT_FOUND_MESSAGE);
+    }
+
+    #[test]
     fn page_selection_reports_ambiguous_pages_as_usage_error() {
-        let error = select_page_target(vec![
-            target("PAGE_A", "page", Some(false)),
-            target("PAGE_B", "page", Some(false)),
-        ])
+        let error = select_page_target(
+            vec![
+                target("PAGE_A", "page", Some(false)),
+                target("PAGE_B", "page", Some(false)),
+            ],
+            None,
+        )
         .expect_err("multiple detached pages are ambiguous");
 
         assert_eq!(error.exit_code, 2);

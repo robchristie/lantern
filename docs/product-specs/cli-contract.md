@@ -56,6 +56,17 @@ When `--no-redact` is absent, commands must avoid full URLs and other high-risk 
 
 For `lantern dom`, `--no-redact` may relax truncation and URL-shape redaction only where `docs/product-specs/output-policy.md` allows it. It must not cause Lantern to collect or print values the DOM policy forbids by design, including script contents, style contents, hidden form values, cookies, local storage, or credential-like attribute values.
 
+### `--target-id <CDP_TARGET_ID>`
+
+Selects an exact CDP page target id for commands that operate on one page target.
+
+Supported commands:
+
+- `lantern page`
+- `lantern dom`
+
+The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
+
 ### `-h`, `--help`
 
 Prints command or subcommand help and exits with code `0`.
@@ -197,12 +208,16 @@ CDP inputs:
 
 Target selection:
 
-1. If exactly one `page` target exists, select it.
-2. If multiple `page` targets exist and exactly one is attached or active according to CDP metadata, select it.
-3. If multiple candidates remain, fail with exit code `2` and tell the operator to close extra pages or use the future explicit target selector.
-4. If no `page` target exists, fail with exit code `1`.
+`lantern page` accepts `--target-id <CDP_TARGET_ID>` to select a page target by exact CDP target id.
 
-The first milestone intentionally does not define a `--target` flag. That flag should be added only when the target-selection behavior above proves insufficient.
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+The selector is intentionally named `--target-id` rather than `--target`, so later commands can distinguish CDP target ids from CSS selectors or other page selectors. The value is an exact, case-sensitive match against `targets[].id`; Lantern does not accept short target id prefixes.
 
 Human output should include:
 
@@ -253,14 +268,16 @@ Target selection:
 
 `lantern dom` uses the same page target selection behavior as `lantern page`:
 
-1. If exactly one `page` target exists, select it.
-2. If multiple `page` targets exist and exactly one is attached or active according to CDP metadata, select it.
-3. If multiple candidates remain, fail with exit code `2` and tell the operator to close extra pages or use the future explicit target selector.
-4. If no `page` target exists, fail with exit code `1`.
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
 
 After target selection, `lantern dom` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
 
-The command must not define a `--target` flag in this slice. A target selector should be added only by a later contract update that defines precedence, validation, redaction, and ambiguity behavior.
+`--target-id` uses the same exact, case-sensitive CDP target id matching as `lantern page`. It does not accept short target id prefixes.
 
 Human output should include:
 
@@ -371,6 +388,7 @@ Safe attributes by default:
 Command-specific error cases:
 
 - no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
 - ambiguous page target selection: exit code `2`, error code `target_ambiguous`
 - selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
 - invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
@@ -478,7 +496,7 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page` or `lantern dom`
+- `target_not_found`: no page target was available for `lantern page` or `lantern dom`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
 - `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`
 - `interrupted`: command was interrupted
@@ -497,5 +515,6 @@ No other environment variables are part of the first-milestone public contract.
 lantern doctor --endpoint http://127.0.0.1:9222
 lantern targets --endpoint http://127.0.0.1:9222 --json
 LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
-lantern dom --endpoint http://127.0.0.1:9222 --json
+lantern page --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890
+lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 ```

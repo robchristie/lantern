@@ -5,6 +5,7 @@ Status: active
 ## Progress Notes
 
 - 2026-04-14: seeded this plan as the next product sequence after the bootstrap, page summary, and DOM summary work. No product code has been changed for this plan yet.
+- 2026-04-14: implemented Slice 1 explicit target selection with `--target-id` for `page` and `dom`, exact CDP page target id matching, stable not-found errors for non-page or missing ids, updated CLI contract coverage, and fixture tests for explicit selection.
 
 ## Goal
 
@@ -58,7 +59,7 @@ The current implemented `page` and `dom` commands remain part of the read side o
 
 ### Slice 1: Explicit Target Selection
 
-Status: ready
+Status: completed
 
 - design a stable target selector shared by `page`, `dom`, and later feedback-loop commands
 - support selecting a page target by exact CDP target id

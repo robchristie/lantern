@@ -226,6 +226,94 @@ fn page_json_selects_single_attached_page_from_target_fixture() {
 }
 
 #[test]
+fn page_json_selects_explicit_target_id_from_multiple_pages() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "PAGE_ONE_1234567890",
+                "type": "page",
+                "title": "One",
+                "url": "https://example.test/one",
+                "attached": true
+            },
+            {
+                "id": "PAGE_TWO_1234567890",
+                "type": "page",
+                "title": "Two",
+                "url": "https://example.test/two",
+                "attached": true
+            }
+        ]"#,
+    );
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "--target-id",
+            "PAGE_TWO_1234567890",
+            "page",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"page","ok":true,"page":{"target_id":"PAGE_TWO_1234567890","title":"Two","url_shape":"https://example.test/two","loading_state":null}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+}
+
+#[test]
+fn page_json_reports_explicit_target_id_that_is_not_a_page() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "WORKER_1234567890",
+                "type": "service_worker",
+                "title": "Worker",
+                "url": "https://example.test/worker.js",
+                "attached": true
+            },
+            {
+                "id": "PAGE_ATTACHED_1234567890",
+                "type": "page",
+                "title": "Attached page",
+                "url": "https://example.test/page",
+                "attached": true
+            }
+        ]"#,
+    );
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "--target-id",
+            "WORKER_1234567890",
+            "page",
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_not_found","message":"No page target matched the requested target id.","hint":"Run lantern targets and pass the exact id of a page target."}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+}
+
+#[test]
 fn dom_json_summarizes_document_and_redacts_sensitive_values() {
     let websocket = WebSocketFixture::one_dom_response(dom_document_response());
     let fixture =
@@ -238,6 +326,57 @@ fn dom_json_summarizes_document_and_redacts_sensitive_values() {
         stdout(&output),
         r#"{"schema_version":1,"command":"dom","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"dom":{"node_count":5,"max_depth":4,"truncated":true,"nodes":[{"node_id":"n2","tag":"html","role":null,"name":null,"text":null,"attributes":{"class":"root shell"},"child_count":1,"children":[{"node_id":"n3","tag":"body","role":null,"name":null,"text":null,"attributes":{"id":"app","role":"document"},"child_count":1,"children":[{"node_id":"n5","tag":"main","role":null,"name":null,"text":"Dashboard","attributes":{"aria-label":"Main panel","data-testid":"dashboard","href":"https://example.test/reset/:redacted","name":"search","src":"https://cdn.example.test/assets/app.js","title":"Main title"},"child_count":2,"children":[{"node_id":"n7","tag":"script","role":null,"name":null,"text":null,"attributes":{},"child_count":1,"children":[]},{"node_id":"n8","tag":"section","role":null,"name":null,"text":null,"attributes":{"data-cy":"primary-section"},"child_count":1,"children":[]}]}]}]}]}}"#.to_owned()
             + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn dom_json_selects_explicit_target_id_from_multiple_pages() {
+    let websocket = WebSocketFixture::one_dom_response(dom_document_response());
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        format!(
+            r#"[
+                {{
+                    "id": "PAGE_ONE_1234567890",
+                    "type": "page",
+                    "title": "One",
+                    "url": "https://example.test/one",
+                    "attached": true
+                }},
+                {{
+                    "id": "PAGE_ATTACHED_1234567890",
+                    "type": "page",
+                    "title": "Checkout token page",
+                    "url": "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+                    "attached": true,
+                    "webSocketDebuggerUrl": "{}"
+                }}
+            ]"#,
+            websocket.url()
+        ),
+    );
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "--target-id",
+            "PAGE_ATTACHED_1234567890",
+            "dom",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert!(
+        stdout(&output).starts_with(
+            r#"{"schema_version":1,"command":"dom","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","#
+        ),
+        "unexpected stdout: {:?}",
+        stdout(&output)
     );
     fixture.finish();
     websocket.finish();
@@ -345,7 +484,7 @@ fn dom_json_reports_ambiguous_page_target() {
     assert_eq!(stdout(&output), "");
     assert_eq!(
         stderr(&output),
-        r#"{"schema_version":1,"ok":false,"error":{"code":"target_ambiguous","message":"Multiple page targets matched.","hint":"Close extra pages or leave exactly one attached page target before retrying."}}"#.to_owned()
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_ambiguous","message":"Multiple page targets matched.","hint":"Close extra pages, leave exactly one attached page target, or pass --target-id."}}"#.to_owned()
             + "\n"
     );
     fixture.finish();
