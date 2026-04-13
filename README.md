@@ -10,7 +10,7 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 
 - primary user: A technically fluent local operator using Codex or Smoogle on headless Linux.
 - primary interface: cli
-- storage model: sqlite
+- storage model: local-first; SQLite is reserved for future session/task metadata and is not required for the first browser-inspection milestone.
 - first milestone: Build a CLI core that connects to an operator-provided Chromium CDP endpoint and proves a small browser-inspection loop.
 - future interfaces reserved: tui, web ui
 

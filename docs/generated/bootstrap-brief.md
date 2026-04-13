@@ -10,7 +10,7 @@ Generated on 2026-04-13 by `smoogle init`.
 - problem statement: Agents need concise browser feedback during frontend work, but broad DevTools integrations add too much tool context, compaction pressure, and setup brittleness.
 - first milestone: Build a CLI core that connects to an operator-provided Chromium CDP endpoint and proves a small browser-inspection loop.
 - primary interface: cli
-- storage model: sqlite
+- storage model: local-first; SQLite reserved for later local task, state, and future session metadata
 - future interfaces: tui, web ui
 - capabilities: verify CDP endpoint reachability, list Chromium targets with sanitized metadata, summarize the current page target, emit concise human output, emit stable JSON output, apply redaction and truncation rules, document headless Chromium setup
 - non-goals: multi-user sync, cloud hosting, auth, MCP server in the first milestone, full DevTools replacement, browser launch or container orchestration in the CLI, cross-browser abstraction beyond Chromium CDP
@@ -39,7 +39,7 @@ Lantern is a Rust-first, local-first browser shim optimized for agentic frontend
 
 ## Product Summary
 
-Lantern exposes an opinionated, text-first CLI for inspecting and manipulating a browser during frontend development. The goal is not to reproduce all of Chrome DevTools or Playwright. The goal is to give coding agents a compact, stable interface for the common loop: open a page, inspect DOM/layout/state, read console and network errors, interact with a few elements, make a code change, and re-check.
+Lantern exposes an opinionated, text-first CLI for inspecting a browser during frontend development. The goal is not to reproduce all of Chrome DevTools, Playwright, or a full automation framework. The first useful loop is deliberately smaller: connect to an operator-owned Chromium CDP endpoint, confirm the browser is reachable, list targets, summarize one page, make a code change, and re-check.
 
 ## Primary User
 
@@ -53,21 +53,24 @@ Agentic frontend work is currently hard because agents need browser feedback, bu
 
 Lantern should be a very thin agent-native facade over CDP:
 
-- tiny command vocabulary, ideally 8-12 commands in v1
+- tiny command vocabulary, starting with three read-oriented commands in the first milestone
 - concise human output by default
 - stable JSON output with predictable field ordering for scripts and future harness/UI integration
 - aggressive truncation and redaction rules
 - text-first summaries of browser state, with screenshots as supporting artifacts rather than the primary interface
 - direct CDP usage under the hood where it helps, but internal boundaries should prevent raw CDP complexity from leaking through the CLI
 
-## Candidate V1 CLI Surface
+## Candidate CLI Surface
 
-The exact surface can evolve, but the intended shape is:
+The first milestone is limited to:
 
 - `lantern doctor`
 - `lantern targets`
-- `lantern open <url>`
 - `lantern page`
+
+Candidate future commands can evolve after the CDP inspection loop is working:
+
+- `lantern open <url>`
 - `lantern dom [selector]`
 - `lantern click <selector>`
 - `lantern type <selector> <text>`
@@ -92,6 +95,7 @@ Acceptance criteria:
 - define redaction/truncation rules for URLs, text, console messages, and future DOM/network output
 - include deterministic local HTTP/WebSocket fixture tests where practical
 - document how to run Chromium in a headless Linux/container/VNC setup, but do not own container lifecycle in the first milestone
+- do not require SQLite or other durable product storage for this inspection loop unless endpoint configuration needs an explicit local fallback
 
 ## Non-Goals For First Milestone
 
@@ -99,6 +103,7 @@ Acceptance criteria:
 - no Playwright dependency unless a later ExecPlan proves it is worth the cost
 - no full DevTools replacement
 - no provider-specific UI automation
+- no navigation commands, page interaction commands, JavaScript evaluation, DOM traversal, console summaries, or network summaries
 - no screenshots as the primary feedback path
 - no browser launch/container orchestration in the CLI
 - no persistent daemon unless later evidence shows startup cost or session state requires it
@@ -128,6 +133,7 @@ Acceptance criteria:
 - strong validation through rustfmt, cargo check/test, clippy where useful
 - minimal dependencies unless they clearly reduce protocol risk or implementation complexity
 - no hidden network dependency beyond connecting to the explicit CDP endpoint
+- SQLite is reserved for local task, state, and future session metadata; it should not store sensitive browser artifacts and is not a first-milestone prerequisite
 
 ## Harness Context
 

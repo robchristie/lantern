@@ -26,6 +26,16 @@ Build a CLI core that connects to an operator-provided Chromium CDP endpoint and
 - apply redaction and truncation rules
 - document headless Chromium setup
 
+## First-Milestone CLI Surface
+
+The first milestone is intentionally limited to browser inspection against an operator-provided Chromium CDP endpoint:
+
+- `lantern doctor`
+- `lantern targets`
+- `lantern page`
+
+Commands that navigate, mutate page state, evaluate JavaScript, collect screenshots, or inspect DOM, console, and network details are future capabilities unless a later ExecPlan explicitly pulls one into scope.
+
 ## Non-Goals
 
 - multi-user sync
@@ -35,12 +45,14 @@ Build a CLI core that connects to an operator-provided Chromium CDP endpoint and
 - full DevTools replacement
 - browser launch or container orchestration in the CLI
 - cross-browser abstraction beyond Chromium CDP
+- page interaction, navigation, screenshot capture, JavaScript evaluation, and broad DOM/console/network tooling in the first milestone
+- persistence of credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or other sensitive browser artifacts by default
 
 ## Acceptance Direction
 
 - deliver one end-to-end `cli` workflow that proves the core product loop
 - keep the first release local-first and single-user
-- prefer durable local data through `sqlite`
+- keep the first milestone usable without durable product storage; reserve SQLite for local task, state, and future session metadata once a real need appears
 
 ## Value Proposition
 
@@ -64,7 +76,6 @@ Lantern gives coding agents a compact, predictable, text-first browser interface
 
 ## Open Questions
 
-- Should SQLite be initialized in the first milestone or deferred until session and task state need durable storage?
 - How should Lantern choose the current page target when multiple page targets are open?
 - What exact URL-shape format is safe and useful enough for agent feedback?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?

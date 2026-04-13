@@ -4,7 +4,7 @@
 
 - implementation language: Rust
 - primary interface: cli
-- primary storage: sqlite
+- storage posture: local-first; SQLite is reserved for later local task, state, and session metadata rather than required for the first CDP inspection loop
 - future interfaces reserved: tui, web ui
 
 ## Why This Shape
@@ -14,8 +14,9 @@ This repo starts with a narrow shape because the hardest part of a greenfield pr
 ## Immediate Boundaries
 
 - core domain logic belongs in `lantern-core`
-- persistence belongs in `lantern-storage`
+- persistence belongs in `lantern-storage` once there is a concrete first-party state need
 - operator interaction belongs in `lantern-cli`
+- browser launch, container orchestration, and the Chromium lifecycle belong to the operator in the first milestone
 
 ## Deferred Decisions
 
@@ -23,11 +24,20 @@ This repo starts with a narrow shape because the hardest part of a greenfield pr
 - multi-user behavior
 - sync or networking
 - background services beyond what the first milestone requires
+- navigation, page mutation, screenshots, JavaScript evaluation, DOM traversal, console summaries, and network summaries
 
 ## Synthesized Rationale
 
 - architecture style: Thin Rust CLI facade over Chromium CDP with explicit boundaries between command handling, protocol transport, domain summaries, output formatting, and redaction.
-- persistence model: SQLite is reserved for local task, state, and future session metadata; v1 must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts by default.
+- persistence model: SQLite is reserved for local task, state, and future session metadata after the inspection loop proves a durable-state need; v1 must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts by default.
+
+## First-Milestone Command Boundary
+
+- `lantern doctor`
+- `lantern targets`
+- `lantern page`
+
+The first milestone should prove a read-oriented CDP inspection loop. Interaction commands and broader browser tooling are future work unless a later ExecPlan explicitly changes scope.
 
 ## Component Notes
 

@@ -5,6 +5,7 @@ Status: active
 ## Progress Notes
 
 - 2026-04-13: generated the initial docs contract, Rust workspace skeleton, validation profile scripts, and seed tasks from the bootstrap interview.
+- 2026-04-13: reviewed and narrowed the generated contract around the first milestone: `doctor`, `targets`, and `page` only; operator-managed Chromium/CDP lifecycle; SQLite reserved for later local state rather than required for the first inspection loop.
 
 ## Goal
 
@@ -18,7 +19,7 @@ Greenfield projects stall when the repo has no docs contract, no clear milestone
 
 - local-first by default
 - primary interface: cli
-- primary storage: sqlite
+- storage posture: local-first; SQLite reserved for later local task, state, and future session metadata
 - constraints: rust-first, local-first, linux-only initially, headless linux, single-user, operator-managed Chromium/CDP endpoint, minimal dependencies, no hidden network dependency beyond the explicit CDP endpoint
 
 ## Non-Goals
@@ -35,7 +36,7 @@ Greenfield projects stall when the repo has no docs contract, no clear milestone
 
 ### Slice 1: Assumption Review
 
-Status: pending
+Status: complete
 
 - confirm the generated product spec and architecture assumptions
 - correct only the parts that are materially wrong
@@ -44,7 +45,7 @@ Status: pending
 
 Status: pending
 
-- implement domain types and persistence boundaries
+- implement domain types and keep persistence boundaries dormant unless endpoint configuration needs explicit local fallback
 - keep the first slice aligned to the first milestone
 
 ### Slice 3: First End-to-End Flow
@@ -95,7 +96,6 @@ Status: pending
 
 ## Open Questions
 
-- Should SQLite be initialized in the first milestone or deferred until session and task state need durable storage?
 - How should Lantern choose the current page target when multiple page targets are open?
 - What exact URL-shape format is safe and useful enough for agent feedback?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?

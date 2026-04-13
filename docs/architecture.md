@@ -22,7 +22,7 @@
 ## Workspace Shape
 
 - `lantern-core`: domain types and business rules
-- `lantern-storage`: persistence boundary for sqlite
+- `lantern-storage`: reserved persistence boundary for SQLite-backed local task, state, and future session metadata; first-milestone CDP inspection should not require it
 - `lantern-cli`: first operator surface for the initial workflow
 
 ## Local State
@@ -30,6 +30,7 @@
 - checked-in docs define the system of record
 - local runtime state can live under `.smoogle/` while using the harness
 - product data should stay local-first by default
+- first-milestone commands should avoid durable product storage unless required for explicit operator configuration
 
 ## Near-Term Extension Points
 
@@ -40,7 +41,7 @@
 ## Synthesized Architecture
 
 - style: Thin Rust CLI facade over Chromium CDP with explicit boundaries between command handling, protocol transport, domain summaries, output formatting, and redaction.
-- persistence model: SQLite is reserved for local task, state, and future session metadata; v1 must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts by default.
+- persistence model: SQLite is reserved for local task, state, and future session metadata after the inspection loop proves it needs durable state. The first milestone should run without product persistence by default, and Lantern must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts unless a later design explicitly opts in with redaction rules.
 
 ## Core Components
 
@@ -52,6 +53,16 @@
 - redaction and truncation policy
 - output formatter
 - fixture test harness
+
+## First-Milestone Command Boundary
+
+The initial CLI contract is limited to:
+
+- `lantern doctor`: confirm the configured CDP endpoint is reachable and report browser/version metadata.
+- `lantern targets`: list Chromium targets using sanitized, bounded metadata.
+- `lantern page`: summarize one page target with title, origin or URL shape, and loading state without exposing the full URL by default.
+
+Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
 
 ## Integration Boundaries
 

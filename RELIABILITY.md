@@ -46,7 +46,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 ## Known Reliability Gaps
 
-- The generated product assumptions still need operator review.
+- The generated product assumptions have had an initial scope review, but implementation behavior is not proven yet.
 - Feature-specific tests and smoke paths have not been written yet.
 - The first milestone has not yet proven recovery and landing behavior.
 - Optional quality-sweep tools may not be installed on every machine.
