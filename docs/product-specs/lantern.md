@@ -24,7 +24,7 @@ Build a CLI core that connects to an operator-provided Chromium CDP endpoint and
 - emit concise human output
 - emit stable JSON output
 - apply redaction and truncation rules
-- document headless Chromium setup
+- document operator-owned headless, container, and VNC-compatible Chromium CDP setup in `docs/headless-chromium.md`
 
 ## First-Milestone CLI Surface
 

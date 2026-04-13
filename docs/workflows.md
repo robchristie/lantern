@@ -13,6 +13,13 @@
 2. Refine only the parts that are materially wrong.
 3. Prefer narrow end-to-end milestones over broad speculative scaffolding.
 
+## Browser Setup Loop
+
+1. Start Chromium outside Lantern using the headless, container, or VNC-compatible pattern in `docs/headless-chromium.md`.
+2. Keep CDP bound to loopback wherever possible, or publish container CDP ports to host loopback only.
+3. Verify the endpoint with `lantern doctor --endpoint http://127.0.0.1:9222`.
+4. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
+
 ## Task Review Loop
 
 1. Keep speculative or dependent work in `inbox` until it has been semantically reviewed.

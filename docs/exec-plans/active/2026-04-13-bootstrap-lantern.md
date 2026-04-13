@@ -11,6 +11,7 @@ Status: active
 - 2026-04-13: implemented first-milestone endpoint resolution as `--endpoint` then `LANTERN_CDP_ENDPOINT`, with local HTTP validation and contract-compatible `endpoint_missing`/`endpoint_invalid` CLI errors; config-file fallback remains intentionally out of scope.
 - 2026-04-13: implemented the minimal CDP transport boundary in `lantern-core`, covering `GET /json/version`, `GET /json/list`, local `ws://` command/response calls, and typed CLI consumption for `doctor`, `targets`, and the first deterministic `page` target summary.
 - 2026-04-13: added deterministic local CDP fixture tests for command-level `doctor`, `targets`, and `page` JSON output, endpoint-source discovery, browser metadata, target ordering, default redaction, `--no-redact`, and WebSocket command error handling.
+- 2026-04-13: documented operator-owned headless Linux, container, and VNC-compatible Chromium CDP setup in `docs/headless-chromium.md`, with `lantern doctor` as the verification step and no Lantern-owned browser lifecycle.
 
 ## Goal
 
@@ -95,7 +96,7 @@ Status: pending
 - `task_implement_targets` (inbox, priority 8, depends on: task_implement_cdp_transport, task_design_output_policy): Implement targets command
 - `task_implement_page` (inbox, priority 8, depends on: task_implement_targets): Implement page command
 - `task_add_fixture_tests` (inbox, priority 7, depends on: task_implement_doctor, task_implement_targets, task_implement_page): Add CDP fixture tests
-- `task_document_headless_setup` (inbox, priority 6, depends on: task_implement_doctor): Document headless setup
+- `task_document_headless_setup` (done, priority 6, depends on: task_implement_doctor): Document headless setup
 - `task_add_quality_gates` (inbox, priority 6, depends on: task_add_fixture_tests): Add quality gates
 - `task_write_next_execplan` (inbox, priority 5, depends on: task_add_quality_gates, task_document_headless_setup): Write next ExecPlan
 

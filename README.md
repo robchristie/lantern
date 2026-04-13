@@ -22,6 +22,7 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 - `QUALITY_SCORE.md`, `RELIABILITY.md`, `SECURITY.md`: current scorecards and safety contracts
 - `smoogle.toml`: checked-in harness defaults and operation profiles
 - `docs/architecture.md`: detailed architecture
+- `docs/headless-chromium.md`: operator-owned Chromium, container, and VNC-compatible CDP setup
 - `docs/product-specs/lantern.md`: generated product spec
 - `docs/product-specs/cli-contract.md`: first-milestone CLI contract
 - `docs/product-specs/output-policy.md`: shared output, JSON ordering, redaction, and truncation policy
@@ -32,5 +33,6 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 1. Read the generated docs contract before changing code.
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.
-4. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-5. Build the first milestone in bounded steps rather than broad scaffolding.
+4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`.
+5. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+6. Build the first milestone in bounded steps rather than broad scaffolding.

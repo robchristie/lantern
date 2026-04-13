@@ -49,6 +49,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 - The generated product assumptions have had an initial scope review, but implementation behavior is not proven yet.
 - Feature-specific tests and smoke paths have not been written yet.
 - The first milestone has not yet proven recovery and landing behavior.
+- Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the matrix has not been smoke-tested across representative hosts and images yet.
 - Optional quality-sweep tools may not be installed on every machine.
 
 - Synthesized risk: CDP implementation complexity could grow beyond the intended tiny command vocabulary.; Redaction mistakes could leak sensitive URLs, storage data, DOM content, or screenshots.; Headless Linux and container setups may vary enough to make endpoint diagnostics brittle.; Stable JSON contracts may be difficult to preserve if early command shapes are underspecified.; Minimal dependency choices could increase protocol maintenance burden.
