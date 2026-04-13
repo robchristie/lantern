@@ -7,6 +7,14 @@ kind = "smoogle"
 command = "laneway-cli"
 db = ".smoogle/laneway.db"
 
+[operator]
+follow_next = true
+max_steps = 6
+run_limit = 20
+queue_limit = 10
+allow_landing = true
+review_before_landing = true
+
 [defaults]
 reasoning_effort = "medium"
 web_search = "disabled"
