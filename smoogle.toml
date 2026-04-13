@@ -28,6 +28,7 @@ commit = true
 
 [profiles.queue]
 reasoning_effort = "medium"
+sandbox_mode = "danger-full-access"
 commit = true
 worktree_cleanup = "landed-clean"
 branch_cleanup = "landed-merged"
@@ -45,6 +46,6 @@ landing_policy = "manual"
 [profiles.review]
 reasoning_effort = "high"
 web_search = "disabled"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 max_idle_seconds = 300
 landing_policy = "manual"
