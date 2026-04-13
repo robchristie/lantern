@@ -18,6 +18,7 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 - Put non-blocking findings in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
 - Run `smoogle docs check` after changing scorecards, ExecPlan links, prompt templates, or core docs structure. In Codex child runs, use the injected `smoogle` shim or `"$SMOOGLE_BIN" docs check` fallback.
 
-## Current Active Plan
+## Current Active Plans
 
 - `docs/exec-plans/active/2026-04-13-bootstrap-lantern.md`
+- `docs/exec-plans/active/2026-04-13-dom-summary-command.md`

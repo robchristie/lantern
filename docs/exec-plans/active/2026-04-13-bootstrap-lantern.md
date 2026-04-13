@@ -12,6 +12,7 @@ Status: active
 - 2026-04-13: implemented the minimal CDP transport boundary in `lantern-core`, covering `GET /json/version`, `GET /json/list`, local `ws://` command/response calls, and typed CLI consumption for `doctor`, `targets`, and the first deterministic `page` target summary.
 - 2026-04-13: added deterministic local CDP fixture tests for command-level `doctor`, `targets`, and `page` JSON output, endpoint-source discovery, browser metadata, target ordering, default redaction, `--no-redact`, and WebSocket command error handling.
 - 2026-04-13: documented operator-owned headless Linux, container, and VNC-compatible Chromium CDP setup in `docs/headless-chromium.md`, with `lantern doctor` as the verification step and no Lantern-owned browser lifecycle.
+- 2026-04-13: created the follow-on DOM summary command ExecPlan as the next read-only command slice after `doctor`, `targets`, and `page`.
 
 ## Goal
 
