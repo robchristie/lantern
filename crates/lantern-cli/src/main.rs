@@ -3,9 +3,9 @@ use std::{env, process::ExitCode};
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
+    redaction::{RedactionMode, sanitize_title, sanitize_url},
 };
 use serde::Serialize;
-use url::{Host, Url};
 
 const ENDPOINT_MISSING_MESSAGE: &str = "No CDP endpoint configured.";
 const ENDPOINT_MISSING_HINT: &str =
@@ -258,137 +258,14 @@ fn select_page_target(targets: Vec<TargetInfo>) -> Result<TargetInfo, CliError> 
 }
 
 fn target_output(target: TargetInfo, no_redact: bool) -> TargetOutput {
+    let mode = RedactionMode::from_no_redact(no_redact);
     TargetOutput {
         id: target.id,
         kind: target.kind,
-        title: target.title.map(|title| sanitize_text(&title, no_redact)),
-        url_shape: target.url.and_then(|url| sanitize_url(&url, no_redact)),
+        title: target.title.map(|title| sanitize_title(&title, mode)),
+        url_shape: target.url.and_then(|url| sanitize_url(&url, mode)),
         attached: target.attached,
     }
-}
-
-fn sanitize_text(value: &str, no_redact: bool) -> String {
-    let normalized = value
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_control() && ch != '\n' && ch != '\t' {
-                ' '
-            } else {
-                ch
-            }
-        })
-        .collect::<String>();
-
-    if no_redact {
-        return normalized;
-    }
-
-    truncate_scalars(&normalized, 120)
-}
-
-fn truncate_scalars(value: &str, limit: usize) -> String {
-    if value.chars().count() <= limit {
-        return value.to_owned();
-    }
-
-    value.chars().take(limit).collect::<String>() + "..."
-}
-
-fn sanitize_url(value: &str, no_redact: bool) -> Option<String> {
-    if no_redact {
-        return Some(value.to_owned());
-    }
-
-    let mut url = Url::parse(value).ok()?;
-    let scheme = url.scheme().to_owned();
-    let host = display_host(url.host()?);
-    let port = url.port();
-    let path = sanitized_path(url.path());
-    url.set_username("").ok()?;
-    url.set_password(None).ok()?;
-    url.set_query(None);
-    url.set_fragment(None);
-
-    let mut output = format!("{scheme}://{host}");
-    if let Some(port) = port.filter(|port| !is_default_port(&scheme, *port)) {
-        output.push_str(&format!(":{port}"));
-    }
-    output.push_str(&path);
-    Some(output)
-}
-
-fn sanitized_path(path: &str) -> String {
-    if path.is_empty() || path == "/" {
-        return "/".to_owned();
-    }
-
-    let segments = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .scan(false, |redact_next, segment| {
-            let redact = *redact_next || is_sensitive_segment(segment);
-            *redact_next = is_sensitive_label(segment);
-            Some(if redact { ":redacted" } else { segment })
-        })
-        .collect::<Vec<_>>();
-
-    format!("/{}", segments.join("/"))
-}
-
-fn is_default_port(scheme: &str, port: u16) -> bool {
-    matches!(
-        (scheme, port),
-        ("http", 80) | ("https", 443) | ("ws", 80) | ("wss", 443)
-    )
-}
-
-fn display_host(host: Host<&str>) -> String {
-    match host {
-        Host::Domain(domain) => domain.to_owned(),
-        Host::Ipv4(addr) => addr.to_string(),
-        Host::Ipv6(addr) => format!("[{addr}]"),
-    }
-}
-
-fn is_sensitive_segment(segment: &str) -> bool {
-    segment.chars().count() > 64
-        || segment.contains('@')
-        || segment.starts_with("eyJ")
-        || is_long_hex(segment)
-        || is_long_token(segment)
-}
-
-fn is_sensitive_label(segment: &str) -> bool {
-    matches!(
-        segment.to_ascii_lowercase().as_str(),
-        "token"
-            | "key"
-            | "secret"
-            | "session"
-            | "auth"
-            | "password"
-            | "passwd"
-            | "invite"
-            | "reset"
-            | "code"
-            | "otp"
-            | "jwt"
-            | "access_token"
-            | "refresh_token"
-    )
-}
-
-fn is_long_hex(segment: &str) -> bool {
-    segment.len() >= 24 && segment.chars().all(|ch| ch.is_ascii_hexdigit())
-}
-
-fn is_long_token(segment: &str) -> bool {
-    segment.len() >= 32
-        && segment
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '=' | '+'))
 }
 
 fn short_target_id(id: &str) -> &str {
@@ -715,7 +592,7 @@ mod tests {
     fn url_shape_omits_query_and_redacts_sensitive_path_segments() {
         let url = sanitize_url(
             "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
-            false,
+            RedactionMode::Redacted,
         );
 
         assert_eq!(url.as_deref(), Some("https://example.test/reset/:redacted"));

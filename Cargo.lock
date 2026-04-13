@@ -239,7 +239,6 @@ dependencies = [
  "lantern-storage",
  "serde",
  "serde_json",
- "url",
 ]
 
 [[package]]

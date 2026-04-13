@@ -1,5 +1,7 @@
 pub mod cdp;
+pub mod dom;
 pub mod endpoint;
+pub mod redaction;
 
 pub const PROJECT_NAME: &str = "Lantern";
 

@@ -6,6 +6,7 @@ Status: active
 
 - 2026-04-13: created as the first follow-on command slice after the initial `doctor`, `targets`, and `page` inspection surface.
 - 2026-04-13: completed Slice 1 by updating `docs/product-specs/cli-contract.md` with the `lantern dom` command contract, including bounded human/JSON output, page target selection, and command-specific error cases.
+- 2026-04-13: completed Slice 2 by adding typed DOM summary serialization types in `lantern-core` and moving browser-derived text, URL, and DOM attribute sanitization into a reusable core redaction policy.
 
 ## Goal
 
@@ -160,7 +161,7 @@ Status: completed
 
 ### Slice 2: Domain Summary Types
 
-Status: pending
+Status: completed
 
 - add DOM summary structs in the appropriate Rust boundary
 - keep browser-derived redaction and truncation logic reusable rather than duplicating ad hoc output code
