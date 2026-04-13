@@ -7,6 +7,7 @@ Status: active
 - 2026-04-13: generated the initial docs contract, Rust workspace skeleton, validation profile scripts, and seed tasks from the bootstrap interview.
 - 2026-04-13: reviewed and narrowed the generated contract around the first milestone: `doctor`, `targets`, and `page` only; operator-managed Chromium/CDP lifecycle; SQLite reserved for later local state rather than required for the first inspection loop.
 - 2026-04-13: defined the first-milestone CLI contract covering implemented commands, shared flags, endpoint precedence, JSON conventions, redaction defaults, error shape, and exit codes.
+- 2026-04-13: defined the shared output policy for concise human output, stable JSON field ordering, URL/text redaction and truncation, and future DOM, console, network, and screenshot artifacts.
 
 ## Goal
 
@@ -98,6 +99,5 @@ Status: pending
 ## Open Questions
 
 - How should Lantern choose the current page target when multiple page targets are open?
-- What exact URL-shape format is safe and useful enough for agent feedback?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?
 - Should config fallback read from a standard file path in v1, and if so what path?

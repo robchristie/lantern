@@ -24,6 +24,7 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 - `docs/architecture.md`: detailed architecture
 - `docs/product-specs/lantern.md`: generated product spec
 - `docs/product-specs/cli-contract.md`: first-milestone CLI contract
+- `docs/product-specs/output-policy.md`: shared output, JSON ordering, redaction, and truncation policy
 - `docs/exec-plans/active/2026-04-13-bootstrap-lantern.md`: current bootstrap plan
 
 ## Quick Start

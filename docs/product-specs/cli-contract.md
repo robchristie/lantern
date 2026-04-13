@@ -2,6 +2,8 @@
 
 This contract defines the first implemented Lantern command surface. It is the source of truth for `lantern-cli` until a later ExecPlan intentionally broadens the product scope.
 
+The shared human-output, JSON ordering, redaction, truncation, DOM, console, network, screenshot, persistence, and test policy lives in `docs/product-specs/output-policy.md`. This contract defines command-specific fields and first-milestone behavior.
+
 ## Scope
 
 The first milestone is read-only browser inspection against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, navigate pages, mutate page state, evaluate JavaScript, capture screenshots, inspect DOM trees, inspect console logs, inspect network requests, or persist browser artifacts in this milestone.
@@ -236,32 +238,16 @@ Required JSON fields:
 
 ## Redaction And Truncation
 
-Default output must be safe enough for routine agent transcripts.
+Default output must be safe enough for routine agent transcripts. Command implementations must follow `docs/product-specs/output-policy.md`.
 
-URL shape format:
+First-milestone command-specific defaults:
 
-- include scheme
-- include host
-- include port only when non-default
-- include path with each segment preserved only when it does not look sensitive
-- omit query strings and fragments
-- replace sensitive-looking path segments with `:redacted`
-
-Sensitive-looking path segments include:
-
-- segments longer than 64 characters
-- UUIDs
-- long hex/base64-like tokens
-- email addresses
-- segments following common sensitive labels such as `token`, `key`, `secret`, `session`, `auth`, `password`, `invite`, or `reset`
-
-Text fields:
-
-- titles default to 120 Unicode scalar values
-- longer text fields default to 500 Unicode scalar values unless a command specifies a smaller limit
-- truncation appends `...`
-
-`--no-redact` may expose full URLs and untruncated fields to stdout. It must not cause Lantern to store that data.
+- `endpoint.display` may include the local endpoint scheme, host, port, and configured path prefix, but must never include credentials, query strings, or fragments.
+- `targets[].url_shape` and `page.url_shape` use the URL shape policy.
+- `targets[].title` and `page.title` use the page or target title limit of 120 Unicode scalar values.
+- human output may abbreviate target ids, but JSON output must preserve exact CDP target ids.
+- `--no-redact` may expose full URLs and untruncated title fields to stdout for the current invocation only.
+- `--no-redact` must not change persistence behavior; first-milestone commands do not persist browser artifacts.
 
 ## JSON Conventions
 
@@ -285,6 +271,8 @@ Field ordering should remain stable in serialized output for readability:
 2. `command`
 3. `ok`
 4. command-specific payload fields
+
+Nested object field ordering, error JSON ordering, compatible-change rules, and future artifact output rules are defined in `docs/product-specs/output-policy.md`.
 
 Compatible changes:
 

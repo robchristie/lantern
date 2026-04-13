@@ -64,7 +64,7 @@ The initial CLI contract is limited to:
 
 Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
 
-The exact first-milestone command and output contract is maintained in `docs/product-specs/cli-contract.md`.
+The exact first-milestone command contract is maintained in `docs/product-specs/cli-contract.md`. Shared output formatting, JSON ordering, redaction, truncation, and future artifact rules are maintained in `docs/product-specs/output-policy.md`.
 
 ## Integration Boundaries
 

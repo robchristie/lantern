@@ -36,7 +36,7 @@ The first milestone is intentionally limited to browser inspection against an op
 
 Commands that navigate, mutate page state, evaluate JavaScript, collect screenshots, or inspect DOM, console, and network details are future capabilities unless a later ExecPlan explicitly pulls one into scope.
 
-The exact command, shared flag, endpoint resolution, JSON output, redaction, and exit-code contract lives in `docs/product-specs/cli-contract.md`.
+The exact command, shared flag, endpoint resolution, and exit-code contract lives in `docs/product-specs/cli-contract.md`. The shared human-output, stable JSON ordering, redaction, truncation, and future artifact output policy lives in `docs/product-specs/output-policy.md`.
 
 ## Non-Goals
 
@@ -79,6 +79,5 @@ Lantern gives coding agents a compact, predictable, text-first browser interface
 ## Open Questions
 
 - How should Lantern choose the current page target when multiple page targets are open?
-- What exact URL-shape format is safe and useful enough for agent feedback?
 - Which local fixture approach should be used for deterministic CDP HTTP and WebSocket tests?
 - Should config fallback read from a standard file path in v1, and if so what path?
