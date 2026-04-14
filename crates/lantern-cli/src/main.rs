@@ -8,6 +8,7 @@ use lantern_core::{
     navigation::{
         NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
     },
+    network::{NetworkCommandOutput, NetworkEntry, NetworkReadError, read_network_failures},
     redaction::{RedactionMode, sanitize_title, sanitize_url},
     screenshot::{
         SCREENSHOT_REDACTION_CAVEAT, ScreenshotCommandOutput, ScreenshotError, ScreenshotSummary,
@@ -109,12 +110,13 @@ fn run(
                 | Command::Open
                 | Command::Wait
                 | Command::Console
+                | Command::Network
                 | Command::Screenshot
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, and screenshot.",
+            "--target-id is only supported by page, dom, open, wait, console, network, and screenshot.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -277,6 +279,16 @@ fn run_command(
             let output = read_console_errors(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_console_read(error, json))?;
             write_console(output, json)?;
+        }
+        Command::Network => {
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = read_network_failures(&page, RedactionMode::from_no_redact(no_redact))
+                .map_err(|error| CliError::from_network_read(error, json))?;
+            write_network(output, json)?;
         }
         Command::Screenshot => {
             let output_path = screenshot_output
@@ -612,6 +624,31 @@ fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_network(output: NetworkCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "network: {} title=\"{}\" url={} failed={} http_errors={} observed_clean={} collection_gap={} truncated={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        output.network.failed_count,
+        output.network.http_error_count,
+        output.network.observed_clean,
+        output.network.collection_gap,
+        output.network.truncated
+    );
+
+    for entry in &output.network.entries {
+        write_network_entry(entry);
+    }
+
+    Ok(())
+}
+
 fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), CliError> {
     if json {
         write_json(&output)?;
@@ -766,6 +803,29 @@ fn write_console_entry(entry: &ConsoleEntry) {
     );
 }
 
+fn write_network_entry(entry: &NetworkEntry) {
+    println!(
+        "{} {} {} {} resource={} status={} reason={}",
+        entry.sequence,
+        network_entry_kind_label(&entry.kind),
+        entry.method.as_deref().unwrap_or("method=null"),
+        entry.url_shape.as_deref().unwrap_or("url=null"),
+        entry.resource_type.as_deref().unwrap_or("null"),
+        entry
+            .status
+            .map(|status| status.to_string())
+            .unwrap_or_else(|| "null".to_owned()),
+        entry.failure_reason.as_deref().unwrap_or("null")
+    );
+}
+
+fn network_entry_kind_label(kind: &lantern_core::network::NetworkEntryKind) -> &'static str {
+    match kind {
+        lantern_core::network::NetworkEntryKind::FailedRequest => "failed_request",
+        lantern_core::network::NetworkEntryKind::HttpErrorResponse => "http_error_response",
+    }
+}
+
 fn write_dom_node(node: &DomNodeSummary, indent: usize) {
     let mut label = node.tag.clone();
     if let Some(id) = node.attributes.get("id") {
@@ -882,7 +942,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|screenshot> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, console, and screenshot\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|screenshot> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, console, network, and screenshot\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -1102,7 +1162,7 @@ impl Invocation {
                     invocation.screenshot_output = Some(output);
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
-                "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console"
+                "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
@@ -1190,6 +1250,7 @@ enum Command {
     Open,
     Wait,
     Console,
+    Network,
     Screenshot,
 }
 
@@ -1203,6 +1264,7 @@ impl Command {
             "open" => Some(Self::Open),
             "wait" => Some(Self::Wait),
             "console" => Some(Self::Console),
+            "network" => Some(Self::Network),
             "screenshot" => Some(Self::Screenshot),
             _ => None,
         }
@@ -1413,6 +1475,38 @@ impl CliError {
         }
     }
 
+    fn from_network_read(error: NetworkReadError, json: bool) -> Self {
+        match error {
+            NetworkReadError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            NetworkReadError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            NetworkReadError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            NetworkReadError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            NetworkReadError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
     fn from_wait(error: WaitError, json: bool) -> Self {
         match error {
             WaitError::TargetWebSocketMissing => Self::runtime(
@@ -1586,6 +1680,19 @@ mod tests {
             Some("artifacts/page.png")
         );
         assert!(invocation.screenshot_overwrite);
+    }
+
+    #[test]
+    fn parses_network_command() {
+        let invocation = Invocation::parse([
+            "network".to_string(),
+            "--target-id".to_string(),
+            "PAGE_123".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Network));
+        assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
     }
 
     #[test]

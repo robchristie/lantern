@@ -10,6 +10,7 @@ Status: active
 - 2026-04-14: implemented Slice 3 console feedback with `lantern console`, exact selected page target reuse, bounded Runtime/Log event collection, redacted and truncated console/error messages, explicit truncation metadata, and fixture coverage for JSON, human output, and missing WebSocket errors.
 - 2026-04-14: implemented Slice 4 wait conditions with `lantern wait <ready|url|selector|text|quiet>`, explicit bounded `--timeout-ms`, selected target identity, elapsed time, matched/timed-out condition results, concise observed state, and fixture coverage for readiness, URL shape, selector presence, selector text, quiet-period waits, and invalid timeout bounds.
 - 2026-04-14: implemented Slice 5 screenshot capture with `lantern screenshot --output <PATH>`, explicit overwrite opt-in, current visible viewport capture through CDP, best-effort viewport dimensions, metadata-only transcript output, redaction caveats, and fixture coverage for JSON, human output, overwrite behavior, and missing WebSocket errors.
+- 2026-04-14: implemented Slice 6 network failures with `lantern network`, bounded CDP Network event collection for failed requests and HTTP error responses, redacted URL shapes, no body/header capture, explicit observed-clean and collection-gap metadata, and fixture coverage for JSON, human output, clean windows, and missing WebSocket errors.
 
 ## Goal
 
@@ -111,7 +112,7 @@ Status: completed
 
 ### Slice 6: Network Failures
 
-Status: pending
+Status: completed
 
 - report failed network requests and HTTP error responses from the selected page target
 - bound output by count, URL shape, status, method, resource type, and failure reason

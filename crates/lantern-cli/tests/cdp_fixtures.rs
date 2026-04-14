@@ -546,6 +546,91 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_network_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read network enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Network.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Network.enable response");
+
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.requestWillBeSent","params":{"requestId":"REQ_FAIL","request":{"method":"GET","url":"https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag"}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write failed request metadata");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.loadingFailed","params":{"requestId":"REQ_FAIL","type":"Fetch","errorText":"net::ERR_NAME_NOT_RESOLVED"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write loading failed event");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.requestWillBeSent","params":{"requestId":"REQ_HTTP","request":{"method":"POST","url":"https://example.test/api/save?token=secret#frag"}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write HTTP request metadata");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.responseReceived","params":{"requestId":"REQ_HTTP","type":"XHR","response":{"url":"https://example.test/api/save?token=secret#frag","status":500}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write HTTP error response event");
+            thread::sleep(Duration::from_millis(500));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_network_clean_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read network enable command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Network.enable""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write Network.enable response");
+            thread::sleep(Duration::from_millis(500));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -1186,6 +1271,137 @@ fn console_json_reports_missing_page_websocket_url() {
 
     let output = lantern(
         ["--json", "--endpoint", fixture.endpoint(), "console"],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"target_websocket_missing","message":"Selected page target did not expose a WebSocket debugger URL.","hint":"Refresh the target list, open a normal page target, or restart Chromium with remote debugging enabled."}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+}
+
+#[test]
+fn network_json_collects_failed_requests_and_http_errors_with_redaction() {
+    let websocket = WebSocketFixture::one_network_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "network"],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"network","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"network":{"failed_count":1,"http_error_count":1,"max_entries":20,"truncated":false,"observed_clean":false,"collection_gap":true,"collection_gap_reason":"events_before_network_enable_not_observed","entries":[{"sequence":1,"kind":"failed_request","request_id":"REQ_FAIL","method":"GET","url_shape":"https://example.test/reset/:redacted","resource_type":"Fetch","status":null,"failure_reason":"net::ERR_NAME_NOT_RESOLVED"},{"sequence":2,"kind":"http_error_response","request_id":"REQ_HTTP","method":"POST","url_shape":"https://example.test/api/save","resource_type":"XHR","status":500,"failure_reason":null}]}}"#.to_owned()
+            + "\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn network_json_no_redact_preserves_request_urls() {
+    let websocket = WebSocketFixture::one_network_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--no-redact",
+            "--endpoint",
+            fixture.endpoint(),
+            "network",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert!(
+        stdout(&output).contains(
+            r#""url_shape":"https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag""#
+        ),
+        "unexpected stdout: {:?}",
+        stdout(&output)
+    );
+    assert!(
+        stdout(&output)
+            .contains(r#""url_shape":"https://example.test/api/save?token=secret#frag""#),
+        "unexpected stdout: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn network_human_reports_counts_entries_and_collection_gap() {
+    let websocket = WebSocketFixture::one_network_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(["--endpoint", fixture.endpoint(), "network"], None);
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        "network: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted failed=1 http_errors=1 observed_clean=false collection_gap=true truncated=false\n1 failed_request GET https://example.test/reset/:redacted resource=Fetch status=null reason=net::ERR_NAME_NOT_RESOLVED\n2 http_error_response POST https://example.test/api/save resource=XHR status=500 reason=null\n"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn network_json_distinguishes_observed_clean_from_collection_gap() {
+    let websocket = WebSocketFixture::one_network_clean_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "network"],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["command"], "network");
+    assert_eq!(json["network"]["failed_count"], 0);
+    assert_eq!(json["network"]["http_error_count"], 0);
+    assert_eq!(json["network"]["observed_clean"], true);
+    assert_eq!(json["network"]["collection_gap"], true);
+    assert_eq!(
+        json["network"]["collection_gap_reason"],
+        "events_before_network_enable_not_observed"
+    );
+    assert_eq!(json["network"]["entries"], serde_json::json!([]));
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn network_json_reports_missing_page_websocket_url() {
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        r#"[
+            {
+                "id": "PAGE_ATTACHED_1234567890",
+                "type": "page",
+                "title": "Attached page",
+                "url": "https://example.test/page",
+                "attached": true
+            }
+        ]"#,
+    );
+
+    let output = lantern(
+        ["--json", "--endpoint", fixture.endpoint(), "network"],
         None,
     );
 

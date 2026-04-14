@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, and explicit selected-page screenshot capture against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, inspect network requests, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, and explicit selected-page screenshot capture against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -19,13 +19,14 @@ Implemented commands:
 - `lantern open <URL>`
 - `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
+- `lantern network`
 - `lantern screenshot --output <PATH>`
 
 Reserved for future milestones and not implemented yet:
 
 - browser launch or attach lifecycle commands
 - JavaScript evaluation
-- network inspection commands
+- full network inspection, HAR, request body, or response body commands
 - daemon, MCP, TUI, or web UI commands
 
 Each implemented command accepts the shared flags below. Unknown commands, unknown flags, invalid flag values, and unsupported combinations must fail with exit code `2`.
@@ -69,6 +70,7 @@ Supported commands:
 - `lantern open`
 - `lantern wait`
 - `lantern console`
+- `lantern network`
 - `lantern screenshot`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
@@ -611,6 +613,146 @@ Redaction behavior:
 - `--no-redact` may expose full URLs and untruncated console message text for this invocation only.
 - `--no-redact` does not cause Lantern to collect or print full object graphs, stack traces, cookies, local storage, or raw CDP payloads.
 
+### `lantern network`
+
+Purpose: collect a bounded snapshot of failed network requests and HTTP error responses from the selected page target.
+
+`lantern network` is not a streaming network monitor and does not produce HAR output. It briefly enables the CDP Network domain for the selected target, records request metadata observed during that bounded window, reports `Network.loadingFailed` events and `Network.responseReceived` events with status `>= 400`, then exits. It does not read request bodies, response bodies, cookies, storage, raw headers, or full CDP payloads.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- `Network.enable`
+- Bounded reads of `Network.requestWillBeSent`, `Network.responseReceived`, and `Network.loadingFailed` events.
+
+Target selection:
+
+`lantern network` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern network` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Human output should include:
+
+- selected target id short form
+- selected page title, truncated by default
+- URL shape, not the full URL by default
+- failed request count
+- HTTP error response count
+- observed-clean status
+- collection-gap status
+- explicit truncation status
+- one bounded line per entry
+
+Recommended human output shape:
+
+```text
+network: ABCD1234 title="Example" url=https://example.test/path failed=1 http_errors=1 observed_clean=false collection_gap=true truncated=false
+1 failed_request GET https://example.test/api resource=fetch status=null reason=net::ERR_FAILED
+2 http_error_response POST https://example.test/api/save resource=xhr status=500 reason=null
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "network",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "network": {
+    "failed_count": 1,
+    "http_error_count": 1,
+    "max_entries": 20,
+    "truncated": false,
+    "observed_clean": false,
+    "collection_gap": true,
+    "collection_gap_reason": "events_before_network_enable_not_observed",
+    "entries": [
+      {
+        "sequence": 1,
+        "kind": "failed_request",
+        "request_id": "1234.1",
+        "method": "GET",
+        "url_shape": "https://example.test/api",
+        "resource_type": "fetch",
+        "status": null,
+        "failure_reason": "net::ERR_FAILED"
+      }
+    ]
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `network.failed_count`
+- `network.http_error_count`
+- `network.max_entries`
+- `network.truncated`
+- `network.observed_clean`
+- `network.collection_gap`
+- `network.collection_gap_reason`
+- `network.entries`
+- `network.entries[].sequence`
+- `network.entries[].kind`
+- `network.entries[].request_id`
+- `network.entries[].method`
+- `network.entries[].url_shape`
+- `network.entries[].resource_type`
+- `network.entries[].status`
+- `network.entries[].failure_reason`
+
+`page.title`, `page.url_shape`, `network.entries[].method`, `network.entries[].url_shape`, `network.entries[].resource_type`, `network.entries[].status`, and `network.entries[].failure_reason` may be `null` when unavailable. `network.entries` must be an array, including when empty.
+
+Network feedback bounds:
+
+- maximum entries: 20
+- event drain window: short and bounded; v1 does not provide a long-running streaming mode
+- URL metadata uses URL shape by default
+- request and response bodies are never collected
+- raw headers are not collected or printed
+
+`network.truncated` must be `true` when Lantern omitted matching entries because of the entry cap. `failed_count` and `http_error_count` count emitted entries, not the full browser history.
+
+`network.observed_clean` is `true` only when the bounded collection window completes and emits no failed requests or HTTP error responses. `network.collection_gap` is `true` in v1 because CDP does not replay requests that occurred before `Network.enable`; consumers must not treat a clean result as proof that the whole page lifetime had no network failures.
+
+Default output follows the network policy in `docs/product-specs/output-policy.md`. In particular, `lantern network` must not emit full URLs, query strings, fragments, credentials, raw headers, cookies, authorization values, request bodies, response bodies, redirect chains, or raw CDP payloads.
+
+Command-specific error cases:
+
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP network event response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- `url_shape` uses the URL shape policy by default.
+- failure reasons are normalized and bounded to the short-label limit.
+- `--no-redact` may expose full request URLs in `url_shape` for this invocation only.
+- `--no-redact` does not cause Lantern to collect headers, bodies, cookies, storage, or raw CDP payloads.
+
 ### `lantern screenshot`
 
 Purpose: capture the selected page target's current visible viewport as a local PNG artifact for frontend feedback.
@@ -879,6 +1021,7 @@ Command-specific defaults:
 - `console.entries[].source_url_shape` and URL-like substrings inside `console.entries[].message` use the URL shape policy by default.
 - `console.entries[].message` is normalized, sensitive-looking assignment values are redacted, and text is truncated to 500 Unicode scalar values by default.
 - `page.url_shape`, `dom.nodes[].text`, and string values under `dom.nodes[].attributes` use the URL, text, and DOM policies.
+- `network.entries[].url_shape` uses the URL shape policy by default; failure reasons are normalized and bounded.
 - `--no-redact` may expose full URLs and untruncated title, console message, DOM text, and safe attribute fields to stdout for the current invocation only.
 - `--no-redact` must not print fields forbidden by the DOM policy and must not change persistence behavior; implemented commands do not persist browser artifacts.
 
@@ -969,9 +1112,9 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, or `lantern screenshot`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, or `lantern screenshot`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, or `lantern screenshot`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, or `lantern screenshot`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range
@@ -995,5 +1138,6 @@ lantern targets --endpoint http://127.0.0.1:9222 --json
 LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
 lantern page --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890
 lantern open --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 http://localhost:5173/
+lantern network --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 ```

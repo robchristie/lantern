@@ -3,6 +3,7 @@ pub mod console;
 pub mod dom;
 pub mod endpoint;
 pub mod navigation;
+pub mod network;
 pub mod redaction;
 pub mod screenshot;
 pub mod wait;
