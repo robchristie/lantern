@@ -82,11 +82,15 @@ pub fn navigate_page(
             source: source.to_string(),
         })?;
 
-    if response.error_text.is_some() {
+    if response
+        .error_text
+        .as_deref()
+        .is_some_and(|error_text| error_text != "net::ERR_ABORTED")
+    {
         return Err(NavigationError::NavigationFailed);
     }
 
-    let final_url_shape = navigation_history_current_url(&mut socket, mode)?;
+    let final_url_shape = navigation_history_current_url(&mut socket, mode).unwrap_or(None);
     let loading_state = document_ready_state(&mut socket).unwrap_or(None);
     let page = NavigationPageSummary {
         target_id: target.id.clone(),

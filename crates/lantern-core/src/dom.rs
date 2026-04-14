@@ -12,8 +12,42 @@ use crate::{
 };
 
 pub const DOM_SCHEMA_VERSION: u8 = 1;
-pub const DOM_MAX_DEPTH: usize = 4;
-pub const DOM_MAX_NODES: usize = 80;
+pub const DOM_DEFAULT_DEPTH: usize = 4;
+pub const DOM_DEFAULT_MAX_NODES: usize = 80;
+pub const DOM_MAX_ALLOWED_DEPTH: usize = 12;
+pub const DOM_MAX_ALLOWED_NODES: usize = 500;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomSummaryOptions {
+    pub max_depth: usize,
+    pub max_nodes: usize,
+}
+
+impl DomSummaryOptions {
+    pub fn new(max_depth: usize, max_nodes: usize) -> Option<Self> {
+        if max_depth == 0
+            || max_depth > DOM_MAX_ALLOWED_DEPTH
+            || max_nodes == 0
+            || max_nodes > DOM_MAX_ALLOWED_NODES
+        {
+            return None;
+        }
+
+        Some(Self {
+            max_depth,
+            max_nodes,
+        })
+    }
+}
+
+impl Default for DomSummaryOptions {
+    fn default() -> Self {
+        Self {
+            max_depth: DOM_DEFAULT_DEPTH,
+            max_nodes: DOM_DEFAULT_MAX_NODES,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DomCommandOutput {
@@ -104,6 +138,7 @@ impl From<CdpError> for DomReadError {
 pub fn read_dom_summary(
     target: &TargetInfo,
     mode: RedactionMode,
+    options: DomSummaryOptions,
 ) -> Result<DomCommandOutput, DomReadError> {
     let web_socket_debugger_url = target
         .web_socket_debugger_url
@@ -114,7 +149,7 @@ pub fn read_dom_summary(
     let result = socket.call(
         "DOM.getDocument",
         Some(json!({
-            "depth": DOM_MAX_DEPTH,
+            "depth": options.max_depth,
             "pierce": false
         })),
     )?;
@@ -124,7 +159,7 @@ pub fn read_dom_summary(
             source: source.to_string(),
         })?;
 
-    let mut builder = DomSummaryBuilder::new(mode);
+    let mut builder = DomSummaryBuilder::new(mode, options);
     let nodes = builder.document_nodes(&response.root);
     let dom = DomSummary::new(nodes, builder.max_emitted_depth, builder.truncated);
     let page = DomPageSummary {
@@ -160,15 +195,17 @@ struct CdpDomNode {
 
 struct DomSummaryBuilder {
     mode: RedactionMode,
+    options: DomSummaryOptions,
     emitted: usize,
     max_emitted_depth: usize,
     truncated: bool,
 }
 
 impl DomSummaryBuilder {
-    fn new(mode: RedactionMode) -> Self {
+    fn new(mode: RedactionMode, options: DomSummaryOptions) -> Self {
         Self {
             mode,
+            options,
             emitted: 0,
             max_emitted_depth: 0,
             truncated: false,
@@ -190,7 +227,7 @@ impl DomSummaryBuilder {
     }
 
     fn node_summary(&mut self, node: &CdpDomNode, depth: usize) -> Option<DomNodeSummary> {
-        if self.emitted >= DOM_MAX_NODES {
+        if self.emitted >= self.options.max_nodes {
             self.truncated = true;
             return None;
         }
@@ -215,7 +252,7 @@ impl DomSummaryBuilder {
         let child_element_count = child_elements.len();
         summary.child_count = node.child_node_count.unwrap_or(child_element_count);
 
-        if depth >= DOM_MAX_DEPTH {
+        if depth >= self.options.max_depth {
             if !child_elements.is_empty() || summary.child_count > child_elements.len() {
                 self.truncated = true;
             }
@@ -223,7 +260,7 @@ impl DomSummaryBuilder {
         }
 
         for child in child_elements {
-            if self.emitted >= DOM_MAX_NODES {
+            if self.emitted >= self.options.max_nodes {
                 self.truncated = true;
                 break;
             }
@@ -308,6 +345,18 @@ mod tests {
     use tungstenite::Message;
 
     #[test]
+    fn dom_summary_options_enforce_public_bounds() {
+        assert_eq!(
+            DomSummaryOptions::new(DOM_DEFAULT_DEPTH, DOM_DEFAULT_MAX_NODES),
+            Some(DomSummaryOptions::default())
+        );
+        assert!(DomSummaryOptions::new(0, DOM_DEFAULT_MAX_NODES).is_none());
+        assert!(DomSummaryOptions::new(DOM_MAX_ALLOWED_DEPTH + 1, DOM_DEFAULT_MAX_NODES).is_none());
+        assert!(DomSummaryOptions::new(DOM_DEFAULT_DEPTH, 0).is_none());
+        assert!(DomSummaryOptions::new(DOM_DEFAULT_DEPTH, DOM_MAX_ALLOWED_NODES + 1).is_none());
+    }
+
+    #[test]
     fn dom_command_output_serializes_in_contract_order() {
         let mut node = DomNodeSummary::new("n1", "main");
         node.attributes.insert("id".to_owned(), "app".to_owned());
@@ -335,7 +384,7 @@ mod tests {
         let mut root = DomNodeSummary::new("n1", "html");
         root.children.push(DomNodeSummary::new("n2", "body"));
 
-        let summary = DomSummary::new(vec![root], DOM_MAX_DEPTH, false);
+        let summary = DomSummary::new(vec![root], DOM_DEFAULT_DEPTH, false);
 
         assert_eq!(summary.node_count, 2);
     }
@@ -379,8 +428,13 @@ mod tests {
         )
         .expect("fixture should parse");
 
-        let mut builder = DomSummaryBuilder::new(RedactionMode::Redacted);
-        let summary = DomSummary::new(builder.document_nodes(&response.root), DOM_MAX_DEPTH, false);
+        let mut builder =
+            DomSummaryBuilder::new(RedactionMode::Redacted, DomSummaryOptions::default());
+        let summary = DomSummary::new(
+            builder.document_nodes(&response.root),
+            DOM_DEFAULT_DEPTH,
+            false,
+        );
 
         assert_eq!(summary.node_count, 3);
         assert_eq!(summary.nodes[0].tag, "html");
@@ -439,8 +493,12 @@ mod tests {
             web_socket_debugger_url: Some(format!("ws://{address}/devtools/page/PAGE")),
         };
 
-        let output =
-            read_dom_summary(&target, RedactionMode::Redacted).expect("summary should load");
+        let output = read_dom_summary(
+            &target,
+            RedactionMode::Redacted,
+            DomSummaryOptions::default(),
+        )
+        .expect("summary should load");
 
         assert_eq!(output.page.target_id, "PAGE_1234567890");
         assert_eq!(
@@ -464,8 +522,12 @@ mod tests {
             web_socket_debugger_url: None,
         };
 
-        let error = read_dom_summary(&target, RedactionMode::Redacted)
-            .expect_err("missing websocket should fail");
+        let error = read_dom_summary(
+            &target,
+            RedactionMode::Redacted,
+            DomSummaryOptions::default(),
+        )
+        .expect_err("missing websocket should fail");
 
         assert_eq!(error, DomReadError::TargetWebSocketMissing);
     }

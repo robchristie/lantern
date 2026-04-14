@@ -76,6 +76,10 @@ struct WebSocketFixture {
 
 impl WebSocketFixture {
     fn one_dom_response(body: impl Into<String>) -> Self {
+        Self::one_dom_response_with_depth(body, 4)
+    }
+
+    fn one_dom_response_with_depth(body: impl Into<String>, expected_depth: usize) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
         let body = body.into();
@@ -91,8 +95,9 @@ impl WebSocketFixture {
                 message.contains(r#""method":"DOM.getDocument""#),
                 "unexpected websocket command: {message:?}"
             );
+            let expected_depth = format!(r#""depth":{expected_depth}"#);
             assert!(
-                message.contains(r#""depth":4"#),
+                message.contains(&expected_depth),
                 "DOM fixture should request bounded depth: {message:?}"
             );
 
@@ -108,6 +113,18 @@ impl WebSocketFixture {
     }
 
     fn one_navigation_response(final_url: &'static str, ready_state: &'static str) -> Self {
+        Self::navigation_response(final_url, ready_state, None)
+    }
+
+    fn one_navigation_aborted_response(final_url: &'static str, ready_state: &'static str) -> Self {
+        Self::navigation_response(final_url, ready_state, Some("net::ERR_ABORTED"))
+    }
+
+    fn navigation_response(
+        final_url: &'static str,
+        ready_state: &'static str,
+        error_text: Option<&'static str>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
         let handle = thread::spawn(move || {
@@ -129,12 +146,15 @@ impl WebSocketFixture {
                 ),
                 "navigation fixture should send the original requested URL: {message:?}"
             );
+            let navigate_response = if let Some(error_text) = error_text {
+                format!(
+                    r#"{{"id":1,"result":{{"frameId":"FRAME_123","loaderId":"LOADER_123","errorText":"{error_text}"}}}}"#
+                )
+            } else {
+                r#"{"id":1,"result":{"frameId":"FRAME_123","loaderId":"LOADER_123"}}"#.to_owned()
+            };
             socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"frameId":"FRAME_123","loaderId":"LOADER_123"}}"#
-                        .to_owned()
-                        .into(),
-                ))
+                .send(Message::Text(navigate_response.into()))
                 .expect("fixture should write navigate response");
 
             let message = socket
@@ -174,6 +194,71 @@ impl WebSocketFixture {
                         r#"{{"id":3,"result":{{"result":{{"type":"string","value":"{ready_state}"}}}}}}"#
                     )
                     .into(),
+                ))
+                .expect("fixture should write ready state response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_navigation_history_error_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            let message = socket
+                .read()
+                .expect("fixture should read navigate command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.navigate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"frameId":"FRAME_123","loaderId":"LOADER_123"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write navigate response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read history command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Page.getNavigationHistory""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"error":{"code":-32000,"message":"Not attached to an active page"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write history error response");
+
+            let message = socket
+                .read()
+                .expect("fixture should read ready state command")
+                .into_text()
+                .expect("command should be text");
+            assert!(
+                message.contains(r#""method":"Runtime.evaluate""#),
+                "unexpected websocket command: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"result":{"type":"string","value":"complete"}}}"#
+                        .to_owned()
+                        .into(),
                 ))
                 .expect("fixture should write ready state response");
         });
@@ -1051,6 +1136,65 @@ fn open_json_navigates_selected_page_and_redacts_url_shapes() {
 }
 
 #[test]
+fn open_json_treats_aborted_navigation_as_success_when_page_state_is_readable() {
+    let websocket = WebSocketFixture::one_navigation_aborted_response(
+        "https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        "complete",
+    );
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "open",
+            "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"open","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"navigation":{"requested_url_shape":"https://example.test/reset/:redacted","final_url_shape":"https://example.test/reset/:redacted","loading_state":"complete"}}"#.to_owned()
+            + "
+"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn open_json_succeeds_when_post_navigation_history_is_unavailable() {
+    let websocket = WebSocketFixture::one_navigation_history_error_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "open",
+            "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output),
+        r#"{"schema_version":1,"command":"open","ok":true,"page":{"target_id":"PAGE_ATTACHED_1234567890","title":"Checkout token page","url_shape":"https://example.test/reset/:redacted"},"navigation":{"requested_url_shape":"https://example.test/reset/:redacted","final_url_shape":null,"loading_state":"complete"}}"#.to_owned()
+            + "
+"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
 fn open_json_no_redact_preserves_requested_and_final_urls() {
     let requested =
         "https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag";
@@ -1446,6 +1590,72 @@ fn dom_json_summarizes_document_and_redacts_sensitive_values() {
     );
     fixture.finish();
     websocket.finish();
+}
+
+#[test]
+fn dom_json_accepts_depth_and_max_nodes_flags() {
+    let websocket = WebSocketFixture::one_dom_response_with_depth(dom_document_response(), 6);
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "dom",
+            "--depth",
+            "6",
+            "--max-nodes",
+            "3",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["dom"]["node_count"], 3);
+    assert_eq!(json["dom"]["max_depth"], 3);
+    assert_eq!(json["dom"]["truncated"], true);
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn dom_json_rejects_invalid_dom_limits_before_endpoint_resolution() {
+    let output = lantern(["--json", "dom", "--depth", "13"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "dom_limit_invalid");
+    assert_eq!(json["error"]["message"], "Invalid DOM summary limit.");
+}
+
+#[test]
+fn dom_flags_are_rejected_for_non_dom_commands() {
+    let output = lantern(["--json", "page", "--depth", "6"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "usage");
+    assert_eq!(
+        json["error"]["message"],
+        "DOM limit flags are only supported by dom."
+    );
 }
 
 #[test]

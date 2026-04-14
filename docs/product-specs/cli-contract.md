@@ -1084,6 +1084,14 @@ Command-specific error cases:
 
 Purpose: summarize the selected page target's rendered DOM tree with concise, redacted, bounded node metadata useful to a coding agent.
 
+Command shape:
+
+```text
+lantern dom [--depth <N>] [--max-nodes <N>]
+```
+
+`--depth` and `--max-nodes` are DOM-only flags. Defaults keep output compact for routine agent inspection; increase them when inspecting larger dashboards or nested application shells.
+
 CDP inputs:
 
 - `GET /json/list`
@@ -1185,8 +1193,10 @@ Required JSON fields:
 
 DOM summary bounds:
 
-- maximum depth: 4
-- maximum emitted nodes: 80
+- default maximum depth: 4
+- configurable maximum depth: `--depth <N>`, accepted range 1 through 12
+- default maximum emitted nodes: 80
+- configurable maximum emitted nodes: `--max-nodes <N>`, accepted range 1 through 500
 - text snippets: 500 Unicode scalar values
 - attribute values: 200 Unicode scalar values
 - `class` attributes: at most 12 class tokens
@@ -1213,6 +1223,7 @@ Safe attributes by default:
 
 Command-specific error cases:
 
+- invalid `--depth` or `--max-nodes`: exit code `2`, error code `dom_limit_invalid`
 - no page target: exit code `1`, error code `target_not_found`
 - explicit target id did not match a page target: exit code `1`, error code `target_not_found`
 - ambiguous page target selection: exit code `2`, error code `target_ambiguous`

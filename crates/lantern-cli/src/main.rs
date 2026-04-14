@@ -3,7 +3,10 @@ use std::{env, fs, io::ErrorKind, path::Path, process::ExitCode, time::Duration}
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
     console::{ConsoleCommandOutput, ConsoleEntry, ConsoleReadError, read_console_errors},
-    dom::{DomCommandOutput, DomNodeSummary, DomReadError, read_dom_summary},
+    dom::{
+        DOM_DEFAULT_DEPTH, DOM_DEFAULT_MAX_NODES, DomCommandOutput, DomNodeSummary, DomReadError,
+        DomSummaryOptions, read_dom_summary,
+    },
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
     interaction::{
         INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
@@ -65,6 +68,9 @@ const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
 const SCREENSHOT_WRITE_FAILED_MESSAGE: &str = "Screenshot could not be written.";
 const SCREENSHOT_WRITE_FAILED_HINT: &str =
     "Check that the parent directory exists and the output path is writable.";
+const DOM_LIMIT_INVALID_MESSAGE: &str = "Invalid DOM summary limit.";
+const DOM_LIMIT_INVALID_HINT: &str =
+    "Pass --depth from 1 through 12 and --max-nodes from 1 through 500.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -177,6 +183,14 @@ fn run(
         validate_wait_flag_shape(&invocation)?;
     }
 
+    if command != Command::Dom && invocation.has_dom_flags() {
+        return Err(CliError::usage(
+            invocation.json,
+            "DOM limit flags are only supported by dom.",
+            "Run lantern dom with --depth <N> or --max-nodes <N>.",
+        ));
+    }
+
     if command != Command::Screenshot && invocation.has_screenshot_flags() {
         return Err(CliError::usage(
             invocation.json,
@@ -225,6 +239,14 @@ fn run(
         ));
     }
 
+    if command == Command::Dom {
+        build_dom_summary_options(
+            invocation.dom_depth,
+            invocation.dom_max_nodes,
+            invocation.json,
+        )?;
+    }
+
     let endpoint = resolve_endpoint(invocation.endpoint.as_deref(), env_endpoint.as_deref())
         .map_err(|error| CliError::from_endpoint(error, invocation.json))?;
 
@@ -244,6 +266,8 @@ fn run(
         invocation.quiet_ms,
         invocation.screenshot_output,
         invocation.screenshot_overwrite,
+        invocation.dom_depth,
+        invocation.dom_max_nodes,
     )
 }
 
@@ -336,6 +360,8 @@ fn run_command(
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
+    dom_depth: Option<usize>,
+    dom_max_nodes: Option<usize>,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -366,7 +392,8 @@ fn run_command(
                 .map_err(|error| CliError::from_cdp(error, json))?;
             let page = select_page_target(targets, target_id.as_deref())
                 .map_err(|error| error.with_json(json))?;
-            let output = read_dom_summary(&page, RedactionMode::from_no_redact(no_redact))
+            let options = build_dom_summary_options(dom_depth, dom_max_nodes, json)?;
+            let output = read_dom_summary(&page, RedactionMode::from_no_redact(no_redact), options)
                 .map_err(|error| CliError::from_dom_read(error, json))?;
             write_dom(output, json)?;
         }
@@ -513,6 +540,22 @@ fn run_command(
     }
 
     Ok(())
+}
+
+fn build_dom_summary_options(
+    dom_depth: Option<usize>,
+    dom_max_nodes: Option<usize>,
+    json: bool,
+) -> Result<DomSummaryOptions, CliError> {
+    let depth = dom_depth.unwrap_or(DOM_DEFAULT_DEPTH);
+    let max_nodes = dom_max_nodes.unwrap_or(DOM_DEFAULT_MAX_NODES);
+    DomSummaryOptions::new(depth, max_nodes).ok_or_else(|| CliError {
+        exit_code: 2,
+        json,
+        code: "dom_limit_invalid",
+        message: DOM_LIMIT_INVALID_MESSAGE,
+        hint: DOM_LIMIT_INVALID_HINT,
+    })
 }
 
 fn build_wait_condition(
@@ -1208,6 +1251,8 @@ struct Invocation {
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
+    dom_depth: Option<usize>,
+    dom_max_nodes: Option<usize>,
     help: bool,
     version: bool,
 }
@@ -1285,6 +1330,10 @@ impl Invocation {
         self.screenshot_output.is_some() || self.screenshot_overwrite
     }
 
+    fn has_dom_flags(&self) -> bool {
+        self.dom_depth.is_some() || self.dom_max_nodes.is_some()
+    }
+
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
         let mut invocation = Self {
             command: None,
@@ -1302,6 +1351,8 @@ impl Invocation {
             quiet_ms: None,
             screenshot_output: None,
             screenshot_overwrite: false,
+            dom_depth: None,
+            dom_max_nodes: None,
             help: false,
             version: false,
         };
@@ -1393,6 +1444,26 @@ impl Invocation {
                     };
                     invocation.quiet_ms = Some(parse_wait_millis(&quiet_ms, invocation.json)?);
                 }
+                "--depth" => {
+                    let Some(depth) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --depth.",
+                            DOM_LIMIT_INVALID_HINT,
+                        ));
+                    };
+                    invocation.dom_depth = Some(parse_dom_limit(&depth, invocation.json)?);
+                }
+                "--max-nodes" => {
+                    let Some(max_nodes) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --max-nodes.",
+                            DOM_LIMIT_INVALID_HINT,
+                        ));
+                    };
+                    invocation.dom_max_nodes = Some(parse_dom_limit(&max_nodes, invocation.json)?);
+                }
                 "--output" => {
                     let Some(output) = args.next() else {
                         return Err(CliError::usage(
@@ -1456,6 +1527,16 @@ impl Invocation {
 
         Ok(invocation)
     }
+}
+
+fn parse_dom_limit(value: &str, json: bool) -> Result<usize, CliError> {
+    value.parse::<usize>().map_err(|_| CliError {
+        exit_code: 2,
+        json,
+        code: "dom_limit_invalid",
+        message: DOM_LIMIT_INVALID_MESSAGE,
+        hint: DOM_LIMIT_INVALID_HINT,
+    })
 }
 
 fn parse_wait_millis(value: &str, json: bool) -> Result<u64, CliError> {
@@ -1940,6 +2021,22 @@ mod tests {
         assert_eq!(invocation.wait_selector.as_deref(), Some("main"));
         assert_eq!(invocation.wait_text.as_deref(), Some("Ready"));
         assert_eq!(invocation.timeout_ms, Some(5000));
+    }
+
+    #[test]
+    fn parses_dom_depth_and_node_limit_flags() {
+        let invocation = Invocation::parse([
+            "dom".to_string(),
+            "--depth".to_string(),
+            "8".to_string(),
+            "--max-nodes".to_string(),
+            "200".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Dom));
+        assert_eq!(invocation.dom_depth, Some(8));
+        assert_eq!(invocation.dom_max_nodes, Some(200));
     }
 
     #[test]
