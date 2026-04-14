@@ -162,8 +162,6 @@ pub fn wait_for_condition(
 
     let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
     let started = Instant::now();
-    let timeout_ms = duration_millis(timeout);
-
     let wait = match condition {
         WaitCondition::Quiet { quiet_ms } => {
             wait_for_quiet(&mut socket, started, timeout, quiet_ms)?
@@ -232,10 +230,7 @@ pub fn wait_for_condition(
             .and_then(|url| sanitize_wait_url(url, mode)),
     };
 
-    Ok(WaitCommandOutput::success(
-        page,
-        WaitSummary { timeout_ms, ..wait },
-    ))
+    Ok(WaitCommandOutput::success(page, wait))
 }
 
 fn wait_by_polling(
@@ -255,7 +250,7 @@ fn wait_by_polling(
                     matched: false,
                     timed_out: true,
                     elapsed_ms: duration_millis(started.elapsed()),
-                    timeout_ms: 0,
+                    timeout_ms: duration_millis(timeout),
                     observed,
                 });
             }
@@ -268,7 +263,7 @@ fn wait_by_polling(
                 matched: true,
                 timed_out: false,
                 elapsed_ms: duration_millis(started.elapsed()),
-                timeout_ms: 0,
+                timeout_ms: duration_millis(timeout),
                 observed,
             });
         }
@@ -282,7 +277,7 @@ fn wait_by_polling(
                 matched: false,
                 timed_out: true,
                 elapsed_ms: duration_millis(started.elapsed()),
-                timeout_ms: 0,
+                timeout_ms: duration_millis(timeout),
                 observed,
             });
         }
@@ -319,7 +314,7 @@ fn wait_for_quiet(
                 matched: true,
                 timed_out: false,
                 elapsed_ms: duration_millis(started.elapsed()),
-                timeout_ms: 0,
+                timeout_ms: duration_millis(timeout),
                 observed: WaitObservedState::Quiet {
                     quiet_ms,
                     event_count,
@@ -333,7 +328,7 @@ fn wait_for_quiet(
                 matched: false,
                 timed_out: true,
                 elapsed_ms: duration_millis(started.elapsed()),
-                timeout_ms: 0,
+                timeout_ms: duration_millis(timeout),
                 observed: WaitObservedState::Quiet {
                     quiet_ms,
                     event_count,
@@ -509,5 +504,48 @@ mod tests {
         );
         assert_eq!(ReadyState::parse("complete"), Some(ReadyState::Complete));
         assert_eq!(ReadyState::parse("idle"), None);
+    }
+
+    #[test]
+    fn polling_wait_summary_carries_timeout_without_outer_patch() {
+        let timeout = Duration::from_millis(1234);
+        let summary = wait_by_polling(Instant::now(), timeout, WaitConditionName::Selector, || {
+            Ok((
+                true,
+                WaitObservedState::Selector {
+                    selector: "main".to_owned(),
+                    present: true,
+                },
+            ))
+        })
+        .expect("wait summary");
+
+        assert_eq!(summary.timeout_ms, 1234);
+        assert!(summary.matched);
+        assert!(!summary.timed_out);
+    }
+
+    #[test]
+    fn polling_timeout_summary_carries_timeout_without_outer_patch() {
+        let timeout = Duration::from_millis(7);
+        let summary = wait_by_polling(
+            Instant::now() - Duration::from_millis(10),
+            timeout,
+            WaitConditionName::Selector,
+            || {
+                Ok((
+                    false,
+                    WaitObservedState::Selector {
+                        selector: "main".to_owned(),
+                        present: false,
+                    },
+                ))
+            },
+        )
+        .expect("wait summary");
+
+        assert_eq!(summary.timeout_ms, 7);
+        assert!(!summary.matched);
+        assert!(summary.timed_out);
     }
 }
