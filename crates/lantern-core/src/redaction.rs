@@ -27,7 +27,11 @@ pub fn sanitize_title(value: &str, mode: RedactionMode) -> String {
 }
 
 pub fn sanitize_dom_text(value: &str, mode: RedactionMode) -> String {
-    sanitize_text(value, DOM_TEXT_LIMIT, mode)
+    if mode == RedactionMode::Unredacted {
+        return sanitize_text(value, DOM_TEXT_LIMIT, mode);
+    }
+
+    sanitize_browser_snippet(value, DOM_TEXT_LIMIT, mode)
 }
 
 pub fn sanitize_console_message(value: &str, mode: RedactionMode) -> String {
@@ -35,9 +39,7 @@ pub fn sanitize_console_message(value: &str, mode: RedactionMode) -> String {
         return sanitize_text(value, CONSOLE_MESSAGE_LIMIT, mode);
     }
 
-    let normalized = sanitize_text(value, usize::MAX, mode);
-    let redacted = redact_sensitive_message_tokens(&redact_url_tokens(&normalized));
-    truncate_scalars(&redacted, CONSOLE_MESSAGE_LIMIT)
+    sanitize_browser_snippet(value, CONSOLE_MESSAGE_LIMIT, mode)
 }
 
 pub fn sanitize_dom_attribute(
@@ -83,6 +85,12 @@ pub fn sanitize_text(value: &str, limit: usize, mode: RedactionMode) -> String {
     }
 
     truncate_scalars(&normalized, limit)
+}
+
+fn sanitize_browser_snippet(value: &str, limit: usize, mode: RedactionMode) -> String {
+    let normalized = sanitize_text(value, usize::MAX, mode);
+    let redacted = redact_sensitive_message_tokens(&redact_url_tokens(&normalized));
+    truncate_scalars(&redacted, limit)
 }
 
 pub fn truncate_scalars(value: &str, limit: usize) -> String {
@@ -248,12 +256,28 @@ fn url_token_suffix_len(token: &str) -> usize {
 }
 
 fn redact_sensitive_message_tokens(value: &str) -> String {
+    let mut redact_next_bearer_value = false;
+
     value
         .split_whitespace()
         .map(|token| {
             let lower = token.to_ascii_lowercase();
+            let bare = trim_token_punctuation(&lower);
+
+            if redact_next_bearer_value {
+                redact_next_bearer_value = false;
+                return redact_value_token(token);
+            }
+
+            if bare == "bearer" {
+                redact_next_bearer_value = true;
+                return token.to_owned();
+            }
+
             if contains_sensitive_assignment(&lower) {
                 redact_assignment_token(token)
+            } else if looks_like_standalone_secret(bare) {
+                redact_value_token(token)
             } else {
                 token.to_owned()
             }
@@ -274,9 +298,12 @@ fn contains_sensitive_assignment(lower: &str) -> bool {
         "key",
         "jwt",
         "credential",
+        "authorization",
         "csrf",
         "nonce",
         "signature",
+        "access_token",
+        "refresh_token",
     ]
     .iter()
     .any(|needle| {
@@ -288,14 +315,39 @@ fn contains_sensitive_assignment(lower: &str) -> bool {
 }
 
 fn redact_assignment_token(token: &str) -> String {
-    for separator in ['=', ':'] {
-        if let Some(index) = token.find(separator) {
-            let (key, _) = token.split_at(index + separator.len_utf8());
-            return format!("{key}:redacted");
-        }
+    if let Some(index) = token.find('=') {
+        let (key, _) = token.split_at(index + 1);
+        return format!("{key}:redacted");
+    }
+
+    if let Some(index) = token.find(':') {
+        let (key, _) = token.split_at(index);
+        return format!("{key}:redacted");
     }
 
     ":redacted".to_owned()
+}
+
+fn redact_value_token(token: &str) -> String {
+    let suffix_len = token
+        .chars()
+        .rev()
+        .take_while(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\''))
+        .map(char::len_utf8)
+        .sum::<usize>();
+    let core_end = token.len().saturating_sub(suffix_len);
+    let (_, suffix) = token.split_at(core_end);
+    format!(":redacted{suffix}")
+}
+
+fn trim_token_punctuation(value: &str) -> &str {
+    value.trim_matches(|ch: char| {
+        !ch.is_ascii_alphanumeric() && !matches!(ch, '_' | '-' | '=' | '+')
+    })
+}
+
+fn looks_like_standalone_secret(value: &str) -> bool {
+    value.starts_with("eyJ") || is_long_hex(value) || is_long_token(value)
 }
 
 fn is_default_port(scheme: &str, port: u16) -> bool {
@@ -445,6 +497,31 @@ mod tests {
         assert!(!message.contains("user:pass"));
         assert!(!message.contains("token=secret"));
         assert!(!message.contains("#frag"));
+    }
+
+    #[test]
+    fn console_messages_redact_bearer_and_jwt_like_values() {
+        let message = sanitize_console_message(
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.deadbeef",
+            RedactionMode::Redacted,
+        );
+
+        assert_eq!(message, "Authorization:redacted Bearer :redacted");
+        assert!(!message.contains("eyJ"));
+        assert!(!message.contains("deadbeef"));
+    }
+
+    #[test]
+    fn dom_text_redacts_url_assignments_and_credential_like_values_by_default() {
+        let text = sanitize_dom_text(
+            "Profile token=secret https://example.test/session/abcdef123456abcdef123456abcdef12?debug=1 bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+            RedactionMode::Redacted,
+        );
+
+        assert_eq!(
+            text,
+            "Profile token=:redacted https://example.test/session/:redacted bearer :redacted"
+        );
     }
 
     #[test]

@@ -20,4 +20,8 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Current Active Plans
 
-- `docs/exec-plans/active/2026-04-14-frontend-feedback-loop-v1.md`
+- None.
+
+## Recently Completed Plans
+
+- `docs/exec-plans/completed/2026-04-14-frontend-feedback-loop-v1.md`

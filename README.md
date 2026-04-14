@@ -23,6 +23,7 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 - `smoogle.toml`: checked-in harness defaults and operation profiles
 - `docs/architecture.md`: detailed architecture
 - `docs/headless-chromium.md`: operator-owned Chromium, container, and VNC-compatible CDP setup
+- `docs/authenticated-browser-testing.md`: safety checklist and workflow for dedicated logged-in browser profiles
 - `docs/product-specs/lantern.md`: generated product spec
 - `docs/product-specs/cli-contract.md`: first-milestone CLI contract
 - `docs/product-specs/output-policy.md`: shared output, JSON ordering, redaction, and truncation policy

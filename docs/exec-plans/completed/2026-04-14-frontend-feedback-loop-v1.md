@@ -1,6 +1,6 @@
 # ExecPlan: Frontend Feedback Loop v1
 
-Status: active
+Status: completed
 
 ## Progress Notes
 
@@ -12,6 +12,7 @@ Status: active
 - 2026-04-14: implemented Slice 5 screenshot capture with `lantern screenshot --output <PATH>`, explicit overwrite opt-in, current visible viewport capture through CDP, best-effort viewport dimensions, metadata-only transcript output, redaction caveats, and fixture coverage for JSON, human output, overwrite behavior, and missing WebSocket errors.
 - 2026-04-14: implemented Slice 6 network failures with `lantern network`, bounded CDP Network event collection for failed requests and HTTP error responses, redacted URL shapes, no body/header capture, explicit observed-clean and collection-gap metadata, and fixture coverage for JSON, human output, clean windows, and missing WebSocket errors.
 - 2026-04-14: implemented Slice 7 limited interactions with `lantern click --selector <CSS> --timeout-ms <MS>` and `lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>`, exact selected page target reuse, bounded selector polling, CDP DOM/Input dispatch only, metadata-only post-action state, non-echoed typed text, and fixture coverage for dispatch, timeout, and usage/timeout failures.
+- 2026-04-14: closed this ExecPlan after `scripts/validate.sh` passed with all slices complete. Follow-up authenticated-browser safety docs and redaction tightening landed separately from the feedback-loop feature slices.
 
 ## Goal
 

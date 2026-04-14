@@ -2,7 +2,7 @@
 
 This policy defines how Lantern writes human and JSON output, and how it redacts or truncates browser-derived data. It applies to first-milestone commands and to reserved future commands for DOM, console, network, and screenshot inspection.
 
-Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, and `lantern screenshot`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
+Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
 ## Goals
 
@@ -178,6 +178,7 @@ Before truncation:
 - replace ASCII control characters except tab and LF with a single space
 - collapse runs of more than two blank lines to two blank lines
 - preserve meaningful internal whitespace within code-like snippets
+- for default browser-derived snippets, redact URL-shaped values, sensitive-looking assignment values, and bearer/JWT-like standalone tokens where the command policy allows snippets
 
 Text fields that came from the browser should be nullable when unavailable. They should not use placeholder prose such as `unknown` unless `unknown` is an actual browser value.
 
@@ -204,6 +205,7 @@ Default DOM output must not include:
 - inline event-handler attribute values
 - hidden form values
 - password, token, secret, or authorization fields
+- bearer/JWT-like credential values in text snippets by default
 
 Safe attributes by default:
 
@@ -241,6 +243,7 @@ Default console output must not include:
 - full stack traces unless a command explicitly requests stack detail
 - full source URLs
 - cookie, authorization, storage, or credential values
+- bearer/JWT-like credential values in message text by default
 
 When console arguments are objects, output a bounded type summary such as `object`, `array(3)`, `error`, or `node`, plus a truncated primitive preview only for strings, numbers, booleans, and null.
 

@@ -41,6 +41,8 @@ Keep `--remote-debugging-address=127.0.0.1` unless the browser runs in another n
 
 Use a dedicated `--user-data-dir` for automation. Do not point a headless automation run at a personal browser profile that may contain cookies, logged-in sessions, extensions, or saved credentials.
 
+For logged-in browser smoke tests, use the stricter workflow in `docs/authenticated-browser-testing.md`. Authenticated sessions can expose cookies, storage, account metadata, page text, screenshots, console messages, network paths, and interaction traces through normal local tooling.
+
 ## Headless Linux
 
 For a local headless Linux host, start Chromium directly:

@@ -25,6 +25,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 This repo primarily protects against:
 
 - accidental credential disclosure through checked-in files, prompts, logs, or generated artifacts
+- accidental disclosure of authenticated browser state through Lantern output, screenshots, transcripts, or run artifacts
 - unintended file modification outside the selected repo/worktree
 - unsafe unattended landing or pushing without explicit repo policy
 - stale docs that mislead future agents about validation, sandboxing, or automation boundaries
@@ -51,6 +52,7 @@ Use untracked local configuration, environment variables, or the operator's cred
 - No automated secret scanning is configured yet.
 - Dependency advisory checks are available through `scripts/quality-sweep.sh`, but the required tool is optional and no deny policy file is tuned yet.
 - Run artifacts and explicitly captured screenshot files are not redacted.
+- Authenticated browser testing still relies on operator-owned dedicated profiles, loopback-only CDP exposure, and manual review of transcripts and screenshots.
 - Dependency and supply-chain policy is still first-version guidance.
 
 ## Synthesized Boundaries

@@ -20,6 +20,14 @@
 3. Verify the endpoint with `lantern doctor --endpoint http://127.0.0.1:9222`.
 4. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
 
+## Authenticated Browser Loop
+
+1. Follow `docs/authenticated-browser-testing.md` before connecting Lantern to a logged-in profile.
+2. Use a throwaway or dedicated Chromium profile, never a daily browser profile.
+3. Keep the CDP endpoint loopback-only, including container port publishing.
+4. Run read-only smoke commands before navigation or interaction commands.
+5. Avoid `--no-redact` and review screenshot output paths because authenticated page output and pixels remain sensitive.
+
 ## Task Review Loop
 
 1. Keep speculative or dependent work in `inbox` until it has been semantically reviewed.
