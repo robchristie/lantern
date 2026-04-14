@@ -1342,6 +1342,95 @@ fn wait_json_rejects_invalid_timeout_bounds() {
 }
 
 #[test]
+fn wait_json_rejects_irrelevant_condition_flags_before_endpoint_resolution() {
+    assert_wait_irrelevant_flags_rejected(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "ready",
+            "--selector",
+            "main",
+            "--timeout-ms",
+            "1000",
+        ],
+        "Unsupported flag for wait ready.",
+        "Run lantern wait ready [--state <loading|interactive|complete>] --timeout-ms <MS>.",
+    );
+    assert_wait_irrelevant_flags_rejected(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "url",
+            "--url-shape",
+            "https://example.test/dashboard",
+            "--state",
+            "complete",
+            "--timeout-ms",
+            "1000",
+        ],
+        "Unsupported flag for wait url.",
+        "Run lantern wait url --url-shape <URL_SHAPE> --timeout-ms <MS>.",
+    );
+    assert_wait_irrelevant_flags_rejected(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "selector",
+            "--selector",
+            "main",
+            "--text",
+            "Ready",
+            "--timeout-ms",
+            "1000",
+        ],
+        "Unsupported flag for wait selector.",
+        "Run lantern wait selector --selector <CSS_SELECTOR> --timeout-ms <MS>.",
+    );
+    assert_wait_irrelevant_flags_rejected(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "text",
+            "--selector",
+            "main",
+            "--text",
+            "Ready",
+            "--quiet-ms",
+            "10",
+            "--timeout-ms",
+            "1000",
+        ],
+        "Unsupported flag for wait text.",
+        "Run lantern wait text --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+    );
+    assert_wait_irrelevant_flags_rejected(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "quiet",
+            "--quiet-ms",
+            "10",
+            "--url-shape",
+            "https://example.test/dashboard",
+            "--timeout-ms",
+            "1000",
+        ],
+        "Unsupported flag for wait quiet.",
+        "Run lantern wait quiet --quiet-ms <MS> --timeout-ms <MS>.",
+    );
+}
+
+#[test]
 fn dom_json_summarizes_document_and_redacts_sensitive_values() {
     let websocket = WebSocketFixture::one_dom_response(dom_document_response());
     let fixture =
@@ -2172,6 +2261,26 @@ fn lantern<const N: usize>(args: [&str; N], env_endpoint: Option<&str>) -> Outpu
     }
 
     command.output().expect("lantern should run")
+}
+
+fn assert_wait_irrelevant_flags_rejected<const N: usize>(
+    args: [&str; N],
+    message: &str,
+    hint: &str,
+) {
+    let output = lantern(args, None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "usage");
+    assert_eq!(json["error"]["message"], message);
+    assert_eq!(json["error"]["hint"], hint);
 }
 
 fn assert_success(output: &Output) {

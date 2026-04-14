@@ -173,6 +173,10 @@ fn run(
         ));
     }
 
+    if command == Command::Wait {
+        validate_wait_flag_shape(&invocation)?;
+    }
+
     if command != Command::Screenshot && invocation.has_screenshot_flags() {
         return Err(CliError::usage(
             invocation.json,
@@ -241,6 +245,79 @@ fn run(
         invocation.screenshot_output,
         invocation.screenshot_overwrite,
     )
+}
+
+fn validate_wait_flag_shape(invocation: &Invocation) -> Result<(), CliError> {
+    let wait_kind = invocation
+        .wait_kind
+        .expect("wait kind checked before wait flag shape");
+    let unsupported = match wait_kind {
+        WaitConditionName::Ready => {
+            invocation.wait_url_shape.is_some()
+                || invocation.wait_selector.is_some()
+                || invocation.wait_text.is_some()
+                || invocation.quiet_ms.is_some()
+        }
+        WaitConditionName::Url => {
+            invocation.wait_state.is_some()
+                || invocation.wait_selector.is_some()
+                || invocation.wait_text.is_some()
+                || invocation.quiet_ms.is_some()
+        }
+        WaitConditionName::Selector => {
+            invocation.wait_state.is_some()
+                || invocation.wait_url_shape.is_some()
+                || invocation.wait_text.is_some()
+                || invocation.quiet_ms.is_some()
+        }
+        WaitConditionName::Text => {
+            invocation.wait_state.is_some()
+                || invocation.wait_url_shape.is_some()
+                || invocation.quiet_ms.is_some()
+        }
+        WaitConditionName::Quiet => {
+            invocation.wait_state.is_some()
+                || invocation.wait_url_shape.is_some()
+                || invocation.wait_selector.is_some()
+                || invocation.wait_text.is_some()
+        }
+    };
+
+    if unsupported {
+        return Err(CliError::usage(
+            invocation.json,
+            wait_irrelevant_flag_message(wait_kind),
+            wait_condition_usage_hint(wait_kind),
+        ));
+    }
+
+    Ok(())
+}
+
+fn wait_irrelevant_flag_message(wait_kind: WaitConditionName) -> &'static str {
+    match wait_kind {
+        WaitConditionName::Ready => "Unsupported flag for wait ready.",
+        WaitConditionName::Url => "Unsupported flag for wait url.",
+        WaitConditionName::Selector => "Unsupported flag for wait selector.",
+        WaitConditionName::Text => "Unsupported flag for wait text.",
+        WaitConditionName::Quiet => "Unsupported flag for wait quiet.",
+    }
+}
+
+fn wait_condition_usage_hint(wait_kind: WaitConditionName) -> &'static str {
+    match wait_kind {
+        WaitConditionName::Ready => {
+            "Run lantern wait ready [--state <loading|interactive|complete>] --timeout-ms <MS>."
+        }
+        WaitConditionName::Url => "Run lantern wait url --url-shape <URL_SHAPE> --timeout-ms <MS>.",
+        WaitConditionName::Selector => {
+            "Run lantern wait selector --selector <CSS_SELECTOR> --timeout-ms <MS>."
+        }
+        WaitConditionName::Text => {
+            "Run lantern wait text --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>."
+        }
+        WaitConditionName::Quiet => "Run lantern wait quiet --quiet-ms <MS> --timeout-ms <MS>.",
+    }
 }
 
 fn run_command(
