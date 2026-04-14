@@ -347,7 +347,27 @@ fn trim_token_punctuation(value: &str) -> &str {
 }
 
 fn looks_like_standalone_secret(value: &str) -> bool {
-    value.starts_with("eyJ") || is_long_hex(value) || is_long_token(value)
+    value.starts_with("eyj")
+        || looks_like_jwt_token(value)
+        || is_long_hex(value)
+        || is_long_token(value)
+}
+
+fn looks_like_jwt_token(value: &str) -> bool {
+    let mut segments = value.split('.');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let Some(second) = segments.next() else {
+        return false;
+    };
+
+    !first.is_empty()
+        && !second.is_empty()
+        && value.chars().count() >= 24
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '=' | '.'))
 }
 
 fn is_default_port(scheme: &str, port: u16) -> bool {
@@ -522,6 +542,18 @@ mod tests {
             text,
             "Profile token=:redacted https://example.test/session/:redacted bearer :redacted"
         );
+    }
+
+    #[test]
+    fn dom_text_redacts_standalone_jwt_like_values_with_periods() {
+        let text = sanitize_dom_text(
+            "session eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature done",
+            RedactionMode::Redacted,
+        );
+
+        assert_eq!(text, "session :redacted done");
+        assert!(!text.contains("eyJ"));
+        assert!(!text.contains("payload"));
     }
 
     #[test]
