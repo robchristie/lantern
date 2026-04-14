@@ -4,11 +4,11 @@ This file is the repository's current quality scorecard. It is a contract for fu
 
 ## Current Grade
 
-Overall grade: **C**
+Overall grade: **C+**
 
-Last reviewed: **2026-04-13**
+Last reviewed: **2026-04-14**
 
-Rationale: `Lantern` has a generated docs contract, an initial Rust workspace, prompt templates, validation profile scripts, and a bootstrap ExecPlan. Codex synthesis also provided project-specific success criteria and task seeds: operator can point Lantern at an existing Chromium CDP endpoint, operator can run doctor, targets, and page commands locally, implemented commands support predictable --json output, sensitive URLs and large text fields are redacted or truncated by default, local tests cover CDP fixture behavior where practical. The grade starts at `C` until the first milestone proves the architecture, tests, and validation path with real behavior.
+Rationale: `Lantern` now has a Rust workspace with a narrow implemented CLI contract for local Chromium CDP inspection and frontend feedback: `doctor`, `targets`, `page`, `dom`, explicit `--target-id` selection, `open`, `wait`, `console`, `network`, `screenshot`, `click`, and `type`. The command surface is documented, fixture-tested, redacted by default, and covered by the standard validation script. The repo remains below `B` until real-browser smoke coverage, recovery behavior, and unattended landing confidence are proven across representative local setups.
 
 ## Grade Scale
 
@@ -24,11 +24,11 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 | Dimension | Current | Evidence | Known gaps |
 | --- | --- | --- | --- |
-| Architecture boundaries | C | Initial crates separate core, storage, and CLI concerns. | Boundaries are not yet proven by real feature pressure. |
-| Workflow clarity | C+ | `AGENTS.md`, `PLANS.md`, `docs/workflows.md`, prompt templates, and the bootstrap ExecPlan provide a starting path. | Guidance should be refined after the first real implementation slices. |
-| Validation posture | C+ | The workspace has `scripts/validate.sh` for fast and standard loops, plus `scripts/quality-sweep.sh` for slower periodic checks. | Feature-specific tests and smoke paths still need to mature with real behavior. |
-| Maintainability | C | Product specs, design docs, ExecPlans, and the tech debt tracker exist from the start. | Generated assumptions need operator review before they become durable truth. |
-| Automation readiness | C | The repo has checked-in prompt templates and conservative `smoogle.toml` defaults. | Auto landing should wait until validation and review signals are consistently clean. |
+| Architecture boundaries | C+ | Crates separate core CDP services, storage, and CLI presentation, and the completed feedback-loop slices reused those boundaries without broadening Chromium lifecycle ownership. | Boundaries still need pressure from real-browser smoke paths and future non-CLI adapters before they can be treated as stable. |
+| Workflow clarity | B- | `AGENTS.md`, `PLANS.md`, `docs/workflows.md`, completed ExecPlans, CLI contract docs, and validation scripts describe the expected agent and operator loops. | Guidance should keep tightening as recovery, landing, and browser-matrix evidence accumulates. |
+| Validation posture | C+ | `scripts/validate.sh` covers formatting, `cargo check`, workspace tests, and docs hygiene; fixture tests cover the implemented CLI feedback loop. | Real Chromium smoke coverage and host/container matrix evidence remain limited. |
+| Maintainability | C+ | Product specs, design docs, completed ExecPlans, current-state scorecards, and the tech debt tracker provide durable context without rewriting milestone history. | Future command expansion needs the same docs-first discipline to avoid drifting from the narrow v1 contract. |
+| Automation readiness | C | Checked-in prompt templates, conservative `smoogle.toml` defaults, and stable JSON/error contracts support assisted automation. | Auto landing should wait until validation, review, and real-browser signals are consistently clean. |
 
 ## Quality Bar For Changes
 

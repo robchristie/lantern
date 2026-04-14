@@ -8,7 +8,7 @@ Overall grade: **C**
 
 Last reviewed: **2026-04-14**
 
-Rationale: `Lantern` starts with local-first docs, a generated Rust workspace, seed tasks, prompt templates, validation profile scripts, feature fixture coverage, and conservative harness defaults. The grade remains `C` until real workflows prove state durability, validation, and recovery behavior.
+Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, and fixture coverage for the implemented frontend feedback loop. The grade remains `C` until real-browser smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
 
 ## Grade Scale
 
@@ -46,13 +46,13 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 ## Known Reliability Gaps
 
-- The generated product assumptions have had an initial scope review, but implementation behavior is not proven yet.
-- Feature-specific fixture tests now cover the implemented CLI loop, but real-browser smoke coverage is still limited.
-- The first milestone has not yet proven recovery and landing behavior.
+- Feature-specific fixture tests cover the implemented CLI loop, but real-browser smoke coverage is still limited.
+- Recovery and landing behavior have not yet been proven by repeated assisted or unattended runs.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the matrix has not been smoke-tested across representative hosts and images yet.
 - Optional quality-sweep tools may not be installed on every machine.
-
-- Synthesized risk: CDP implementation complexity could grow beyond the intended tiny command vocabulary.; Redaction mistakes could leak sensitive URLs, storage data, DOM content, or screenshots.; Headless Linux and container setups may vary enough to make endpoint diagnostics brittle.; Stable JSON contracts may be difficult to preserve if early command shapes are underspecified.; Minimal dependency choices could increase protocol maintenance burden.
+- CDP implementation complexity could grow beyond the intended small command vocabulary if future tasks skip the CLI contract and ExecPlan gates.
+- Stable JSON contracts require compatibility discipline as command output evolves.
+- Minimal dependency choices could increase protocol maintenance burden.
 
 ## Maintenance Rules
 

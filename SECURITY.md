@@ -8,7 +8,7 @@ Overall grade: **C**
 
 Last reviewed: **2026-04-14**
 
-Rationale: `Lantern` starts with local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, explicit screenshot artifact opt-in, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, broader artifact handling, and unsafe-boundary behavior are better understood.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, no hidden browser artifact persistence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
@@ -51,9 +51,10 @@ Use untracked local configuration, environment variables, or the operator's cred
 
 - No automated secret scanning is configured yet.
 - Dependency advisory checks are available through `scripts/quality-sweep.sh`, but the required tool is optional and no deny policy file is tuned yet.
-- Run artifacts and explicitly captured screenshot files are not redacted.
+- Run artifacts and explicitly captured screenshot files are not redacted; screenshots contain visible page pixels by design.
 - Authenticated browser testing still relies on operator-owned dedicated profiles, loopback-only CDP exposure, and manual review of transcripts and screenshots.
 - Dependency and supply-chain policy is still first-version guidance.
+- Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
 
 ## Synthesized Boundaries
 
