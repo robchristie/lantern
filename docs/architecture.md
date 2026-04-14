@@ -62,7 +62,7 @@ The initial CLI contract is limited to:
 - `lantern targets`: list Chromium targets using sanitized, bounded metadata.
 - `lantern page`: summarize one page target with title, origin or URL shape, and loading state without exposing the full URL by default.
 
-Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
+Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, layout audits, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
 
 The exact first-milestone command contract is maintained in `docs/product-specs/cli-contract.md`. Shared output formatting, JSON ordering, redaction, truncation, and future artifact rules are maintained in `docs/product-specs/output-policy.md`.
 
@@ -80,4 +80,4 @@ The exact first-milestone command contract is maintained in `docs/product-specs/
 - Command-to-service layering
 - Stable JSON field ordering expectations
 - SQLite local state boundary
-- Future seams for DOM, console, network, screenshots, and interactions
+- Future seams for DOM, layout, console, network, screenshots, and interactions

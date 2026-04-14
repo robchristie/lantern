@@ -12,6 +12,7 @@ use lantern_core::{
         INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
         type_text,
     },
+    layout::{LayoutCommandOutput, LayoutFinding, LayoutReadError, read_layout_audit},
     navigation::{
         NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
     },
@@ -124,13 +125,14 @@ fn run(
                 | Command::Console
                 | Command::Network
                 | Command::Screenshot
+                | Command::Layout
                 | Command::Click
                 | Command::Type
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, click, and type.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, and type.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -461,6 +463,16 @@ fn run_command(
             let output = read_network_failures(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_network_read(error, json))?;
             write_network(output, json)?;
+        }
+        Command::Layout => {
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = read_layout_audit(&page, RedactionMode::from_no_redact(no_redact))
+                .map_err(|error| CliError::from_layout_read(error, json))?;
+            write_layout(output, json)?;
         }
         Command::Screenshot => {
             let output_path = screenshot_output
@@ -895,6 +907,30 @@ fn write_network(output: NetworkCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_layout(output: LayoutCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "layout: {} title=\"{}\" url={} findings={} truncated={} scroll_width={} client_width={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        output.layout.finding_count,
+        output.layout.truncated,
+        output.layout.viewport.scroll_width,
+        output.layout.viewport.client_width,
+    );
+
+    for finding in &output.layout.findings {
+        write_layout_finding(finding);
+    }
+
+    Ok(())
+}
+
 fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), CliError> {
     if json {
         write_json(&output)?;
@@ -1069,6 +1105,22 @@ fn write_console_entry(entry: &ConsoleEntry) {
         entry.argument_count,
         entry.stack_frame_count,
         escape_human(&entry.message)
+    );
+}
+
+fn write_layout_finding(finding: &LayoutFinding) {
+    println!(
+        "  {} severity={} selector={} text=\"{}\" right={} container_right={}",
+        finding.kind,
+        finding.severity,
+        escape_human(&finding.selector),
+        escape_human(finding.text_sample.as_deref().unwrap_or("")),
+        finding.metrics.right,
+        finding
+            .metrics
+            .container_right
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_owned()),
     );
 }
 
@@ -1476,7 +1528,7 @@ impl Invocation {
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
-                | "screenshot" | "click" | "type" => {
+                | "screenshot" | "layout" | "click" | "type" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -1575,6 +1627,7 @@ enum Command {
     Console,
     Network,
     Screenshot,
+    Layout,
     Click,
     Type,
 }
@@ -1591,6 +1644,7 @@ impl Command {
             "console" => Some(Self::Console),
             "network" => Some(Self::Network),
             "screenshot" => Some(Self::Screenshot),
+            "layout" => Some(Self::Layout),
             "click" => Some(Self::Click),
             "type" => Some(Self::Type),
             _ => None,
@@ -1866,6 +1920,31 @@ impl CliError {
         }
     }
 
+    fn from_layout_read(error: LayoutReadError, json: bool) -> Self {
+        match error {
+            LayoutReadError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            LayoutReadError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            LayoutReadError::Cdp(_) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+        }
+    }
+
     fn from_screenshot(error: ScreenshotError, json: bool) -> Self {
         match error {
             ScreenshotError::TargetWebSocketMissing => Self::runtime(
@@ -2037,6 +2116,21 @@ mod tests {
         assert_eq!(invocation.command, Some(Command::Dom));
         assert_eq!(invocation.dom_depth, Some(8));
         assert_eq!(invocation.dom_max_nodes, Some(200));
+    }
+
+    #[test]
+    fn parses_layout_command_with_target_id() {
+        let invocation = Invocation::parse([
+            "layout".to_string(),
+            "--target-id".to_string(),
+            "PAGE_123".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Layout));
+        assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
+        assert!(invocation.json);
     }
 
     #[test]

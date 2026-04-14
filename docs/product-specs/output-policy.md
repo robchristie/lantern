@@ -2,7 +2,7 @@
 
 This policy defines how Lantern writes human and JSON output, and how it redacts or truncates browser-derived data. It applies to first-milestone commands and to reserved future commands for DOM, console, network, and screenshot inspection.
 
-Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
+Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern layout`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
 ## Goals
 
