@@ -1,13 +1,27 @@
 use std::{
     fs,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     process::{Command, Output},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
 use tungstenite::Message;
+
+fn read_expect(socket: &mut tungstenite::WebSocket<TcpStream>, expected: &str) -> String {
+    let message = socket
+        .read()
+        .expect("fixture should read command")
+        .into_text()
+        .expect("command should be text")
+        .to_string();
+    assert!(
+        message.contains(expected),
+        "unexpected websocket command: {message:?}"
+    );
+    message
+}
 
 struct HttpFixture {
     endpoint: String,
@@ -623,6 +637,159 @@ impl WebSocketFixture {
                 .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
                 .expect("fixture should write Network.enable response");
             thread::sleep(Duration::from_millis(500));
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_click_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+
+            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            assert!(
+                message.contains(r#""selector":"[data-testid=save]""#),
+                "click fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"BUTTON"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            for (id, event_type) in [(5, "mouseMoved"), (6, "mousePressed"), (7, "mouseReleased")] {
+                let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+                assert!(
+                    message.contains(&format!(r#""type":"{event_type}""#)),
+                    "click fixture should dispatch {event_type}: {message:?}"
+                );
+                assert!(
+                    message.contains(r#""x":60.0"#) && message.contains(r#""y":40.0"#),
+                    "click fixture should dispatch at computed center: {message:?}"
+                );
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                    ))
+                    .expect("fixture should write input response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_type_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+
+            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            assert!(
+                message.contains(r#""selector":"input[name=q]""#),
+                "type fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":21}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"INPUT"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+
+            read_expect(&mut socket, r#""method":"DOM.focus""#);
+            socket
+                .send(Message::Text(r#"{"id":4,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write focus response");
+
+            let message = read_expect(&mut socket, r#""method":"Input.insertText""#);
+            assert!(
+                message.contains(r#""text":"hello lantern""#),
+                "type fixture should insert requested text: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":5,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write insert response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_click_selector_timeout_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+            let mut id = 1;
+
+            while let Ok(message) = socket.read() {
+                let message = message.into_text().expect("command should be text");
+                if message.contains(r#""method":"DOM.getDocument""#) {
+                    socket
+                        .send(Message::Text(
+                            format!(r#"{{"id":{id},"result":{{"root":{{"nodeId":1}}}}}}"#).into(),
+                        ))
+                        .expect("fixture should write document response");
+                } else if message.contains(r#""method":"DOM.querySelector""#) {
+                    socket
+                        .send(Message::Text(
+                            format!(r#"{{"id":{id},"result":{{"nodeId":0}}}}"#).into(),
+                        ))
+                        .expect("fixture should write selector response");
+                } else {
+                    panic!("unexpected websocket command: {message:?}");
+                }
+                id += 1;
+            }
         });
 
         Self {
@@ -1602,6 +1769,182 @@ fn screenshot_json_reports_missing_page_websocket_url() {
     );
     assert!(!output_path.exists());
     fixture.finish();
+}
+
+#[test]
+fn click_json_dispatches_mouse_events_at_selected_element_center() {
+    let websocket = WebSocketFixture::one_click_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "click",
+            "--selector",
+            "[data-testid=save]",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["command"], "click");
+    assert_eq!(json["interaction"]["action"], "click");
+    assert_eq!(json["interaction"]["selector"], "[data-testid=save]");
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["timed_out"], false);
+    assert_eq!(json["interaction"]["timeout_ms"], 1000);
+    assert_eq!(json["interaction"]["observed"]["node_name"], "BUTTON");
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"]["x"],
+        60.0
+    );
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"]["y"],
+        40.0
+    );
+    assert_eq!(
+        json["interaction"]["observed"]["inserted_text_length"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        json["interaction"]["immediate_error"],
+        serde_json::Value::Null
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn type_json_focuses_selected_element_and_inserts_text_without_echoing_value() {
+    let websocket = WebSocketFixture::one_type_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "type",
+            "--selector",
+            "input[name=q]",
+            "--text",
+            "hello lantern",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["command"], "type");
+    assert_eq!(json["interaction"]["action"], "type");
+    assert_eq!(json["interaction"]["selector"], "input[name=q]");
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["observed"]["node_name"], "INPUT");
+    assert_eq!(json["interaction"]["observed"]["inserted_text_length"], 13);
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"],
+        serde_json::Value::Null
+    );
+    assert!(
+        !stdout(&output).contains("hello lantern"),
+        "type output should not echo inserted text: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn click_json_reports_selector_timeout_as_undispatched_action() {
+    let websocket = WebSocketFixture::one_click_selector_timeout_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "click",
+            "--selector",
+            "[data-testid=missing]",
+            "--timeout-ms",
+            "1",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["command"], "click");
+    assert_eq!(json["interaction"]["dispatched"], false);
+    assert_eq!(json["interaction"]["timed_out"], true);
+    assert_eq!(json["interaction"]["immediate_error"], "selector_not_found");
+    assert_eq!(
+        json["interaction"]["observed"]["node_name"],
+        serde_json::Value::Null
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn type_json_requires_selector_text_and_bounded_timeout_before_cdp() {
+    let missing_text = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "type",
+            "--selector",
+            "input",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!missing_text.status.success());
+    assert_eq!(missing_text.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_text),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --text for type.","hint":"Run lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>."}}"#.to_owned()
+            + "\n"
+    );
+
+    let invalid_timeout = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "type",
+            "--selector",
+            "input",
+            "--text",
+            "hello",
+            "--timeout-ms",
+            "30001",
+        ],
+        None,
+    );
+    assert!(!invalid_timeout.status.success());
+    assert_eq!(invalid_timeout.status.code(), Some(2));
+    assert_eq!(
+        stderr(&invalid_timeout),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_timeout_invalid","message":"Invalid interaction timeout.","hint":"Pass --timeout-ms from 1 through 30000."}}"#.to_owned()
+            + "\n"
+    );
 }
 
 #[test]

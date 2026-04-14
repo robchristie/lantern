@@ -11,6 +11,7 @@ Status: active
 - 2026-04-14: implemented Slice 4 wait conditions with `lantern wait <ready|url|selector|text|quiet>`, explicit bounded `--timeout-ms`, selected target identity, elapsed time, matched/timed-out condition results, concise observed state, and fixture coverage for readiness, URL shape, selector presence, selector text, quiet-period waits, and invalid timeout bounds.
 - 2026-04-14: implemented Slice 5 screenshot capture with `lantern screenshot --output <PATH>`, explicit overwrite opt-in, current visible viewport capture through CDP, best-effort viewport dimensions, metadata-only transcript output, redaction caveats, and fixture coverage for JSON, human output, overwrite behavior, and missing WebSocket errors.
 - 2026-04-14: implemented Slice 6 network failures with `lantern network`, bounded CDP Network event collection for failed requests and HTTP error responses, redacted URL shapes, no body/header capture, explicit observed-clean and collection-gap metadata, and fixture coverage for JSON, human output, clean windows, and missing WebSocket errors.
+- 2026-04-14: implemented Slice 7 limited interactions with `lantern click --selector <CSS> --timeout-ms <MS>` and `lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>`, exact selected page target reuse, bounded selector polling, CDP DOM/Input dispatch only, metadata-only post-action state, non-echoed typed text, and fixture coverage for dispatch, timeout, and usage/timeout failures.
 
 ## Goal
 
@@ -121,7 +122,7 @@ Status: completed
 
 ### Slice 7: Limited Interaction Commands
 
-Status: pending
+Status: completed
 
 - add a small set of user-like interactions for selected elements
 - start with click and text entry if selector handling is stable

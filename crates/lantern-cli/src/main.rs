@@ -5,6 +5,10 @@ use lantern_core::{
     console::{ConsoleCommandOutput, ConsoleEntry, ConsoleReadError, read_console_errors},
     dom::{DomCommandOutput, DomNodeSummary, DomReadError, read_dom_summary},
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
+    interaction::{
+        INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
+        type_text,
+    },
     navigation::{
         NavigationCommandOutput, NavigationError, navigate_page, validate_navigation_url,
     },
@@ -53,6 +57,8 @@ const NAVIGATION_FAILED_MESSAGE: &str = "Chromium failed the requested page navi
 const NAVIGATION_FAILED_HINT: &str = "Check that the URL is reachable from Chromium, then retry.";
 const WAIT_TIMEOUT_INVALID_MESSAGE: &str = "Invalid wait timeout.";
 const WAIT_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000; for quiet waits, --quiet-ms must also be in range and no larger than --timeout-ms.";
+const INTERACTION_TIMEOUT_INVALID_MESSAGE: &str = "Invalid interaction timeout.";
+const INTERACTION_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000.";
 const SCREENSHOT_OUTPUT_EXISTS_MESSAGE: &str = "Screenshot output path already exists.";
 const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
     "Pass --overwrite to replace the file, or choose a different --output path.";
@@ -112,20 +118,50 @@ fn run(
                 | Command::Console
                 | Command::Network
                 | Command::Screenshot
+                | Command::Click
+                | Command::Type
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, and screenshot.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, click, and type.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
 
-    if command != Command::Wait && invocation.has_wait_flags() {
+    if command != Command::Wait && invocation.has_wait_only_flags() {
         return Err(CliError::usage(
             invocation.json,
             "Wait flags are only supported by wait.",
             "Run lantern wait <ready|url|selector|text|quiet> with wait-specific flags.",
+        ));
+    }
+
+    if !matches!(command, Command::Wait | Command::Click | Command::Type)
+        && invocation.timeout_ms.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--timeout-ms is only supported by wait, click, and type.",
+            "Run a bounded command with --timeout-ms <MS>.",
+        ));
+    }
+
+    if !matches!(command, Command::Wait | Command::Click | Command::Type)
+        && invocation.wait_selector.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--selector is only supported by wait, click, and type.",
+            "Run a selected-element command with --selector <CSS_SELECTOR>.",
+        ));
+    }
+
+    if !matches!(command, Command::Wait | Command::Type) && invocation.wait_text.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--text is only supported by wait text and type.",
+            "Run lantern wait text or lantern type with --text <TEXT>.",
         ));
     }
 
@@ -150,6 +186,38 @@ fn run(
             invocation.json,
             "Missing --output for screenshot.",
             "Run lantern screenshot --output <PATH>.",
+        ));
+    }
+
+    if matches!(command, Command::Click | Command::Type) && invocation.wait_selector.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing --selector for interaction.",
+            "Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS> or lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+        ));
+    }
+
+    if matches!(command, Command::Click | Command::Type) && invocation.timeout_ms.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing --timeout-ms for interaction.",
+            "Run lantern click or lantern type with --timeout-ms <MS> from 1 through 30000.",
+        ));
+    }
+
+    if command == Command::Type && invocation.wait_text.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing --text for type.",
+            "Run lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+        ));
+    }
+
+    if command == Command::Click && invocation.wait_text.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--text is not supported by click.",
+            "Run lantern click with --selector <CSS_SELECTOR> --timeout-ms <MS>.",
         ));
     }
 
@@ -321,6 +389,50 @@ fn run_command(
             );
             write_screenshot(output, json)?;
         }
+        Command::Click => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = click_element(
+                &page,
+                selector,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
+        Command::Type => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let text = wait_text
+                .as_deref()
+                .expect("type text checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = type_text(
+                &page,
+                selector,
+                text,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
     }
 
     Ok(())
@@ -430,6 +542,20 @@ fn validate_wait_timeout(
         code: "wait_timeout_invalid",
         message: WAIT_TIMEOUT_INVALID_MESSAGE,
         hint: WAIT_TIMEOUT_INVALID_HINT,
+    })
+}
+
+fn validate_interaction_timeout(timeout_ms: u64, json: bool) -> Result<(), CliError> {
+    if (1..=INTERACTION_MAX_TIMEOUT_MS).contains(&timeout_ms) {
+        return Ok(());
+    }
+
+    Err(CliError {
+        exit_code: 2,
+        json,
+        code: "interaction_timeout_invalid",
+        message: INTERACTION_TIMEOUT_INVALID_MESSAGE,
+        hint: INTERACTION_TIMEOUT_INVALID_HINT,
     })
 }
 
@@ -674,6 +800,29 @@ fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), C
     Ok(())
 }
 
+fn write_interaction(output: InteractionCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "{}: {} title=\"{}\" url={} selector=\"{}\" dispatched={} timed_out={} elapsed_ms={} timeout_ms={} observed={} error={}",
+        output.command,
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        escape_human(&output.interaction.selector),
+        output.interaction.dispatched,
+        output.interaction.timed_out,
+        output.interaction.elapsed_ms,
+        output.interaction.timeout_ms,
+        interaction_observed_human(&output.interaction.observed),
+        output.interaction.immediate_error.unwrap_or("null")
+    );
+    Ok(())
+}
+
 fn validate_screenshot_output_path(
     output_path: &str,
     overwrite: bool,
@@ -826,6 +975,25 @@ fn network_entry_kind_label(kind: &lantern_core::network::NetworkEntryKind) -> &
     }
 }
 
+fn interaction_observed_human(
+    observed: &lantern_core::interaction::InteractionObservedState,
+) -> String {
+    let point = observed
+        .clickable_point
+        .map(|point| format!("{},{}", point.x, point.y))
+        .unwrap_or_else(|| "null".to_owned());
+    let inserted = observed
+        .inserted_text_length
+        .map(|length| length.to_string())
+        .unwrap_or_else(|| "null".to_owned());
+    format!(
+        "node={} point={} inserted_text_length={}",
+        observed.node_name.as_deref().unwrap_or("null"),
+        point,
+        inserted
+    )
+}
+
 fn write_dom_node(node: &DomNodeSummary, indent: usize) {
     let mut label = node.tag.clone();
     if let Some(id) = node.attributes.get("id") {
@@ -942,7 +1110,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|screenshot> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for page, dom, open, wait, console, network, and screenshot\n\nWait flags:\n  --timeout-ms <MS> Explicit wait timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector or wait text\n  --text <TEXT>     Text substring for wait text\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|screenshot|click|type> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n       lantern click --selector <CSS> --timeout-ms <MS>\n       lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for selected-page commands\n\nWait and interaction flags:\n  --timeout-ms <MS> Explicit timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector/text, click, or type\n  --text <TEXT>     Text substring for wait text, or inserted text for type\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
     );
 }
 
@@ -1029,13 +1197,10 @@ struct PageOutput {
 }
 
 impl Invocation {
-    fn has_wait_flags(&self) -> bool {
+    fn has_wait_only_flags(&self) -> bool {
         self.wait_kind.is_some()
-            || self.timeout_ms.is_some()
             || self.wait_state.is_some()
             || self.wait_url_shape.is_some()
-            || self.wait_selector.is_some()
-            || self.wait_text.is_some()
             || self.quiet_ms.is_some()
     }
 
@@ -1163,7 +1328,7 @@ impl Invocation {
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
-                | "screenshot" => {
+                | "screenshot" | "click" | "type" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -1252,6 +1417,8 @@ enum Command {
     Console,
     Network,
     Screenshot,
+    Click,
+    Type,
 }
 
 impl Command {
@@ -1266,6 +1433,8 @@ impl Command {
             "console" => Some(Self::Console),
             "network" => Some(Self::Network),
             "screenshot" => Some(Self::Screenshot),
+            "click" => Some(Self::Click),
+            "type" => Some(Self::Type),
             _ => None,
         }
     }
@@ -1568,6 +1737,38 @@ impl CliError {
                 CDP_UNHEALTHY_HINT,
             ),
             ScreenshotError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
+    fn from_interaction(error: InteractionError, json: bool) -> Self {
+        match error {
+            InteractionError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            InteractionError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            InteractionError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
+                Self::runtime(
+                    json,
+                    "cdp_response_invalid",
+                    CDP_RESPONSE_INVALID_MESSAGE,
+                    CDP_RESPONSE_INVALID_HINT,
+                )
+            }
+            InteractionError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            InteractionError::Cdp(error) => Self::from_cdp(error, json),
         }
     }
 

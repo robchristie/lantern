@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, and explicit selected-page screenshot capture against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, explicit selected-page screenshot capture, and selected-element click/text-entry interactions against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -21,6 +21,8 @@ Implemented commands:
 - `lantern console`
 - `lantern network`
 - `lantern screenshot --output <PATH>`
+- `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
+- `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
 
 Reserved for future milestones and not implemented yet:
 
@@ -72,6 +74,8 @@ Supported commands:
 - `lantern console`
 - `lantern network`
 - `lantern screenshot`
+- `lantern click`
+- `lantern type`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
@@ -479,6 +483,217 @@ Redaction behavior:
 - page `url_shape`, URL-condition `current_url_shape`, and `expected_url_shape` follow the URL shape policy by default.
 - selector strings and expected/current text snippets are echoed because they are operator-supplied or page-visible condition state; callers should avoid passing secrets in selectors or text.
 - `--no-redact` may expose full URLs for URL matching and output for this invocation only.
+
+### `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
+
+Purpose: dispatch one user-like mouse click at the center of the selected element.
+
+`lantern click` is a bounded interaction helper, not a crawler or test runner. It does not launch Chromium, navigate pages, evaluate operator-supplied JavaScript, perform complex gestures, retry application workflows, or infer selectors. The command requires an explicit selector and explicit timeout. If the selector is not found or the element cannot produce a clickable box before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and a concise `immediate_error`; endpoint, target, and CDP failures still use the normal non-zero error path.
+
+Supported form:
+
+- `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
+
+Timeouts are explicit and bounded. `--timeout-ms` is required and must be from `1` through `30000`.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- Bounded `DOM.getDocument` and `DOM.querySelector` reads for the supplied selector.
+- `DOM.describeNode` for concise node metadata when available.
+- `DOM.getBoxModel` to compute a center point for the element's content quad.
+- `Input.dispatchMouseEvent` for one `mouseMoved`, one `mousePressed`, and one `mouseReleased` event at that center point.
+
+Target selection:
+
+`lantern click` uses the same page target selection behavior as `lantern page`:
+
+1. If `--target-id` is supplied and exactly matches the id of a `page` target, select it.
+2. If `--target-id` is supplied but does not exactly match a `page` target, fail with exit code `1` and error code `target_not_found`.
+3. If no explicit selector is supplied and exactly one `page` target exists, select it.
+4. If no explicit selector is supplied, multiple `page` targets exist, and exactly one is attached or active according to CDP metadata, select it.
+5. If no explicit selector is supplied and multiple candidates remain, fail with exit code `2` and error code `target_ambiguous`.
+6. If no `page` target exists, fail with exit code `1` and error code `target_not_found`.
+
+After target selection, `lantern click` requires the selected target to expose a `webSocketDebuggerUrl`. If the selected target has no WebSocket debugger URL, the command fails with exit code `1` and the stable error code `target_websocket_missing`.
+
+Human output should include:
+
+- selected target id short form
+- selector
+- whether the action was dispatched
+- timeout and elapsed milliseconds
+- concise observed node state
+- immediate error when no action was dispatched
+
+Recommended human output shape:
+
+```text
+click: ABCD1234 title="Example" url=https://example.test/path selector="[data-testid=save]" dispatched=true timed_out=false elapsed_ms=42 timeout_ms=1000 observed=node=BUTTON point=420,180 inserted_text_length=null error=null
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "click",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "interaction": {
+    "action": "click",
+    "selector": "[data-testid=save]",
+    "dispatched": true,
+    "timed_out": false,
+    "elapsed_ms": 42,
+    "timeout_ms": 1000,
+    "observed": {
+      "node_name": "BUTTON",
+      "clickable_point": {
+        "x": 420.0,
+        "y": 180.0
+      },
+      "inserted_text_length": null
+    },
+    "immediate_error": null
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `interaction.action`
+- `interaction.selector`
+- `interaction.dispatched`
+- `interaction.timed_out`
+- `interaction.elapsed_ms`
+- `interaction.timeout_ms`
+- `interaction.observed.node_name`
+- `interaction.observed.clickable_point`
+- `interaction.observed.inserted_text_length`
+- `interaction.immediate_error`
+
+`page.title`, `page.url_shape`, `interaction.observed.node_name`, and `interaction.observed.clickable_point` may be `null` when unavailable. For `click`, `interaction.observed.inserted_text_length` is always `null`.
+
+Command-specific error cases:
+
+- missing `--selector` or `--timeout-ms`: exit code `2`, error code `usage`
+- unsupported `--text` with `click`: exit code `2`, error code `usage`
+- invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP interaction response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- page `url_shape` follows the URL shape policy by default.
+- selector strings are echoed because they are operator-supplied; callers should avoid passing secrets in selectors.
+- click output does not capture DOM text, input values, cookies, storage, headers, request bodies, response bodies, or screenshots.
+- `--no-redact` may expose the selected page's full URL metadata for this invocation only.
+
+### `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+
+Purpose: focus the selected element and insert operator-supplied text.
+
+`lantern type` is a bounded text-entry helper. It does not clear existing values, submit forms, synthesize complex keyboard shortcuts, infer selectors, evaluate operator-supplied JavaScript, or validate application state. The command requires an explicit selector, explicit text, and explicit timeout. If the selector is not found before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and `immediate_error="selector_not_found"`; endpoint, target, and CDP failures still use the normal non-zero error path.
+
+Supported form:
+
+- `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+
+Timeouts are explicit and bounded. `--timeout-ms` is required and must be from `1` through `30000`.
+
+CDP inputs:
+
+- `GET /json/list`
+- The selected page target's WebSocket debugger endpoint.
+- Bounded `DOM.getDocument` and `DOM.querySelector` reads for the supplied selector.
+- `DOM.describeNode` for concise node metadata when available.
+- `DOM.focus` on the selected node.
+- `Input.insertText` with the supplied text.
+
+Target selection, WebSocket requirements, and target-related error cases are identical to `lantern click`.
+
+Human output should include:
+
+- selected target id short form
+- selector
+- whether the action was dispatched
+- timeout and elapsed milliseconds
+- node name and inserted text length
+- immediate error when no action was dispatched
+
+Recommended human output shape:
+
+```text
+type: ABCD1234 title="Example" url=https://example.test/path selector="input[name=q]" dispatched=true timed_out=false elapsed_ms=39 timeout_ms=1000 observed=node=INPUT point=null inserted_text_length=12 error=null
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "type",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path"
+  },
+  "interaction": {
+    "action": "type",
+    "selector": "input[name=q]",
+    "dispatched": true,
+    "timed_out": false,
+    "elapsed_ms": 39,
+    "timeout_ms": 1000,
+    "observed": {
+      "node_name": "INPUT",
+      "clickable_point": null,
+      "inserted_text_length": 12
+    },
+    "immediate_error": null
+  }
+}
+```
+
+Required JSON fields are the same as `lantern click`. For `type`, `interaction.observed.clickable_point` is always `null`, and `interaction.observed.inserted_text_length` is the character count of the operator-supplied text when the action is dispatched.
+
+Command-specific error cases:
+
+- missing `--selector`, `--text`, or `--timeout-ms`: exit code `2`, error code `usage`
+- invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- ambiguous page target selection: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
+- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
+- CDP command error or malformed CDP interaction response: exit code `1`, error code `cdp_response_invalid`
+
+Redaction behavior:
+
+- page `url_shape` follows the URL shape policy by default.
+- selector strings are echoed because they are operator-supplied; callers should avoid passing secrets in selectors.
+- inserted text is sent to Chromium but not echoed back in stdout or stderr. Lantern reports only `inserted_text_length`.
+- `type` output does not capture post-entry input values, DOM text, cookies, storage, headers, request bodies, response bodies, or screenshots.
+- `--no-redact` may expose the selected page's full URL metadata for this invocation only.
 
 ### `lantern console`
 
@@ -1112,12 +1327,13 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, or `lantern screenshot`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, or `lantern type`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, or `lantern screenshot`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, or `lantern type`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range
+- `interaction_timeout_invalid`: click or type timeout bounds were outside the supported range
 - `screenshot_output_exists`: screenshot output path already exists and `--overwrite` was not supplied
 - `screenshot_write_failed`: screenshot output path could not be written
 - `interrupted`: command was interrupted
@@ -1139,5 +1355,7 @@ LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
 lantern page --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890
 lantern open --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 http://localhost:5173/
 lantern network --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
+lantern click --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --selector '[data-testid=save]' --timeout-ms 1000 --json
+lantern type --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --selector 'input[name=q]' --text 'hello' --timeout-ms 1000 --json
 lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 ```
