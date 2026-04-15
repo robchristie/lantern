@@ -2,6 +2,7 @@ pub mod cdp;
 pub mod console;
 pub mod dom;
 pub mod endpoint;
+pub mod flow;
 pub mod interaction;
 pub mod layout;
 pub mod navigation;

@@ -126,7 +126,7 @@ pub fn read_console_errors(
     Ok(ConsoleCommandOutput::success(page, collector.finish()))
 }
 
-struct ConsoleCollector {
+pub(crate) struct ConsoleCollector {
     mode: RedactionMode,
     next_sequence: usize,
     message_count: usize,
@@ -136,7 +136,7 @@ struct ConsoleCollector {
 }
 
 impl ConsoleCollector {
-    fn new(mode: RedactionMode) -> Self {
+    pub(crate) fn new(mode: RedactionMode) -> Self {
         Self {
             mode,
             next_sequence: 1,
@@ -147,7 +147,7 @@ impl ConsoleCollector {
         }
     }
 
-    fn push_event(&mut self, event: CdpEvent) {
+    pub(crate) fn push_event(&mut self, event: CdpEvent) {
         let candidate = match event.method.as_str() {
             "Runtime.consoleAPICalled" => runtime_console_entry(event.params, self.mode),
             "Runtime.exceptionThrown" => runtime_exception_entry(event.params, self.mode),
@@ -176,7 +176,15 @@ impl ConsoleCollector {
         self.entries.push(candidate.entry);
     }
 
-    fn finish(self) -> ConsoleSummary {
+    pub(crate) fn finish(self) -> ConsoleSummary {
+        self.finish_with_collection_gap(true, CONSOLE_COLLECTION_GAP_REASON)
+    }
+
+    pub(crate) fn finish_with_collection_gap(
+        self,
+        collection_gap: bool,
+        collection_gap_reason: &'static str,
+    ) -> ConsoleSummary {
         let observed_clean = self.entries.is_empty();
         ConsoleSummary {
             message_count: self.message_count,
@@ -185,8 +193,8 @@ impl ConsoleCollector {
             message_text_limit: CONSOLE_MESSAGE_LIMIT,
             truncated: self.truncated,
             observed_clean,
-            collection_gap: true,
-            collection_gap_reason: CONSOLE_COLLECTION_GAP_REASON,
+            collection_gap,
+            collection_gap_reason,
             entries: self.entries,
         }
     }

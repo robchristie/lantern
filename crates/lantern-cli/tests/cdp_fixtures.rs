@@ -771,6 +771,108 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_flow_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            for (id, method) in [
+                (1, "Runtime.enable"),
+                (2, "Log.enable"),
+                (3, "Network.enable"),
+                (4, "Page.enable"),
+            ] {
+                let message = read_expect(&mut socket, &format!(r#""method":"{method}""#));
+                assert!(
+                    message.contains(r#""id":"#),
+                    "flow fixture should receive command ids: {message:?}"
+                );
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                    ))
+                    .expect("fixture should write enable response");
+            }
+
+            let message = read_expect(&mut socket, r#""method":"Page.navigate""#);
+            assert!(
+                message.contains(r#""url":"https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag""#),
+                "flow fixture should navigate using the requested URL: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":5,"result":{"frameId":"FRAME_123","loaderId":"LOADER_123"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write navigate response");
+
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Runtime.consoleAPICalled","params":{"type":"error","args":[{"type":"string","value":"Flow token=supersecret at https://user:pass@example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag"}],"stackTrace":{"callFrames":[{"functionName":"render","url":"https://example.test/assets/app.js?build=123#main","lineNumber":42,"columnNumber":7}]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write console event");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.requestWillBeSent","params":{"requestId":"REQ_FLOW","request":{"method":"GET","url":"https://example.test/api/secret/abcdef123456abcdef123456abcdef12?token=secret#frag"}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write request metadata");
+            socket
+                .send(Message::Text(
+                    r#"{"method":"Network.loadingFailed","params":{"requestId":"REQ_FLOW","type":"Fetch","errorText":"net::ERR_NAME_NOT_RESOLVED"}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write network failure");
+
+            let message = read_expect(&mut socket, r#""method":"Runtime.evaluate""#);
+            assert!(
+                message.contains(r#""expression":"document.title""#),
+                "flow fixture should request page title: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":6,"result":{"result":{"type":"string","value":"Flow checkout page"}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write title response");
+
+            let message = read_expect(&mut socket, r#""method":"Runtime.evaluate""#);
+            assert!(
+                message.contains(r#""expression":"document.readyState""#),
+                "flow fixture should request ready state: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":7,"result":{"result":{"type":"string","value":"complete"}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write ready-state response");
+
+            read_expect(&mut socket, r#""method":"Page.getNavigationHistory""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":8,"result":{"currentIndex":0,"entries":[{"id":1,"url":"https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag","title":"Loaded"}]}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write history response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn one_click_response() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
@@ -1948,6 +2050,62 @@ fn network_json_reports_missing_page_websocket_url() {
             + "\n"
     );
     fixture.finish();
+}
+
+#[test]
+fn flow_json_observes_navigation_wait_console_and_network_on_one_attachment() {
+    let websocket = WebSocketFixture::one_flow_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "flow",
+            "--open",
+            "https://example.test/reset/4a7f9c0e2d1b4c6a8e9f0123456789ab?token=secret#frag",
+            "--timeout-ms",
+            "1000",
+            "--quiet-ms",
+            "100",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["command"], "flow");
+    assert_eq!(json["flow"]["single_attachment"], true);
+    assert_eq!(json["flow"]["opened_url"], true);
+    assert_eq!(json["flow"]["observation_started_before_navigation"], true);
+    assert_eq!(json["flow"]["wait"]["condition"], "quiet");
+    assert_eq!(json["flow"]["wait"]["matched"], true);
+    assert_eq!(json["page"]["title"], "Flow checkout page");
+    assert_eq!(
+        json["page"]["url_shape"],
+        "https://example.test/reset/:redacted"
+    );
+    assert_eq!(json["console"]["message_count"], 1);
+    assert_eq!(json["console"]["collection_gap"], false);
+    assert_eq!(
+        json["console"]["collection_gap_reason"],
+        "collection_started_before_observed_flow"
+    );
+    assert_eq!(json["network"]["failed_count"], 1);
+    assert_eq!(json["network"]["collection_gap"], false);
+    assert_eq!(
+        json["network"]["collection_gap_reason"],
+        "collection_started_before_observed_flow"
+    );
+    assert!(
+        stdout(&output).contains("token=:redacted"),
+        "flow output should redact browser-derived secret-looking text: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
 }
 
 #[test]

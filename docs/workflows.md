@@ -20,6 +20,13 @@
 3. Verify the endpoint with `lantern doctor --endpoint http://127.0.0.1:9222`.
 4. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
 
+## Browser Session Observation Loop
+
+1. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when the agent needs one coherent `open -> wait -> inspect` observation rather than separate snapshot commands.
+2. Treat `flow.console.collection_gap=false` and `flow.network.collection_gap=false` as evidence that collection started before the observed navigation, not as proof that no unobserved browser history exists outside the flow.
+3. Use `lantern console` and `lantern network` for quick ad hoc snapshots, but prefer `flow` when judging whether a code change introduced fresh page-load errors.
+4. Keep interaction commands separate from `flow` until a later ExecPlan defines multi-step interaction sessions explicitly.
+
 ## Authenticated Browser Loop
 
 1. Follow `docs/authenticated-browser-testing.md` before connecting Lantern to a logged-in profile.

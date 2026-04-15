@@ -2,7 +2,7 @@
 
 This policy defines how Lantern writes human and JSON output, and how it redacts or truncates browser-derived data. It applies to first-milestone commands and to reserved future commands for DOM, console, network, and screenshot inspection.
 
-Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern layout`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
+Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern layout`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
 ## Goals
 
@@ -105,6 +105,12 @@ Breaking JSON changes that require a `schema_version` bump:
 - changing field types
 - changing default redaction or truncation for an existing field
 - changing command selection behavior in a way that changes successful results
+
+## Session Observation Output
+
+`lantern flow` is the first session-oriented command. It still exits after one bounded observation, but it keeps one CDP attachment open across optional navigation, waiting, console collection, network collection, and final page-state inspection. When `--open <URL>` is supplied, collection starts before the observed navigation and `console.collection_gap` and `network.collection_gap` may be `false` with `collection_gap_reason=collection_started_before_observed_flow`. Without `--open`, `flow` attaches to an already-running page and must report the same pre-attach collection gap as snapshot `console` and `network` commands.
+
+Flow output must follow the same redaction and truncation rules as `page`, `wait`, `console`, and `network`. It must not emit raw CDP payloads, request or response bodies, headers, cookies, local storage values, screenshot bytes, or full URLs by default.
 
 ## Redaction Modes
 

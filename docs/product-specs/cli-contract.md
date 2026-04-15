@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, explicit selected-page screenshot capture, and selected-element click/text-entry interactions against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, one bounded session-observation flow, explicit selected-page screenshot capture, and selected-element click/text-entry interactions against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -20,6 +20,7 @@ Implemented commands:
 - `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
 - `lantern network`
+- `lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]`
 - `lantern screenshot --output <PATH>`
 - `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
 - `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
@@ -73,6 +74,7 @@ Supported commands:
 - `lantern wait`
 - `lantern console`
 - `lantern network`
+- `lantern flow`
 - `lantern screenshot`
 - `lantern click`
 - `lantern type`
@@ -694,6 +696,135 @@ Redaction behavior:
 - inserted text is sent to Chromium but not echoed back in stdout or stderr. Lantern reports only `inserted_text_length`.
 - `type` output does not capture post-entry input values, DOM text, cookies, storage, headers, request bodies, response bodies, or screenshots.
 - `--no-redact` may expose the selected page's full URL metadata for this invocation only.
+
+
+### `lantern flow`
+
+Purpose: run one bounded browser-observation session over a single CDP attachment, so an agent can observe `open -> wait -> inspect` without losing console or network events between separate CLI invocations.
+
+`lantern flow` is not a daemon and does not provide arbitrary test-runner automation. It attaches to the selected page target, enables Runtime, Log, Network, and Page domains, optionally navigates with `--open <URL>`, waits either for `document.readyState == complete` or for a quiet event window, collects console/runtime failures and network failures during that same attachment, reads final page title, URL shape, and ready state, then exits. It does not click, type, evaluate operator-supplied JavaScript, persist artifacts, emit HAR output, read request or response bodies, capture screenshots, or keep a reusable browser session open after the command exits.
+
+Required and optional flags:
+
+- `--timeout-ms <MS>` is required and uses the same 1 through 30000 bound as `lantern wait`.
+- `--quiet-ms <MS>` is optional. When present, `flow` waits for a quiet window across Runtime, Log, Network, and Page lifecycle events.
+- `--open <URL>` is optional. When present, collection starts before this observed navigation.
+- `--target-id <CDP_TARGET_ID>` is optional and uses the same selected-page target behavior as `lantern page`.
+
+CDP inputs:
+
+- `GET /json/list`
+- `Runtime.enable`, `Log.enable`, `Network.enable`, and `Page.enable`
+- optional `Page.navigate`
+- event reads for Runtime, Log, Network, and Page events during the wait window
+- `Runtime.evaluate` for final `document.title` and `document.readyState`
+- `Page.getNavigationHistory` for final URL shape when available
+
+When `--open` is supplied, `console.collection_gap` and `network.collection_gap` are `false` for the observed flow and use `collection_gap_reason=collection_started_before_observed_flow`. This means collection started before the navigation performed by `flow`; it does not make claims about page history before the command attached. When `--open` is omitted, `flow` attaches to an already-running page and reports the same collection gaps as `lantern console` and `lantern network`.
+
+Human output should include:
+
+- selected target short id
+- title and URL shape
+- whether navigation was performed
+- whether one CDP attachment covered the flow
+- wait condition, match status, timeout status, elapsed time, and timeout
+- console and network failure counts
+- console and network collection-gap flags
+- bounded console and network entry lines using the same format as `lantern console` and `lantern network`
+
+Recommended human output shape:
+
+```text
+flow: ABCD1234 title="Example" url=https://example.test/path opened=true single_attachment=true before_navigation=true wait_condition=quiet matched=true timed_out=false elapsed_ms=502 timeout_ms=5000 console_messages=0 console_exceptions=0 network_failed=0 network_http_errors=0 console_gap=false network_gap=false
+```
+
+JSON output shape:
+
+```json
+{
+  "schema_version": 1,
+  "command": "flow",
+  "ok": true,
+  "page": {
+    "target_id": "ABCD1234",
+    "title": "Example",
+    "url_shape": "https://example.test/path",
+    "ready_state": "complete"
+  },
+  "flow": {
+    "single_attachment": true,
+    "opened_url": true,
+    "observation_started_before_navigation": true,
+    "wait": {
+      "condition": "quiet",
+      "matched": true,
+      "timed_out": false,
+      "elapsed_ms": 502,
+      "timeout_ms": 5000,
+      "observed": {
+        "quiet_ms": 500,
+        "event_count": 3,
+        "last_event": "Network.loadingFinished"
+      }
+    }
+  },
+  "console": {
+    "message_count": 0,
+    "exception_count": 0,
+    "max_entries": 20,
+    "message_text_limit": 500,
+    "truncated": false,
+    "observed_clean": true,
+    "collection_gap": false,
+    "collection_gap_reason": "collection_started_before_observed_flow",
+    "entries": []
+  },
+  "network": {
+    "failed_count": 0,
+    "http_error_count": 0,
+    "max_entries": 20,
+    "truncated": false,
+    "observed_clean": true,
+    "collection_gap": false,
+    "collection_gap_reason": "collection_started_before_observed_flow",
+    "entries": []
+  }
+}
+```
+
+Required JSON fields:
+
+- `schema_version`
+- `command`
+- `ok`
+- `page.target_id`
+- `page.title`
+- `page.url_shape`
+- `page.ready_state`
+- `flow.single_attachment`
+- `flow.opened_url`
+- `flow.observation_started_before_navigation`
+- `flow.wait`
+- all required `console` fields from `lantern console`
+- all required `network` fields from `lantern network`
+
+`page.title`, `page.url_shape`, and `page.ready_state` may be `null` when unavailable. `flow.wait` reuses the `lantern wait` JSON shape. `console.entries` and `network.entries` must always be arrays.
+
+Error cases:
+
+- missing `--timeout-ms`: exit code `2`, error code `usage`
+- invalid timeout or quiet window: exit code `2`, error code `wait_timeout_invalid`
+- invalid `--open` URL: exit code `2`, error code `url_invalid`
+- no page target: exit code `1`, error code `target_not_found`
+- explicit target id did not match a page target: exit code `1`, error code `target_not_found`
+- multiple page targets and no unique selected page: exit code `2`, error code `target_ambiguous`
+- selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
+- CDP navigation failure: exit code `1`, error code `navigation_failed`
+- CDP command error or malformed CDP response: exit code `1`, error code `cdp_response_invalid`
+- endpoint unreachable or invalid endpoint response: shared endpoint errors
+
+Default output follows the flow, console, network, wait, and URL policies in `docs/product-specs/output-policy.md`.
 
 ### `lantern console`
 
@@ -1348,9 +1479,9 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, or `lantern type`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, or `lantern type`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern screenshot`, `lantern click`, or `lantern type`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, or `lantern type`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range
@@ -1376,6 +1507,7 @@ LANTERN_CDP_ENDPOINT=http://127.0.0.1:9222 lantern page
 lantern page --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890
 lantern open --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 http://localhost:5173/
 lantern network --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
+lantern flow --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --open http://localhost:5173/ --timeout-ms 5000 --quiet-ms 500 --json
 lantern click --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --selector '[data-testid=save]' --timeout-ms 1000 --json
 lantern type --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --selector 'input[name=q]' --text 'hello' --timeout-ms 1000 --json
 lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json

@@ -123,7 +123,7 @@ pub fn read_network_failures(
     Ok(NetworkCommandOutput::success(page, collector.finish()))
 }
 
-struct NetworkCollector {
+pub(crate) struct NetworkCollector {
     mode: RedactionMode,
     next_sequence: usize,
     failed_count: usize,
@@ -134,7 +134,7 @@ struct NetworkCollector {
 }
 
 impl NetworkCollector {
-    fn new(mode: RedactionMode) -> Self {
+    pub(crate) fn new(mode: RedactionMode) -> Self {
         Self {
             mode,
             next_sequence: 1,
@@ -146,7 +146,7 @@ impl NetworkCollector {
         }
     }
 
-    fn push_event(&mut self, event: CdpEvent) {
+    pub(crate) fn push_event(&mut self, event: CdpEvent) {
         match event.method.as_str() {
             "Network.requestWillBeSent" => self.push_request(event.params),
             "Network.responseReceived" => self.push_response(event.params),
@@ -244,7 +244,15 @@ impl NetworkCollector {
         self.entries.push(entry);
     }
 
-    fn finish(self) -> NetworkSummary {
+    pub(crate) fn finish(self) -> NetworkSummary {
+        self.finish_with_collection_gap(true, NETWORK_COLLECTION_GAP_REASON)
+    }
+
+    pub(crate) fn finish_with_collection_gap(
+        self,
+        collection_gap: bool,
+        collection_gap_reason: &'static str,
+    ) -> NetworkSummary {
         let observed_clean = self.entries.is_empty();
         NetworkSummary {
             failed_count: self.failed_count,
@@ -252,8 +260,8 @@ impl NetworkCollector {
             max_entries: NETWORK_MAX_ENTRIES,
             truncated: self.truncated,
             observed_clean,
-            collection_gap: true,
-            collection_gap_reason: NETWORK_COLLECTION_GAP_REASON,
+            collection_gap,
+            collection_gap_reason,
             entries: self.entries,
         }
     }

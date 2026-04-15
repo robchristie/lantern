@@ -15,6 +15,7 @@ This directory stores reusable, checked-in prompt templates.
 - `review-rescue`: for repairing a task branch after agent review blocks landing
 - `task-execution`: default for task-driven work
 - `task-recovery`: default when the latest run for a task failed
+- `ui-review`: for separate UI evaluator runs that score browser evidence and return structured review JSON
 
 ## Selection Rules
 
@@ -24,3 +25,4 @@ This directory stores reusable, checked-in prompt templates.
 - Otherwise, task-driven runs use `task-execution`.
 - Runs without task context use `ad-hoc`.
 - Blocked agent reviews use `review-rescue` only through `run rescue-review` or an explicit `review_block_policy = "rescue-once"` auto-landing policy.
+- UI evaluator runs use `ui-review` only through the UI review path, not normal task execution.

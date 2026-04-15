@@ -27,7 +27,7 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 - `docs/product-specs/lantern.md`: generated product spec
 - `docs/product-specs/cli-contract.md`: first-milestone CLI contract
 - `docs/product-specs/output-policy.md`: shared output, JSON ordering, redaction, and truncation policy
-- `docs/exec-plans/active/2026-04-14-frontend-feedback-loop-v1.md`: current product ExecPlan
+- `docs/exec-plans/completed/2026-04-14-frontend-feedback-loop-v1.md`: completed frontend feedback loop ExecPlan
 
 ## Quick Start
 
@@ -35,5 +35,6 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.
 4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`.
-5. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-6. Build the first milestone in bounded steps rather than broad scaffolding.
+5. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
+6. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+7. Build new browser-inspection capability in bounded steps rather than broad scaffolding.

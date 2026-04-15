@@ -8,6 +8,7 @@ use lantern_core::{
         DomSummaryOptions, read_dom_summary,
     },
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
+    flow::{FlowCommandOutput, FlowError, FlowOptions, run_observation_flow},
     interaction::{
         INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
         type_text,
@@ -128,29 +129,46 @@ fn run(
                 | Command::Layout
                 | Command::Click
                 | Command::Type
+                | Command::Flow
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, and type.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, and flow.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
 
-    if command != Command::Wait && invocation.has_wait_only_flags() {
+    if !matches!(command, Command::Wait | Command::Flow) && invocation.has_wait_only_flags() {
         return Err(CliError::usage(
             invocation.json,
-            "Wait flags are only supported by wait.",
-            "Run lantern wait <ready|url|selector|text|quiet> with wait-specific flags.",
+            "Wait flags are only supported by wait and flow.",
+            "Run lantern wait <ready|url|selector|text|quiet>, or lantern flow with --timeout-ms and optional --quiet-ms.",
         ));
     }
 
-    if !matches!(command, Command::Wait | Command::Click | Command::Type)
-        && invocation.timeout_ms.is_some()
+    if command == Command::Flow
+        && (invocation.wait_kind.is_some()
+            || invocation.wait_state.is_some()
+            || invocation.wait_url_shape.is_some()
+            || invocation.wait_selector.is_some()
+            || invocation.wait_text.is_some())
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, and type.",
+            "Flow supports only --timeout-ms, optional --quiet-ms, optional --open, and target selection.",
+            "Run lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>] [--target-id <ID>].",
+        ));
+    }
+
+    if !matches!(
+        command,
+        Command::Wait | Command::Click | Command::Type | Command::Flow
+    ) && invocation.timeout_ms.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--timeout-ms is only supported by wait, click, type, and flow.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
@@ -183,6 +201,29 @@ fn run(
 
     if command == Command::Wait {
         validate_wait_flag_shape(&invocation)?;
+    }
+
+    if command == Command::Flow {
+        let timeout_ms = invocation.timeout_ms.ok_or_else(|| {
+            CliError::usage(
+                invocation.json,
+                "Missing --timeout-ms for flow.",
+                "Run lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>].",
+            )
+        })?;
+        validate_wait_timeout(timeout_ms, invocation.quiet_ms, invocation.json)?;
+        if let Some(url) = invocation.open_url.as_deref() {
+            validate_navigation_url(url)
+                .map_err(|error| CliError::from_navigation(error, invocation.json))?;
+        }
+    }
+
+    if !matches!(command, Command::Open | Command::Flow) && invocation.open_url.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Navigation URL is only supported by open and flow.",
+            "Run lantern open <URL> or lantern flow --open <URL>.",
+        ));
     }
 
     if command != Command::Dom && invocation.has_dom_flags() {
@@ -463,6 +504,25 @@ fn run_command(
             let output = read_network_failures(&page, RedactionMode::from_no_redact(no_redact))
                 .map_err(|error| CliError::from_network_read(error, json))?;
             write_network(output, json)?;
+        }
+        Command::Flow => {
+            let timeout_ms = timeout_ms.expect("flow timeout checked before endpoint");
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = run_observation_flow(
+                &page,
+                FlowOptions {
+                    open_url,
+                    timeout: Duration::from_millis(timeout_ms),
+                    quiet_ms,
+                },
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_flow(error, json))?;
+            write_flow(output, json)?;
         }
         Command::Layout => {
             let targets = client
@@ -909,6 +969,43 @@ fn write_network(output: NetworkCommandOutput, json: bool) -> Result<(), CliErro
     Ok(())
 }
 
+fn write_flow(output: FlowCommandOutput, json: bool) -> Result<(), CliError> {
+    if json {
+        write_json(&output)?;
+        return Ok(());
+    }
+
+    println!(
+        "flow: {} title=\"{}\" url={} opened={} single_attachment={} before_navigation={} wait_condition={} matched={} timed_out={} elapsed_ms={} timeout_ms={} console_messages={} console_exceptions={} network_failed={} network_http_errors={} console_gap={} network_gap={}",
+        short_target_id(&output.page.target_id),
+        escape_human(output.page.title.as_deref().unwrap_or("null")),
+        output.page.url_shape.as_deref().unwrap_or("null"),
+        output.flow.opened_url,
+        output.flow.single_attachment,
+        output.flow.observation_started_before_navigation,
+        wait_condition_label(output.flow.wait.condition),
+        output.flow.wait.matched,
+        output.flow.wait.timed_out,
+        output.flow.wait.elapsed_ms,
+        output.flow.wait.timeout_ms,
+        output.console.message_count,
+        output.console.exception_count,
+        output.network.failed_count,
+        output.network.http_error_count,
+        output.console.collection_gap,
+        output.network.collection_gap,
+    );
+
+    for entry in &output.console.entries {
+        write_console_entry(entry);
+    }
+    for entry in &output.network.entries {
+        write_network_entry(entry);
+    }
+
+    Ok(())
+}
+
 fn write_layout(output: LayoutCommandOutput, json: bool) -> Result<(), CliError> {
     if json {
         write_json(&output)?;
@@ -1284,7 +1381,35 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|screenshot|click|type> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]\n       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]\n       lantern screenshot --output <PATH> [--overwrite]\n       lantern click --selector <CSS> --timeout-ms <MS>\n       lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>\n\nShared flags:\n  --endpoint <URL>  Local Chromium CDP HTTP endpoint\n  --json            Emit JSON on stdout; errors remain on stderr\n  --no-redact       Disable redaction for command output metadata\n  --target-id <ID>  Exact CDP page target id for selected-page commands\n\nWait and interaction flags:\n  --timeout-ms <MS> Explicit timeout from 1 through 30000\n  --state <STATE>   ready state: loading, interactive, or complete\n  --url-shape <URL> Expected URL shape for wait url\n  --selector <CSS>  CSS selector for wait selector/text, click, or type\n  --text <TEXT>     Text substring for wait text, or inserted text for type\n  --quiet-ms <MS>   Quiet period for wait quiet\n\nScreenshot flags:\n  --output <PATH>   Required local PNG output path\n  --overwrite       Replace an existing output file\n\n  -h, --help        Print help\n  -V, --version     Print version"
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+       lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+       lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
+       lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
+       lantern screenshot --output <PATH> [--overwrite]
+       lantern click --selector <CSS> --timeout-ms <MS>
+       lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>
+
+Shared flags:
+  --endpoint <URL>  Local Chromium CDP HTTP endpoint
+  --json            Emit JSON on stdout; errors remain on stderr
+  --no-redact       Disable redaction for command output metadata
+  --target-id <ID>  Exact CDP page target id for selected-page commands
+
+Navigation and wait flags:
+  --open <URL>      Optional navigation URL for flow
+  --timeout-ms <MS> Explicit timeout from 1 through 30000
+  --state <STATE>   ready state: loading, interactive, or complete
+  --url-shape <URL> Expected URL shape for wait url
+  --selector <CSS>  CSS selector for wait selector/text, click, or type
+  --text <TEXT>     Text substring for wait text, or inserted text for type
+  --quiet-ms <MS>   Quiet period for wait quiet or flow
+
+Screenshot flags:
+  --output <PATH>   Required local PNG output path
+  --overwrite       Replace an existing output file
+
+  -h, --help        Print help
+  -V, --version     Print version"
     );
 }
 
@@ -1488,6 +1613,16 @@ impl Invocation {
                     };
                     invocation.wait_text = Some(text);
                 }
+                "--open" => {
+                    let Some(url) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --open.",
+                            "Pass an absolute http:// or https:// URL, or about:blank.",
+                        ));
+                    };
+                    invocation.open_url = Some(url);
+                }
                 "--quiet-ms" => {
                     let Some(quiet_ms) = args.next() else {
                         return Err(CliError::usage(
@@ -1530,7 +1665,7 @@ impl Invocation {
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
-                | "screenshot" | "layout" | "click" | "type" => {
+                | "screenshot" | "layout" | "click" | "type" | "flow" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -1632,6 +1767,7 @@ enum Command {
     Layout,
     Click,
     Type,
+    Flow,
 }
 
 impl Command {
@@ -1649,6 +1785,7 @@ impl Command {
             "layout" => Some(Self::Layout),
             "click" => Some(Self::Click),
             "type" => Some(Self::Type),
+            "flow" => Some(Self::Flow),
             _ => None,
         }
     }
@@ -1922,6 +2059,48 @@ impl CliError {
         }
     }
 
+    fn from_flow(error: FlowError, json: bool) -> Self {
+        match error {
+            FlowError::TargetWebSocketMissing => Self::runtime(
+                json,
+                "target_websocket_missing",
+                TARGET_WEBSOCKET_MISSING_MESSAGE,
+                TARGET_WEBSOCKET_MISSING_HINT,
+            ),
+            FlowError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
+                json,
+                "endpoint_unreachable",
+                ENDPOINT_UNREACHABLE_MESSAGE,
+                ENDPOINT_UNREACHABLE_HINT,
+            ),
+            FlowError::NavigationFailed(_) => Self::runtime(
+                json,
+                "navigation_failed",
+                NAVIGATION_FAILED_MESSAGE,
+                NAVIGATION_FAILED_HINT,
+            ),
+            FlowError::Cdp(CdpError::Command { .. }) => Self::runtime(
+                json,
+                "cdp_response_invalid",
+                CDP_RESPONSE_INVALID_MESSAGE,
+                CDP_RESPONSE_INVALID_HINT,
+            ),
+            FlowError::Cdp(CdpError::ResponseInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_response_invalid",
+                CDP_RESPONSE_INVALID_MESSAGE,
+                CDP_RESPONSE_INVALID_HINT,
+            ),
+            FlowError::Cdp(CdpError::WebSocketUrlInvalid { .. }) => Self::runtime(
+                json,
+                "cdp_unhealthy",
+                CDP_UNHEALTHY_MESSAGE,
+                CDP_UNHEALTHY_HINT,
+            ),
+            FlowError::Cdp(error) => Self::from_cdp(error, json),
+        }
+    }
+
     fn from_layout_read(error: LayoutReadError, json: bool) -> Self {
         match error {
             LayoutReadError::TargetWebSocketMissing => Self::runtime(
@@ -2151,6 +2330,28 @@ mod tests {
             Some("artifacts/page.png")
         );
         assert!(invocation.screenshot_overwrite);
+    }
+
+    #[test]
+    fn parses_flow_command_with_open_and_quiet_window() {
+        let invocation = Invocation::parse([
+            "flow".to_string(),
+            "--open".to_string(),
+            "https://example.test".to_string(),
+            "--timeout-ms".to_string(),
+            "5000".to_string(),
+            "--quiet-ms".to_string(),
+            "500".to_string(),
+            "--target-id".to_string(),
+            "PAGE_123".to_string(),
+        ])
+        .expect("invocation should parse");
+
+        assert_eq!(invocation.command, Some(Command::Flow));
+        assert_eq!(invocation.open_url.as_deref(), Some("https://example.test"));
+        assert_eq!(invocation.timeout_ms, Some(5000));
+        assert_eq!(invocation.quiet_ms, Some(500));
+        assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
     }
 
     #[test]

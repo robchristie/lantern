@@ -24,4 +24,5 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Recently Completed Plans
 
+- `docs/exec-plans/completed/2026-04-15-session-observation-flow.md`
 - `docs/exec-plans/completed/2026-04-14-frontend-feedback-loop-v1.md`
