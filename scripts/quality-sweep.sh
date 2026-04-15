@@ -4,6 +4,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 
+# Keep validation portable on machines without optional compiler wrappers.
+# Developers can opt into compiler wrappers locally via environment or untracked Cargo config.
+export RUSTC_WRAPPER=
+
 run() {
   printf '\n==> %s\n' "$*"
   "$@"
