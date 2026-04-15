@@ -236,6 +236,8 @@ Default console output may include:
 - message text truncated to 500 Unicode scalar values
 - argument count
 - stack frame count
+- whether the bounded attach window observed no matching errors
+- whether the command has a collection gap because earlier console/runtime events may not have been observed
 
 Default console output must not include:
 

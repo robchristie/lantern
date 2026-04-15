@@ -699,7 +699,7 @@ Redaction behavior:
 
 Purpose: collect a bounded snapshot of recent console errors and page runtime exceptions from the selected page target.
 
-`lantern console` is not a streaming log tail. It briefly enables the CDP Runtime and Log domains for the selected target, drains immediately available error events, then exits. It does not evaluate JavaScript, serialize arbitrary object graphs, read cookies or storage, persist logs, or keep a long-running WebSocket session open.
+`lantern console` is not a streaming log tail. It briefly enables the CDP Runtime and Log domains for the selected target, drains immediately available error events, then exits. It does not evaluate JavaScript, serialize arbitrary object graphs, read cookies or storage, persist logs, or keep a long-running WebSocket session open. Because CDP does not replay all console/runtime events that occurred before Lantern attached and enabled these domains, v1 always reports `collection_gap=true`.
 
 CDP inputs:
 
@@ -729,13 +729,15 @@ Human output should include:
 - URL shape, not the full URL by default
 - console error message count
 - runtime exception count
+- explicit observed-clean status for the bounded attach window
+- explicit collection-gap status
 - explicit truncation status
 - one bounded line per entry
 
 Recommended human output shape:
 
 ```text
-console: ABCD1234 title="Example" url=https://example.test/path messages=1 exceptions=1 truncated=false
+console: ABCD1234 title="Example" url=https://example.test/path messages=1 exceptions=1 observed_clean=false collection_gap=true truncated=false
 1 Console https://example.test/app.js:42:7 args=2 frames=1 "Failed to load"
 2 Exception https://example.test/app.js:9:3 args=0 frames=2 "Error: crashed"
 ```
@@ -758,6 +760,9 @@ JSON output shape:
     "max_entries": 20,
     "message_text_limit": 500,
     "truncated": false,
+    "observed_clean": false,
+    "collection_gap": true,
+    "collection_gap_reason": "events_before_runtime_log_enable_not_observed",
     "entries": [
       {
         "sequence": 1,
@@ -788,6 +793,9 @@ Required JSON fields:
 - `console.max_entries`
 - `console.message_text_limit`
 - `console.truncated`
+- `console.observed_clean`
+- `console.collection_gap`
+- `console.collection_gap_reason`
 - `console.entries`
 - `console.entries[].sequence`
 - `console.entries[].kind`
@@ -808,6 +816,8 @@ Console feedback bounds:
 - event drain window: short and bounded; v1 does not provide a long-running streaming mode
 
 `console.truncated` must be `true` when Lantern omitted matching entries because of the entry cap or truncated any console message text because of the text limit. `message_count` and `exception_count` count emitted entries, not the full browser history.
+
+`console.observed_clean` is `true` only when the bounded collection window completes and emits no console errors or runtime exceptions. `console.collection_gap` is `true` in v1 because CDP does not reliably replay console/runtime events that occurred before `Runtime.enable` and `Log.enable`; consumers must not treat a clean result as proof that the whole page lifetime had no console failures.
 
 Default output follows the console policy in `docs/product-specs/output-policy.md`. In particular, `lantern console` must not emit full serialized JavaScript objects, full stack traces, full source URLs, query strings, fragments, credentials, cookie or storage values, or raw CDP payloads.
 

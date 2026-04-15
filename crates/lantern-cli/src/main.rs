@@ -866,12 +866,14 @@ fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliErro
     }
 
     println!(
-        "console: {} title=\"{}\" url={} messages={} exceptions={} truncated={}",
+        "console: {} title=\"{}\" url={} messages={} exceptions={} observed_clean={} collection_gap={} truncated={}",
         short_target_id(&output.page.target_id),
         escape_human(output.page.title.as_deref().unwrap_or("null")),
         output.page.url_shape.as_deref().unwrap_or("null"),
         output.console.message_count,
         output.console.exception_count,
+        output.console.observed_clean,
+        output.console.collection_gap,
         output.console.truncated
     );
 

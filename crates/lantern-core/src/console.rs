@@ -12,6 +12,7 @@ use crate::{
 
 pub const CONSOLE_SCHEMA_VERSION: u8 = 1;
 pub const CONSOLE_MAX_ENTRIES: usize = 20;
+pub const CONSOLE_COLLECTION_GAP_REASON: &str = "events_before_runtime_log_enable_not_observed";
 const CONSOLE_DRAIN_TIMEOUT: Duration = Duration::from_millis(300);
 const CONSOLE_READ_SLICE: Duration = Duration::from_millis(50);
 
@@ -50,6 +51,9 @@ pub struct ConsoleSummary {
     pub max_entries: usize,
     pub message_text_limit: usize,
     pub truncated: bool,
+    pub observed_clean: bool,
+    pub collection_gap: bool,
+    pub collection_gap_reason: &'static str,
     pub entries: Vec<ConsoleEntry>,
 }
 
@@ -173,12 +177,16 @@ impl ConsoleCollector {
     }
 
     fn finish(self) -> ConsoleSummary {
+        let observed_clean = self.entries.is_empty();
         ConsoleSummary {
             message_count: self.message_count,
             exception_count: self.exception_count,
             max_entries: CONSOLE_MAX_ENTRIES,
             message_text_limit: CONSOLE_MESSAGE_LIMIT,
             truncated: self.truncated,
+            observed_clean,
+            collection_gap: true,
+            collection_gap_reason: CONSOLE_COLLECTION_GAP_REASON,
             entries: self.entries,
         }
     }
@@ -409,4 +417,25 @@ struct CdpCallFrame {
     url: String,
     line_number: i64,
     column_number: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::redaction::RedactionMode;
+
+    #[test]
+    fn clean_window_still_reports_collection_gap() {
+        let summary = ConsoleCollector::new(RedactionMode::Redacted).finish();
+
+        assert_eq!(summary.message_count, 0);
+        assert_eq!(summary.exception_count, 0);
+        assert!(summary.observed_clean);
+        assert!(summary.collection_gap);
+        assert_eq!(
+            summary.collection_gap_reason,
+            "events_before_runtime_log_enable_not_observed"
+        );
+        assert!(summary.entries.is_empty());
+    }
 }
