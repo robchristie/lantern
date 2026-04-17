@@ -6,9 +6,9 @@ This file is the repository's current quality scorecard. It is a contract for fu
 
 Overall grade: **C+**
 
-Last reviewed: **2026-04-14**
+Last reviewed: **2026-04-15**
 
-Rationale: `Lantern` now has a Rust workspace with a narrow implemented CLI contract for local Chromium CDP inspection and frontend feedback: `doctor`, `targets`, `page`, `dom`, explicit `--target-id` selection, `open`, `wait`, `console`, `network`, `layout`, `screenshot`, `click`, and `type`. The command surface is documented, fixture-tested, redacted by default, and covered by the standard validation script. The repo remains below `B` until real-browser smoke coverage, recovery behavior, and unattended landing confidence are proven across representative local setups.
+Rationale: `Lantern` now has a Rust workspace with a narrow implemented CLI contract for local Chromium CDP inspection and frontend feedback: `doctor`, `targets`, `page`, `dom`, explicit `--target-id` selection, `open`, `wait`, `console`, `network`, `layout`, `screenshot`, `click`, `type`, and session-oriented flow observation. The command surface is documented, fixture-tested, redacted by default, and covered by the standard validation script. The repo remains below `B` until real-browser smoke coverage, recovery behavior, and unattended landing confidence are proven across representative local setups.
 
 ## Grade Scale
 

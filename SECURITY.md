@@ -6,9 +6,9 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-14**
+Last reviewed: **2026-04-15**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, no hidden browser artifact persistence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
