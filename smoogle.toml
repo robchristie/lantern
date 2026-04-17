@@ -40,6 +40,7 @@ sandbox_mode = "danger-full-access"
 commit = true
 worktree_cleanup = "landed-clean"
 branch_cleanup = "landed-merged"
+review_block_policy = "rescue-once"
 
 [profiles.recovery]
 reasoning_effort = "high"
