@@ -14,6 +14,7 @@ run_limit = 20
 queue_limit = 10
 allow_landing = true
 review_before_landing = true
+docs_refresh_landed_interval = 5
 
 [defaults]
 reasoning_effort = "medium"
