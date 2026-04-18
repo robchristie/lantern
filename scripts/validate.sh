@@ -17,6 +17,8 @@ run() {
 run_docs_check() {
   if [[ -n "${SMOOGLE_BIN:-}" ]]; then
     run "$SMOOGLE_BIN" docs check
+  elif [[ -x "$repo_root/.smoogle/bin/smoogle-cli" ]]; then
+    run "$repo_root/.smoogle/bin/smoogle-cli" docs check
   elif command -v smoogle >/dev/null 2>&1; then
     run smoogle docs check
   elif command -v smoogle-cli >/dev/null 2>&1; then
@@ -24,7 +26,7 @@ run_docs_check() {
   elif [[ -f crates/smoogle-cli/Cargo.toml ]]; then
     run cargo run -q -p smoogle-cli -- docs check
   else
-    printf '\n==> skipping smoogle docs check; set SMOOGLE_BIN or install smoogle\n'
+    printf '\n==> skipping smoogle docs check; set SMOOGLE_BIN, keep .smoogle/bin/smoogle-cli, or install smoogle\n'
   fi
 }
 
