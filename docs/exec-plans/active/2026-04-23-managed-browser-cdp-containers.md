@@ -76,6 +76,10 @@ an internal CDP proxy, and health/readiness scripts.
   built `localhost/lantern-browser-cdp:stable`, started `agent1` and `agent2`
   concurrently, verified both resolved endpoints with `lantern doctor`, then
   stopped and pruned both instances.
+- 2026-04-23: Docker smoke was re-attempted on a host with Docker CLI 29.4.0,
+  but `docker info` failed before image build because the daemon socket was
+  absent: `dial unix /var/run/docker.sock: connect: no such file or directory`.
+  No Docker-managed browser containers were started in this attempt.
 
 ## Manual Smoke Evidence
 
@@ -114,3 +118,5 @@ Outcome: both instances started and reported separate loopback CDP endpoints
 
 - Add automated real-runtime smoke coverage once the validation environment can
   reliably provide podman or docker and image build time is acceptable.
+- Complete the Docker two-instance lifecycle smoke once a reachable Docker
+  daemon is available.
