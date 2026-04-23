@@ -211,6 +211,9 @@ Security boundaries:
 - CDP is published to host loopback only.
 - Managed profiles are disposable by default and are stored under untracked
   `.smoogle/`.
+- Docker-managed containers run Chromium with `--no-sandbox` and run the
+  container process as the host profile-directory owner so the bind-mounted
+  disposable profile is writable.
 - Do not use managed disposable profiles for important authenticated sessions.
 - noVNC and VNC are local inspection paths, not strong authentication
   boundaries; prefer local use or SSH tunnels.

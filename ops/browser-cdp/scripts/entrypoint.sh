@@ -86,8 +86,13 @@ chrome_args=(
   "--no-service-autorun"
   "--password-store=basic"
   "--window-size=1280,900"
-  "about:blank"
 )
+
+if [[ "${CHROME_NO_SANDBOX:-}" == "1" ]]; then
+  chrome_args+=("--no-sandbox")
+fi
+
+chrome_args+=("about:blank")
 
 chrome_log="/tmp/chrome.log"
 "${CHROME_BIN:-/opt/chrome/chrome}" "${chrome_args[@]}" >"$chrome_log" 2>&1 &

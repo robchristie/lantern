@@ -123,6 +123,7 @@ Default `start` behavior:
 - publishes container CDP port `9222` to a runtime-assigned random host port on `127.0.0.1`
 - also publishes VNC `5900` and noVNC `6080` to random host-loopback ports when the runtime provides those mappings
 - labels containers with `dev.lantern.managed=true` and `dev.lantern.instance-id=<ID>`
+- for Docker, runs the container as the host profile-directory owner, sets `HOME=/tmp`, and passes `CHROME_NO_SANDBOX=1` so the image adds Chromium `--no-sandbox`
 - waits for `/json/version` readiness before reporting success
 
 Human output should include the id, status, runtime, endpoint, noVNC URL when

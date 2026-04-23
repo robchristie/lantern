@@ -320,6 +320,18 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
     if runtime == RuntimeKind::Podman {
         args.insert(2, "--replace".to_owned());
         args.insert(3, "--userns=keep-id:uid=1000,gid=1000".to_owned());
+    } else if runtime == RuntimeKind::Docker {
+        args.splice(
+            args.len() - 1..args.len() - 1,
+            [
+                "--user".to_owned(),
+                profile_owner_user_arg(&spec.profile_dir),
+                "-e".to_owned(),
+                "HOME=/tmp".to_owned(),
+                "-e".to_owned(),
+                "CHROME_NO_SANDBOX=1".to_owned(),
+            ],
+        );
     }
 
     RuntimeCommand::new(runtime, args)
@@ -425,6 +437,19 @@ fn profile_volume_arg(runtime: RuntimeKind, profile_dir: &Path) -> String {
     format!("{}:/profile{suffix}", profile_dir.display())
 }
 
+fn profile_owner_user_arg(profile_dir: &Path) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        if let Ok(metadata) = fs::metadata(profile_dir) {
+            return format!("{}:{}", metadata.uid(), metadata.gid());
+        }
+    }
+
+    "1000:1000".to_owned()
+}
+
 pub fn ensure_file_exists(path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -486,11 +511,19 @@ mod tests {
 
     #[test]
     fn docker_volume_command_omits_podman_selinux_suffix() {
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-docker-command-test-{}",
+            now_unix_ms()
+        ));
+        let registry = BrowserRegistry::new(&root);
+        let layout = registry
+            .create_instance_layout("lantern-browser-test")
+            .expect("layout should be created");
         let spec = BrowserRunSpec {
             id: "lantern-browser-test".to_owned(),
             name: "lantern-browser-test".to_owned(),
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
-            profile_dir: PathBuf::from("/tmp/lantern-profile"),
+            profile_dir: layout.profile_dir.clone(),
         };
 
         let command = browser_run_command(RuntimeKind::Docker, &spec);
@@ -499,8 +532,11 @@ mod tests {
         assert!(
             command
                 .args
-                .contains(&"/tmp/lantern-profile:/profile".to_owned())
+                .contains(&format!("{}:/profile", layout.profile_dir.display()))
         );
+        assert!(command.args.contains(&"--user".to_owned()));
+        assert!(command.args.contains(&"HOME=/tmp".to_owned()));
+        assert!(command.args.contains(&"CHROME_NO_SANDBOX=1".to_owned()));
     }
 
     #[test]

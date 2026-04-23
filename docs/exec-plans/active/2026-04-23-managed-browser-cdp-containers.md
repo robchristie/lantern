@@ -76,10 +76,14 @@ an internal CDP proxy, and health/readiness scripts.
   built `localhost/lantern-browser-cdp:stable`, started `agent1` and `agent2`
   concurrently, verified both resolved endpoints with `lantern doctor`, then
   stopped and pruned both instances.
-- 2026-04-23: Docker smoke was re-attempted on a host with Docker CLI 29.4.0,
-  but `docker info` failed before image build because the daemon socket was
-  absent: `dial unix /var/run/docker.sock: connect: no such file or directory`.
-  No Docker-managed browser containers were started in this attempt.
+- 2026-04-23: Docker smoke initially exposed two Docker-specific runtime
+  issues: Chromium needed explicit `--no-sandbox`, and the bind-mounted profile
+  directory needed the container process to run as the host profile owner with
+  `HOME=/tmp`. Added Docker-only runtime args for those cases.
+- 2026-04-23: Real Docker smoke passed with Docker 29.4.0 after the runtime
+  fixes: built `localhost/lantern-browser-cdp:stable`, started `docker-agent1`
+  and `docker-agent2` concurrently, verified both resolved endpoints with
+  `lantern doctor`, then stopped and pruned both instances.
 
 ## Manual Smoke Evidence
 
@@ -106,6 +110,34 @@ Outcome: both instances started and reported separate loopback CDP endpoints
 `websocket.available=true` for both endpoints. Cleanup left
 `browser list` empty and no managed instance records.
 
+Executed on 2026-04-23 with Docker 29.4.0 through `/usr/bin/sg docker`:
+
+```sh
+/usr/bin/sg docker -c 'docker --version && docker info --format "ServerVersion={{.ServerVersion}} Rootless={{.SecurityOptions}}"'
+/usr/bin/sg docker -c 'docker build -f ops/browser-cdp/Containerfile -t localhost/lantern-browser-cdp:stable ops/browser-cdp'
+/usr/bin/sg docker -c 'target/debug/lantern browser start --runtime docker --id docker-agent1 --json'
+/usr/bin/sg docker -c 'target/debug/lantern browser start --runtime docker --id docker-agent2 --json'
+/usr/bin/sg docker -c 'target/debug/lantern browser list --json'
+/usr/bin/sg docker -c 'docker ps --filter label=dev.lantern.managed=true --format "{{.Names}} {{.Status}} {{.Ports}}"'
+/usr/bin/sg docker -c 'target/debug/lantern doctor --endpoint "$(target/debug/lantern browser endpoint docker-agent1 --json | jq -r .instance.endpoint)" --json'
+/usr/bin/sg docker -c 'target/debug/lantern doctor --endpoint "$(target/debug/lantern browser endpoint docker-agent2 --json | jq -r .instance.endpoint)" --json'
+/usr/bin/sg docker -c 'target/debug/lantern browser stop docker-agent1 --json && target/debug/lantern browser stop docker-agent2 --json && target/debug/lantern browser prune --json && target/debug/lantern browser list --json'
+/usr/bin/sg docker -c 'docker ps -a --filter label=dev.lantern.managed=true --format "{{.Names}} {{.Status}} {{.Ports}}"'
+```
+
+Outcome: Docker was reachable (`Docker version 29.4.0`, server `29.4.0`;
+security options `name=seccomp,profile=builtin name=cgroupns`). Both instances
+started and reported separate loopback CDP endpoints: `docker-agent1` used
+`http://127.0.0.1:32781`, and `docker-agent2` used
+`http://127.0.0.1:32784`. Docker showed both containers healthy with loopback
+port mappings: `docker-agent1` published `32781->9222/tcp`,
+`32779->5900/tcp`, and `32780->6080/tcp`; `docker-agent2` published
+`32784->9222/tcp`, `32782->5900/tcp`, and `32783->6080/tcp`.
+`lantern doctor` returned `ok=true`, `Chrome/147.0.7727.117`, protocol `1.3`,
+and `websocket.available=true` for both endpoints. Cleanup stopped and pruned
+both records, `browser list --json` returned `instances: []`, and a final
+Docker label query returned no managed containers.
+
 ## Validation Plan
 
 - `cargo test -p lantern-storage`
@@ -118,5 +150,3 @@ Outcome: both instances started and reported separate loopback CDP endpoints
 
 - Add automated real-runtime smoke coverage once the validation environment can
   reliably provide podman or docker and image build time is acceptable.
-- Complete the Docker two-instance lifecycle smoke once a reachable Docker
-  daemon is available.
