@@ -1,6 +1,6 @@
 # Managed Browser CDP Containers
 
-Status: active
+Status: completed
 
 ## Goal
 
