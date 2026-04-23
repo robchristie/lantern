@@ -41,7 +41,7 @@
 ## Synthesized Architecture
 
 - style: Thin Rust CLI facade over Chromium CDP with explicit boundaries between command handling, protocol transport, domain summaries, output formatting, and redaction.
-- persistence model: SQLite is reserved for local task, state, and future session metadata after the inspection loop proves it needs durable state. The first milestone should run without product persistence by default, and Lantern must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts unless a later design explicitly opts in with redaction rules.
+- persistence model: SQLite is reserved for local task, state, and future session metadata after the inspection loop proves it needs durable state. Managed browser instance metadata is stored as local JSON runtime state under `.smoogle/lantern/browser-instances/`. Lantern must not persist credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or sensitive browser artifacts unless a later design explicitly opts in with redaction rules.
 
 ## Core Components
 
@@ -54,24 +54,31 @@
 - output formatter
 - fixture test harness
 
-## First-Milestone Command Boundary
+## Command Boundary
 
-The initial CLI contract is limited to:
+The endpoint-based CLI contract includes:
 
 - `lantern doctor`: confirm the configured CDP endpoint is reachable and report browser/version metadata.
 - `lantern targets`: list Chromium targets using sanitized, bounded metadata.
 - `lantern page`: summarize one page target with title, origin or URL shape, and loading state without exposing the full URL by default.
 
-Navigation, page mutation, JavaScript evaluation, screenshots, DOM traversal, layout audits, console summaries, network summaries, browser launch, container orchestration, daemon mode, and non-Chromium adapters remain outside this milestone.
+The broader implemented contract also includes bounded navigation, waiting,
+DOM/layout/console/network summaries, screenshots, click/type interactions,
+flow observation, and explicit managed browser lifecycle commands.
 
-The exact first-milestone command contract is maintained in `docs/product-specs/cli-contract.md`. Shared output formatting, JSON ordering, redaction, truncation, and future artifact rules are maintained in `docs/product-specs/output-policy.md`.
+JavaScript evaluation, full DevTools replacement behavior, daemon mode, and
+non-Chromium adapters remain outside this milestone. Browser lifecycle support
+is limited to the explicit disposable managed container commands documented in
+the CLI contract; endpoint-based inspection remains independent.
+
+The exact command contract is maintained in `docs/product-specs/cli-contract.md`. Shared output formatting, JSON ordering, redaction, truncation, and future artifact rules are maintained in `docs/product-specs/output-policy.md`.
 
 ## Integration Boundaries
 
 - CLI commands consume domain services rather than raw CDP responses
 - JSON output shapes remain stable for future Smoogle and UI integration
 - future TUI and web UI adapters reuse the same services and redaction policies
-- operator-owned Chromium lifecycle stays outside Lantern in the first milestone
+- operator-owned Chromium endpoints remain valid; managed disposable Chromium containers are explicit opt-in lifecycle commands
 - future daemon mode remains optional and evidence-driven
 
 ## Architecture Notes

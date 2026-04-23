@@ -6,9 +6,9 @@ This file records the repository's current reliability contract. Keep it focused
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-15**
+Last reviewed: **2026-04-23**
 
-Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, fixture coverage for the implemented frontend feedback loop, and session-oriented flow observation that keeps console/network evidence tied to one browser lifecycle. The grade remains `C` until real-browser smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
+Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, fixture coverage for the implemented frontend feedback loop, session-oriented flow observation that keeps console/network evidence tied to one browser lifecycle, and an explicit managed browser lifecycle for disposable concurrent containers. The grade remains `C` until real-browser/container smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
 
 ## Grade Scale
 
@@ -23,6 +23,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 ## Operational Expectations
 
 - Keep runtime state under `.smoogle/` and out of Git.
+- Store managed browser records under `.smoogle/lantern/browser-instances/` and treat them as reconstructable local runtime state.
 - Create an initial Git commit before task worktrees are used.
 - Treat checked-in docs and prompt templates as the system of record.
 - Prefer local-first workflows and deterministic local validation.
@@ -49,6 +50,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 - Feature-specific fixture tests cover the implemented CLI loop and flow observation path, but real-browser smoke coverage is still limited.
 - Recovery and landing behavior have not yet been proven by repeated assisted or unattended runs.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the matrix has not been smoke-tested across representative hosts and images yet.
+- Managed browser lifecycle commands have deterministic parser, registry, and runtime-command tests, but normal validation does not build the image or require a real podman/docker daemon.
 - Optional quality-sweep tools may not be installed on every machine.
 - CDP implementation complexity could grow beyond the intended small command vocabulary if future tasks skip the CLI contract and ExecPlan gates.
 - Stable JSON contracts require compatibility discipline as command output evolves.

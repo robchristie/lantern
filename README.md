@@ -10,8 +10,8 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 
 - primary user: A technically fluent local operator using Codex or Smoogle on headless Linux.
 - primary interface: cli
-- storage model: local-first; SQLite is reserved for future session/task metadata and is not required for the first browser-inspection milestone.
-- first milestone: Build a CLI core that connects to an operator-provided Chromium CDP endpoint and proves a small browser-inspection loop.
+- storage model: local-first; managed browser runtime state lives under untracked `.smoogle/`, while SQLite remains reserved for future session/task metadata.
+- current milestone: Keep endpoint-based browser inspection stable and add an explicit opt-in managed Chromium/CDP container lifecycle for disposable local agents.
 - future interfaces reserved: tui, web ui
 
 ## Repo Guide
@@ -34,7 +34,8 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 1. Read the generated docs contract before changing code.
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.
-4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`.
-5. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
-6. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-7. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
+4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`, or explicitly start a disposable managed instance with `lantern browser start`.
+5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
+6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
+7. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+8. Build new browser-inspection capability in bounded steps rather than broad scaffolding.

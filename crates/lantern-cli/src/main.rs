@@ -1,4 +1,11 @@
-use std::{env, fs, io::ErrorKind, path::Path, process::ExitCode, time::Duration};
+use std::{
+    collections::HashSet,
+    env, fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    process::{Command as ProcessCommand, ExitCode},
+    time::{Duration, Instant},
+};
 
 use lantern_core::{
     cdp::{BrowserVersion, CdpClient, CdpError, TargetInfo},
@@ -27,6 +34,13 @@ use lantern_core::{
         ReadyState, WAIT_MAX_TIMEOUT_MS, WaitCommandOutput, WaitCondition, WaitConditionName,
         WaitError, wait_for_condition,
     },
+};
+use lantern_storage::{
+    BrowserInstanceRecord, BrowserInstanceStatus, BrowserRegistry, BrowserRunSpec,
+    DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
+    browser_port_command, browser_ps_managed_command, browser_rm_command, browser_run_command,
+    browser_stop_command, generate_instance_id, instance_name, parse_published_port,
+    parse_runtime_status,
 };
 use serde::Serialize;
 
@@ -73,6 +87,27 @@ const SCREENSHOT_WRITE_FAILED_HINT: &str =
 const DOM_LIMIT_INVALID_MESSAGE: &str = "Invalid DOM summary limit.";
 const DOM_LIMIT_INVALID_HINT: &str =
     "Pass --depth from 1 through 12 and --max-nodes from 1 through 500.";
+const BROWSER_USAGE_HINT: &str = "Run lantern browser <start|list|status|endpoint|stop|prune>.";
+const BROWSER_ID_MISSING_MESSAGE: &str = "Missing browser instance id.";
+const BROWSER_ID_MISSING_HINT: &str =
+    "Run lantern browser list, then pass the id to status, endpoint, or stop.";
+const BROWSER_RUNTIME_INVALID_MESSAGE: &str = "Invalid browser runtime.";
+const BROWSER_RUNTIME_INVALID_HINT: &str = "Use --runtime podman or --runtime docker.";
+const BROWSER_RUNTIME_UNAVAILABLE_MESSAGE: &str = "No supported container runtime was found.";
+const BROWSER_RUNTIME_UNAVAILABLE_HINT: &str =
+    "Install podman or docker, or pass --runtime to select an installed runtime.";
+const BROWSER_RUNTIME_FAILED_MESSAGE: &str = "Container runtime command failed.";
+const BROWSER_RUNTIME_FAILED_HINT: &str =
+    "Check that the browser image is built and that the selected runtime is available.";
+const BROWSER_PORT_MISSING_MESSAGE: &str = "Managed browser CDP port was not published.";
+const BROWSER_PORT_MISSING_HINT: &str =
+    "Inspect the container port mapping and confirm CDP was published to host loopback.";
+const BROWSER_NOT_READY_MESSAGE: &str = "Managed browser did not become ready.";
+const BROWSER_NOT_READY_HINT: &str =
+    "Check the container logs, then stop or prune the failed managed browser instance.";
+const BROWSER_STATE_FAILED_MESSAGE: &str = "Managed browser state could not be updated.";
+const BROWSER_STATE_FAILED_HINT: &str =
+    "Check .smoogle/lantern/browser-instances permissions and retry.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -107,6 +142,10 @@ fn run(
             "Run lantern --help for usage.",
         )
     })?;
+
+    if matches!(command, Command::Browser) {
+        return run_browser_invocation(invocation);
+    }
 
     if command == Command::Open && invocation.open_url.is_none() {
         return Err(CliError::usage(
@@ -609,9 +648,552 @@ fn run_command(
             .map_err(|error| CliError::from_interaction(error, json))?;
             write_interaction(output, json)?;
         }
+        Command::Browser => unreachable!("browser lifecycle commands bypass endpoint commands"),
     }
 
     Ok(())
+}
+
+fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
+    validate_browser_invocation(&invocation)?;
+    let command = invocation
+        .browser_command
+        .expect("browser subcommand checked before run");
+    let repo_root = repo_root().map_err(|_| {
+        CliError::runtime(
+            invocation.json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+    let registry = BrowserRegistry::under_repo(repo_root);
+
+    match command {
+        BrowserCommand::Start => browser_start(
+            &registry,
+            invocation.browser_runtime,
+            invocation
+                .browser_image
+                .unwrap_or_else(|| DEFAULT_BROWSER_IMAGE.to_owned()),
+            invocation.browser_id,
+            invocation.browser_wait_ms.unwrap_or(15_000),
+            invocation.json,
+        ),
+        BrowserCommand::List => browser_list(&registry, invocation.json),
+        BrowserCommand::Status => {
+            let id = required_browser_id(invocation.browser_id, invocation.json)?;
+            browser_status(&registry, &id, invocation.json)
+        }
+        BrowserCommand::Endpoint => {
+            let id = required_browser_id(invocation.browser_id, invocation.json)?;
+            browser_endpoint(&registry, &id, invocation.json)
+        }
+        BrowserCommand::Stop => {
+            let id = required_browser_id(invocation.browser_id, invocation.json)?;
+            browser_stop(&registry, &id, invocation.json)
+        }
+        BrowserCommand::Prune => browser_prune(&registry, invocation.json),
+    }
+}
+
+fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> {
+    let command = invocation.browser_command.ok_or_else(|| {
+        CliError::usage(
+            invocation.json,
+            "Missing browser subcommand.",
+            BROWSER_USAGE_HINT,
+        )
+    })?;
+
+    if invocation.endpoint.is_some()
+        || invocation.no_redact
+        || invocation.target_id.is_some()
+        || invocation.open_url.is_some()
+        || invocation.has_wait_only_flags()
+        || invocation.wait_selector.is_some()
+        || invocation.wait_text.is_some()
+        || invocation.timeout_ms.is_some()
+        || invocation.has_screenshot_flags()
+        || invocation.has_dom_flags()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Unsupported flag for browser command.",
+            BROWSER_USAGE_HINT,
+        ));
+    }
+
+    if command != BrowserCommand::Start
+        && (invocation.browser_runtime.is_some()
+            || invocation.browser_image.is_some()
+            || invocation.browser_wait_ms.is_some())
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Start-only browser flag was used with another browser subcommand.",
+            "Use --runtime, --image, and --wait-ms only with lantern browser start.",
+        ));
+    }
+
+    if command == BrowserCommand::List && invocation.browser_id.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Browser list does not accept an instance id.",
+            "Run lantern browser list.",
+        ));
+    }
+
+    if command == BrowserCommand::Prune && invocation.browser_id.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Browser prune does not accept an instance id.",
+            "Run lantern browser prune.",
+        ));
+    }
+
+    Ok(())
+}
+
+fn browser_start(
+    registry: &BrowserRegistry,
+    requested_runtime: Option<RuntimeKind>,
+    image: String,
+    requested_id: Option<String>,
+    wait_ms: u64,
+    json: bool,
+) -> Result<(), CliError> {
+    let runtime = select_runtime(requested_runtime, json)?;
+    let id = requested_id.unwrap_or_else(generate_instance_id);
+    validate_browser_id(&id, json)?;
+    let name = instance_name(&id);
+    let layout = registry.create_instance_layout(&id).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    let mut record = BrowserInstanceRecord::pending(
+        id.clone(),
+        name.clone(),
+        runtime,
+        image.clone(),
+        layout.profile_dir.clone(),
+    );
+    registry.write_record_atomic(&record).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    let spec = BrowserRunSpec {
+        id: id.clone(),
+        name: name.clone(),
+        image,
+        profile_dir: layout.profile_dir,
+    };
+    let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
+    let cdp_port = runtime_port(runtime, &name, 9222, json)?;
+    let vnc_port = runtime_port(runtime, &name, 5900, json).ok();
+    let novnc_port = runtime_port(runtime, &name, 6080, json).ok();
+    let endpoint = format!("http://127.0.0.1:{cdp_port}");
+    let novnc_url = novnc_port.map(|port| format!("http://127.0.0.1:{port}/vnc.html"));
+
+    wait_for_browser_ready(&endpoint, Duration::from_millis(wait_ms), json)?;
+
+    record.container_id = Some(container_id.trim().to_owned());
+    record.status = BrowserInstanceStatus::Running;
+    record.endpoint = Some(endpoint);
+    record.cdp_host_port = Some(cdp_port);
+    record.vnc_host_port = vnc_port;
+    record.novnc_host_port = novnc_port;
+    record.novnc_url = novnc_url;
+    record.updated_at_unix_ms = lantern_storage::now_unix_ms();
+    registry.write_record_atomic(&record).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    write_browser_output("browser_start", record, json)
+}
+
+fn browser_list(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> {
+    let mut records = registry.list_records().map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+    reconcile_labeled_runtime_instances(&mut records);
+
+    if json {
+        write_json(&BrowserListOutput {
+            schema_version: 1,
+            command: "browser_list",
+            ok: true,
+            instances: records
+                .into_iter()
+                .map(BrowserInstanceOutput::from_record)
+                .collect(),
+        })?;
+        return Ok(());
+    }
+
+    for record in records {
+        println!(
+            "{} status={} runtime={} endpoint={} profile={}",
+            record.id,
+            record.status.as_str(),
+            record.runtime.as_str(),
+            record.endpoint.as_deref().unwrap_or("null"),
+            record.profile_dir.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>) {
+    let mut known: HashSet<String> = records.iter().map(|record| record.name.clone()).collect();
+
+    for runtime in [RuntimeKind::Podman, RuntimeKind::Docker] {
+        if !runtime_available(runtime) {
+            continue;
+        }
+        let Ok(names) = run_runtime_command(browser_ps_managed_command(runtime), false) else {
+            continue;
+        };
+
+        for name in names.lines().map(str::trim).filter(|name| !name.is_empty()) {
+            if known.contains(name) {
+                continue;
+            }
+            let status = run_runtime_command(browser_inspect_status_command(runtime, name), false)
+                .map(|status| parse_runtime_status(&status))
+                .unwrap_or(BrowserInstanceStatus::Missing);
+            let now = lantern_storage::now_unix_ms();
+            records.push(BrowserInstanceRecord {
+                schema_version: 1,
+                id: name.to_owned(),
+                name: name.to_owned(),
+                runtime,
+                image: String::new(),
+                container_id: None,
+                status,
+                endpoint: None,
+                cdp_host_port: None,
+                novnc_url: None,
+                novnc_host_port: None,
+                vnc_host_port: None,
+                profile_dir: PathBuf::new(),
+                created_at_unix_ms: now,
+                updated_at_unix_ms: now,
+            });
+            known.insert(name.to_owned());
+        }
+    }
+
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+fn browser_status(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
+    let mut record = registry.read_record(id).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    if let Ok(status) = run_runtime_command(
+        browser_inspect_status_command(record.runtime, &record.name),
+        json,
+    ) {
+        record.status = parse_runtime_status(&status);
+    } else {
+        record.status = BrowserInstanceStatus::Missing;
+    }
+
+    registry.write_record_atomic(&record).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    write_browser_output("browser_status", record, json)
+}
+
+fn browser_endpoint(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
+    let record = registry.read_record(id).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+    write_browser_output("browser_endpoint", record, json)
+}
+
+fn browser_stop(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
+    let mut record = registry.read_record(id).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    let _ = run_runtime_command(browser_stop_command(record.runtime, &record.name), json);
+    record.status = BrowserInstanceStatus::Stopped;
+    record.updated_at_unix_ms = lantern_storage::now_unix_ms();
+    registry.write_record_atomic(&record).map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+
+    write_browser_output("browser_stop", record, json)
+}
+
+fn browser_prune(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> {
+    let records = registry.list_records().map_err(|_| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+    let mut pruned = Vec::new();
+
+    for record in records {
+        let status = run_runtime_command(
+            browser_inspect_status_command(record.runtime, &record.name),
+            json,
+        )
+        .map(|status| parse_runtime_status(&status))
+        .unwrap_or(BrowserInstanceStatus::Missing);
+
+        if matches!(
+            status,
+            BrowserInstanceStatus::Stopped
+                | BrowserInstanceStatus::Missing
+                | BrowserInstanceStatus::Error
+        ) {
+            let _ = run_runtime_command(browser_rm_command(record.runtime, &record.name), json);
+            registry.remove_instance_dir(&record.id).map_err(|_| {
+                CliError::runtime(
+                    json,
+                    "browser_state_failed",
+                    BROWSER_STATE_FAILED_MESSAGE,
+                    BROWSER_STATE_FAILED_HINT,
+                )
+            })?;
+            pruned.push(record.id);
+        }
+    }
+
+    if json {
+        write_json(&BrowserPruneOutput {
+            schema_version: 1,
+            command: "browser_prune",
+            ok: true,
+            pruned,
+        })?;
+        return Ok(());
+    }
+
+    println!("browser_prune: pruned={}", pruned.len());
+    for id in pruned {
+        println!("{id}");
+    }
+    Ok(())
+}
+
+fn write_browser_output(
+    command: &'static str,
+    record: BrowserInstanceRecord,
+    json: bool,
+) -> Result<(), CliError> {
+    if json {
+        write_json(&BrowserCommandOutput {
+            schema_version: 1,
+            command,
+            ok: true,
+            instance: BrowserInstanceOutput::from_record(record),
+        })?;
+        return Ok(());
+    }
+
+    println!(
+        "{}: id={} status={} runtime={} endpoint={} novnc={} profile={}",
+        command,
+        record.id,
+        record.status.as_str(),
+        record.runtime.as_str(),
+        record.endpoint.as_deref().unwrap_or("null"),
+        record.novnc_url.as_deref().unwrap_or("null"),
+        record.profile_dir.display()
+    );
+    Ok(())
+}
+
+fn runtime_port(
+    runtime: RuntimeKind,
+    name: &str,
+    container_port: u16,
+    json: bool,
+) -> Result<u16, CliError> {
+    let output = run_runtime_command(browser_port_command(runtime, name, container_port), json)?;
+    parse_published_port(&output).ok_or_else(|| {
+        CliError::runtime(
+            json,
+            "browser_port_missing",
+            BROWSER_PORT_MISSING_MESSAGE,
+            BROWSER_PORT_MISSING_HINT,
+        )
+    })
+}
+
+fn wait_for_browser_ready(endpoint: &str, timeout: Duration, json: bool) -> Result<(), CliError> {
+    let endpoint = ResolvedEndpoint {
+        source: lantern_core::endpoint::EndpointSource::Flag,
+        display: endpoint.to_owned(),
+    };
+    let client = CdpClient::new(endpoint);
+    let started = Instant::now();
+
+    while started.elapsed() <= timeout {
+        if client.browser_version().is_ok() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    Err(CliError::runtime(
+        json,
+        "browser_not_ready",
+        BROWSER_NOT_READY_MESSAGE,
+        BROWSER_NOT_READY_HINT,
+    ))
+}
+
+fn select_runtime(requested: Option<RuntimeKind>, json: bool) -> Result<RuntimeKind, CliError> {
+    if let Some(runtime) = requested {
+        if runtime_available(runtime) {
+            return Ok(runtime);
+        }
+        return Err(CliError::runtime(
+            json,
+            "browser_runtime_unavailable",
+            BROWSER_RUNTIME_UNAVAILABLE_MESSAGE,
+            BROWSER_RUNTIME_UNAVAILABLE_HINT,
+        ));
+    }
+
+    [RuntimeKind::Podman, RuntimeKind::Docker]
+        .into_iter()
+        .find(|runtime| runtime_available(*runtime))
+        .ok_or_else(|| {
+            CliError::runtime(
+                json,
+                "browser_runtime_unavailable",
+                BROWSER_RUNTIME_UNAVAILABLE_MESSAGE,
+                BROWSER_RUNTIME_UNAVAILABLE_HINT,
+            )
+        })
+}
+
+fn runtime_available(runtime: RuntimeKind) -> bool {
+    ProcessCommand::new(runtime.program())
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn run_runtime_command(command: RuntimeCommand, json: bool) -> Result<String, CliError> {
+    let output = ProcessCommand::new(&command.program)
+        .args(&command.args)
+        .output()
+        .map_err(|_| {
+            CliError::runtime(
+                json,
+                "browser_runtime_failed",
+                BROWSER_RUNTIME_FAILED_MESSAGE,
+                BROWSER_RUNTIME_FAILED_HINT,
+            )
+        })?;
+
+    if !output.status.success() {
+        return Err(CliError::runtime(
+            json,
+            "browser_runtime_failed",
+            BROWSER_RUNTIME_FAILED_MESSAGE,
+            BROWSER_RUNTIME_FAILED_HINT,
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn required_browser_id(id: Option<String>, json: bool) -> Result<String, CliError> {
+    let id = id.ok_or_else(|| {
+        CliError::usage(json, BROWSER_ID_MISSING_MESSAGE, BROWSER_ID_MISSING_HINT)
+    })?;
+    validate_browser_id(&id, json)?;
+    Ok(id)
+}
+
+fn validate_browser_id(id: &str, json: bool) -> Result<(), CliError> {
+    let valid = !id.is_empty()
+        && id.len() <= 80
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(CliError::usage(
+            json,
+            "Invalid browser instance id.",
+            "Use only ASCII letters, numbers, hyphen, and underscore.",
+        ))
+    }
+}
+
+fn repo_root() -> std::io::Result<PathBuf> {
+    let output = ProcessCommand::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()?;
+    if output.status.success() {
+        let root = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !root.is_empty() {
+            return Ok(PathBuf::from(root));
+        }
+    }
+    env::current_dir()
 }
 
 fn build_dom_summary_options(
@@ -1382,6 +1964,7 @@ fn escape_human(value: &str) -> String {
 fn print_help() {
     println!(
         "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+       lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
        lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
@@ -1408,6 +1991,12 @@ Screenshot flags:
   --output <PATH>   Required local PNG output path
   --overwrite       Replace an existing output file
 
+Browser lifecycle flags:
+  --runtime <NAME>  Container runtime for browser start: podman or docker
+  --image <IMAGE>   Container image for browser start
+  --id <ID>         Optional browser instance id for start, or selected instance
+  --wait-ms <MS>    Browser start readiness timeout
+
   -h, --help        Print help
   -V, --version     Print version"
     );
@@ -1432,6 +2021,11 @@ struct Invocation {
     screenshot_overwrite: bool,
     dom_depth: Option<usize>,
     dom_max_nodes: Option<usize>,
+    browser_command: Option<BrowserCommand>,
+    browser_id: Option<String>,
+    browser_runtime: Option<RuntimeKind>,
+    browser_image: Option<String>,
+    browser_wait_ms: Option<u64>,
     help: bool,
     version: bool,
 }
@@ -1497,6 +2091,59 @@ struct PageOutput {
     loading_state: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct BrowserCommandOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    instance: BrowserInstanceOutput,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserListOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    instances: Vec<BrowserInstanceOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserPruneOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    pruned: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserInstanceOutput {
+    id: String,
+    name: String,
+    runtime: &'static str,
+    image: String,
+    status: &'static str,
+    endpoint: Option<String>,
+    cdp_host_port: Option<u16>,
+    novnc_url: Option<String>,
+    profile_dir: String,
+}
+
+impl BrowserInstanceOutput {
+    fn from_record(record: BrowserInstanceRecord) -> Self {
+        Self {
+            id: record.id,
+            name: record.name,
+            runtime: record.runtime.as_str(),
+            image: record.image,
+            status: record.status.as_str(),
+            endpoint: record.endpoint,
+            cdp_host_port: record.cdp_host_port,
+            novnc_url: record.novnc_url,
+            profile_dir: record.profile_dir.display().to_string(),
+        }
+    }
+}
+
 impl Invocation {
     fn has_wait_only_flags(&self) -> bool {
         self.wait_kind.is_some()
@@ -1532,6 +2179,11 @@ impl Invocation {
             screenshot_overwrite: false,
             dom_depth: None,
             dom_max_nodes: None,
+            browser_command: None,
+            browser_id: None,
+            browser_runtime: None,
+            browser_image: None,
+            browser_wait_ms: None,
             help: false,
             version: false,
         };
@@ -1664,6 +2316,54 @@ impl Invocation {
                     invocation.screenshot_output = Some(output);
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
+                "--runtime" => {
+                    let Some(runtime) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --runtime.",
+                            BROWSER_RUNTIME_INVALID_HINT,
+                        ));
+                    };
+                    invocation.browser_runtime =
+                        Some(RuntimeKind::parse(&runtime).ok_or_else(|| {
+                            CliError::usage(
+                                invocation.json,
+                                BROWSER_RUNTIME_INVALID_MESSAGE,
+                                BROWSER_RUNTIME_INVALID_HINT,
+                            )
+                        })?);
+                }
+                "--image" => {
+                    let Some(image) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --image.",
+                            "Pass a container image tag.",
+                        ));
+                    };
+                    invocation.browser_image = Some(image);
+                }
+                "--id" => {
+                    let Some(id) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --id.",
+                            "Pass a browser instance id.",
+                        ));
+                    };
+                    invocation.browser_id = Some(id);
+                }
+                "--wait-ms" => {
+                    let Some(wait_ms) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --wait-ms.",
+                            "Pass a readiness timeout in milliseconds.",
+                        ));
+                    };
+                    invocation.browser_wait_ms =
+                        Some(parse_wait_millis(&wait_ms, invocation.json)?);
+                }
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" | "layout" | "click" | "type" | "flow" => {
                     if invocation.command.is_some() {
@@ -1674,6 +2374,16 @@ impl Invocation {
                         ));
                     }
                     invocation.command = Some(Command::from_name(&arg).expect("matched command"));
+                }
+                "browser" => {
+                    if invocation.command.is_some() {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Multiple commands provided.",
+                            "Run one command at a time.",
+                        ));
+                    }
+                    invocation.command = Some(Command::Browser);
                 }
                 unknown if unknown.starts_with('-') => {
                     return Err(CliError::usage(
@@ -1702,6 +2412,24 @@ impl Invocation {
                         invocation.json,
                         "Multiple wait conditions provided.",
                         "Run lantern wait with exactly one condition.",
+                    ));
+                }
+                _ if invocation.command == Some(Command::Browser)
+                    && invocation.browser_command.is_none() =>
+                {
+                    invocation.browser_command =
+                        Some(parse_browser_command(&arg, invocation.json)?);
+                }
+                _ if invocation.command == Some(Command::Browser)
+                    && invocation.browser_id.is_none() =>
+                {
+                    invocation.browser_id = Some(arg);
+                }
+                _ if invocation.command == Some(Command::Browser) => {
+                    return Err(CliError::usage(
+                        invocation.json,
+                        "Multiple browser instance ids provided.",
+                        "Pass at most one id to lantern browser status, endpoint, or stop.",
                     ));
                 }
                 _ => {
@@ -1738,6 +2466,22 @@ fn parse_wait_millis(value: &str, json: bool) -> Result<u64, CliError> {
     })
 }
 
+fn parse_browser_command(value: &str, json: bool) -> Result<BrowserCommand, CliError> {
+    match value {
+        "start" => Ok(BrowserCommand::Start),
+        "list" => Ok(BrowserCommand::List),
+        "status" => Ok(BrowserCommand::Status),
+        "endpoint" => Ok(BrowserCommand::Endpoint),
+        "stop" => Ok(BrowserCommand::Stop),
+        "prune" => Ok(BrowserCommand::Prune),
+        _ => Err(CliError::usage(
+            json,
+            "Unknown browser subcommand.",
+            BROWSER_USAGE_HINT,
+        )),
+    }
+}
+
 fn parse_wait_condition(value: &str, json: bool) -> Result<WaitConditionName, CliError> {
     match value {
         "ready" => Ok(WaitConditionName::Ready),
@@ -1768,6 +2512,7 @@ enum Command {
     Click,
     Type,
     Flow,
+    Browser,
 }
 
 impl Command {
@@ -1789,6 +2534,16 @@ impl Command {
             _ => None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserCommand {
+    Start,
+    List,
+    Status,
+    Endpoint,
+    Stop,
+    Prune,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2365,6 +3120,49 @@ mod tests {
 
         assert_eq!(invocation.command, Some(Command::Network));
         assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
+    }
+
+    #[test]
+    fn parses_browser_start_with_runtime_image_and_id() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--runtime".to_string(),
+            "podman".to_string(),
+            "--image".to_string(),
+            "localhost/lantern-browser-cdp:test".to_string(),
+            "--id".to_string(),
+            "agent1".to_string(),
+            "--wait-ms".to_string(),
+            "1000".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("browser start should parse");
+
+        assert_eq!(invocation.command, Some(Command::Browser));
+        assert_eq!(invocation.browser_command, Some(BrowserCommand::Start));
+        assert_eq!(invocation.browser_runtime, Some(RuntimeKind::Podman));
+        assert_eq!(
+            invocation.browser_image.as_deref(),
+            Some("localhost/lantern-browser-cdp:test")
+        );
+        assert_eq!(invocation.browser_id.as_deref(), Some("agent1"));
+        assert_eq!(invocation.browser_wait_ms, Some(1000));
+        assert!(invocation.json);
+    }
+
+    #[test]
+    fn parses_browser_status_positional_id() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "status".to_string(),
+            "agent1".to_string(),
+        ])
+        .expect("browser status should parse");
+
+        assert_eq!(invocation.command, Some(Command::Browser));
+        assert_eq!(invocation.browser_command, Some(BrowserCommand::Status));
+        assert_eq!(invocation.browser_id.as_deref(), Some("agent1"));
     }
 
     #[test]

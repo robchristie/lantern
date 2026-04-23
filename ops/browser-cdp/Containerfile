@@ -1,0 +1,82 @@
+FROM debian:bookworm-slim
+
+ARG CFT_CHANNEL=Stable
+ARG CFT_VERSION=
+
+ENV DISPLAY=:99 \
+    CHROME_BIN=/opt/chrome/chrome \
+    CHROME_USER_DATA_DIR=/profile \
+    CDP_PORT=9222 \
+    VNC_PORT=5900 \
+    NOVNC_PORT=6080
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      fluxbox \
+      fonts-liberation \
+      iproute2 \
+      jq \
+      libasound2 \
+      libatk-bridge2.0-0 \
+      libatk1.0-0 \
+      libcups2 \
+      libdbus-1-3 \
+      libdrm2 \
+      libgbm1 \
+      libgtk-3-0 \
+      libnspr4 \
+      libnss3 \
+      libu2f-udev \
+      libvulkan1 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxfixes3 \
+      libxkbcommon0 \
+      libxrandr2 \
+      novnc \
+      procps \
+      socat \
+      tini \
+      unzip \
+      websockify \
+      x11vnc \
+      xdg-utils \
+      xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    metadata_url="https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"; \
+    if [ -z "${CFT_VERSION}" ]; then \
+      curl -fsSL "${metadata_url}" -o /tmp/cft-metadata.json; \
+      download_url="$(jq -er --arg channel "${CFT_CHANNEL}" '.channels[$channel].downloads.chrome[] | select(.platform == "linux64") | .url' /tmp/cft-metadata.json)"; \
+      rm /tmp/cft-metadata.json; \
+    else \
+      download_url="https://storage.googleapis.com/chrome-for-testing-public/${CFT_VERSION}/linux64/chrome-linux64.zip"; \
+    fi; \
+    mkdir -p /opt/chrome; \
+    curl -fsSL "${download_url}" -o /tmp/chrome-linux64.zip; \
+    unzip -q /tmp/chrome-linux64.zip -d /opt/chrome; \
+    rm /tmp/chrome-linux64.zip; \
+    ln -sf /opt/chrome/chrome-linux64/chrome /opt/chrome/chrome; \
+    /opt/chrome/chrome --version
+
+RUN useradd --create-home --shell /bin/bash browser \
+    && mkdir -p /profile /home/browser/.vnc /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix \
+    && chown -R browser:browser /profile /home/browser
+
+COPY scripts/entrypoint.sh /usr/local/bin/browser-cdp-entrypoint
+COPY scripts/doctor.sh /usr/local/bin/browser-cdp-doctor
+RUN chmod 0755 /usr/local/bin/browser-cdp-entrypoint /usr/local/bin/browser-cdp-doctor
+
+USER browser
+WORKDIR /home/browser
+
+EXPOSE 9222 5900 6080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=6 \
+  CMD /usr/local/bin/browser-cdp-doctor --host 127.0.0.1 --port "${CDP_PORT}" --quiet
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/browser-cdp-entrypoint"]

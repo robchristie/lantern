@@ -1,6 +1,6 @@
 # Headless Chromium Setup
 
-Lantern connects to an existing Chromium DevTools Protocol endpoint. It does not launch Chromium, supervise a browser process, create containers, manage VNC, or keep the browser alive. The operator owns the browser lifecycle and passes Lantern a local HTTP CDP endpoint.
+Lantern's inspection commands connect to an existing Chromium DevTools Protocol endpoint. They do not launch Chromium, supervise a browser process, create containers, manage VNC, or keep the browser alive. The operator either owns the browser lifecycle directly or explicitly opts into the separate `lantern browser ...` managed-container surface.
 
 Use `lantern doctor` after starting Chromium:
 
@@ -148,3 +148,69 @@ After `doctor` succeeds, use:
 lantern targets --endpoint http://127.0.0.1:9222
 lantern page --endpoint http://127.0.0.1:9222
 ```
+
+## Lantern-Managed Disposable Containers
+
+`lantern browser start` creates one disposable Chrome-for-Testing container
+with an isolated profile directory under
+`.smoogle/lantern/browser-instances/<id>/profile`. It publishes container CDP
+port `9222` to a runtime-assigned random host port on `127.0.0.1`; it does not
+use fixed host port `9222` unless a later command explicitly adds that option.
+
+Build the default image first:
+
+```sh
+podman build -f ops/browser-cdp/Containerfile -t localhost/lantern-browser-cdp:stable ops/browser-cdp
+```
+
+Docker is also supported for the same image:
+
+```sh
+docker build -f ops/browser-cdp/Containerfile -t localhost/lantern-browser-cdp:stable ops/browser-cdp
+```
+
+Start and inspect a disposable instance:
+
+```sh
+lantern browser start
+lantern browser list
+lantern browser endpoint <ID>
+lantern doctor --endpoint "$(lantern browser endpoint <ID> --json | jq -r .instance.endpoint)"
+```
+
+Run two concurrent agents with independent browsers:
+
+```sh
+lantern browser start --id agent1
+lantern browser start --id agent2
+lantern browser list
+```
+
+Each instance gets a distinct container name, profile directory, and random
+loopback CDP port. Existing commands remain endpoint-based, so each agent should
+pass its own endpoint explicitly or export it only in that agent's shell.
+
+Stop one instance:
+
+```sh
+lantern browser stop agent1
+```
+
+Remove stopped, missing, or errored managed instance state:
+
+```sh
+lantern browser prune
+```
+
+Managed containers are labeled with `dev.lantern.managed=true` and
+`dev.lantern.instance-id=<ID>` so `lantern browser list` can surface labeled
+containers even when the local registry is stale.
+
+Security boundaries:
+
+- CDP is published to host loopback only.
+- Managed profiles are disposable by default and are stored under untracked
+  `.smoogle/`.
+- Do not use managed disposable profiles for important authenticated sessions.
+- noVNC and VNC are local inspection paths, not strong authentication
+  boundaries; prefer local use or SSH tunnels.

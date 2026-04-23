@@ -15,10 +15,12 @@
 
 ## Browser Setup Loop
 
-1. Start Chromium outside Lantern using the headless, container, or VNC-compatible pattern in `docs/headless-chromium.md`.
-2. Keep CDP bound to loopback wherever possible, or publish container CDP ports to host loopback only.
-3. Verify the endpoint with `lantern doctor --endpoint http://127.0.0.1:9222`.
-4. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
+1. Choose either an operator-owned endpoint or an explicit managed instance; existing inspection commands never auto-start a browser.
+2. For operator-owned Chromium, use the headless, container, or VNC-compatible pattern in `docs/headless-chromium.md`.
+3. For a disposable managed instance, build `ops/browser-cdp/Containerfile`, then run `lantern browser start`.
+4. Keep CDP bound to loopback wherever possible, or publish container CDP ports to host loopback only.
+5. Verify the endpoint with `lantern doctor --endpoint <ENDPOINT>`.
+6. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
 
 ## Browser Session Observation Loop
 

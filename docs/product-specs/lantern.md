@@ -28,13 +28,16 @@ Build a CLI core that connects to an operator-provided Chromium CDP endpoint and
 
 ## First-Milestone CLI Surface
 
-The first milestone is intentionally limited to browser inspection against an operator-provided Chromium CDP endpoint:
+The current milestone keeps browser inspection endpoint-based while adding an explicit opt-in managed disposable Chromium/CDP container lifecycle. The original inspection surface started with:
 
 - `lantern doctor`
 - `lantern targets`
 - `lantern page`
 
-Commands that navigate, mutate page state, evaluate JavaScript, collect screenshots, or inspect DOM, console, and network details are future capabilities unless a later ExecPlan explicitly pulls one into scope.
+Later ExecPlans have added bounded navigation, interaction, screenshots,
+DOM/layout/console/network summaries, one session-observation flow, and the
+explicit managed browser lifecycle. JavaScript evaluation and broad DevTools
+replacement behavior remain out of scope.
 
 The exact command, shared flag, endpoint resolution, and exit-code contract lives in `docs/product-specs/cli-contract.md`. The shared human-output, stable JSON ordering, redaction, truncation, and future artifact output policy lives in `docs/product-specs/output-policy.md`.
 
@@ -45,16 +48,16 @@ The exact command, shared flag, endpoint resolution, and exit-code contract live
 - auth
 - MCP server in the first milestone
 - full DevTools replacement
-- browser launch or container orchestration in the CLI
+- implicit browser launch or container orchestration from endpoint-based inspection commands
 - cross-browser abstraction beyond Chromium CDP
-- page interaction, navigation, screenshot capture, JavaScript evaluation, and broad DOM/console/network tooling in the first milestone
+- JavaScript evaluation and broad DOM/console/network tooling
 - persistence of credentials, cookies, local storage, DOM dumps, screenshots, full URLs, or other sensitive browser artifacts by default
 
 ## Acceptance Direction
 
 - deliver one end-to-end `cli` workflow that proves the core product loop
 - keep the first release local-first and single-user
-- keep the first milestone usable without durable product storage; reserve SQLite for local task, state, and future session metadata once a real need appears
+- keep endpoint-based inspection usable without durable product storage; store managed browser runtime records only under untracked `.smoogle/` and reserve SQLite for local task, state, and future session metadata once a real need appears
 
 ## Value Proposition
 

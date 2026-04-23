@@ -259,6 +259,8 @@ name = "lantern-storage"
 version = "0.1.0"
 dependencies = [
  "lantern-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

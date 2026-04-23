@@ -6,9 +6,9 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-15**
+Last reviewed: **2026-04-23**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
@@ -42,6 +42,8 @@ Use untracked local configuration, environment variables, or the operator's cred
 
 - Default to local-first operation.
 - Keep `.smoogle/` out of Git.
+- Managed browser lifecycle commands must be explicit; endpoint-based commands must not auto-start containers.
+- Publish managed CDP ports to host loopback only by default.
 - Prefer `approval_policy = "never"` for non-interactive runs.
 - Keep review profiles read-only unless a task explicitly requires mutation.
 - Require explicit configuration for commit, push, mark-done, and auto-landing behavior.
@@ -55,6 +57,7 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Authenticated browser testing still relies on operator-owned dedicated profiles, loopback-only CDP exposure, and manual review of transcripts and screenshots.
 - Dependency and supply-chain policy is still first-version guidance.
 - Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
+- Managed browser container images and runtime behavior still require manual smoke review on representative podman/docker hosts.
 
 ## Synthesized Boundaries
 

@@ -6,7 +6,7 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, one bounded session-observation flow, explicit selected-page screenshot capture, and selected-element click/text-entry interactions against an operator-provided Chromium DevTools Protocol endpoint. Lantern does not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, one bounded session-observation flow, explicit selected-page screenshot capture, selected-element click/text-entry interactions against an explicit Chromium DevTools Protocol endpoint, and an opt-in managed disposable browser container lifecycle. Endpoint-based commands do not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
 
 ## Command Surface
 
@@ -24,15 +24,25 @@ Implemented commands:
 - `lantern screenshot --output <PATH>`
 - `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
 - `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+- `lantern browser start`
+- `lantern browser list`
+- `lantern browser status <ID>`
+- `lantern browser endpoint <ID>`
+- `lantern browser stop <ID>`
+- `lantern browser prune`
 
 Reserved for future milestones and not implemented yet:
 
-- browser launch or attach lifecycle commands
+- persistent authenticated managed browser profiles
 - JavaScript evaluation
 - full network inspection, HAR, request body, or response body commands
 - daemon, MCP, TUI, or web UI commands
 
 Each implemented command accepts the shared flags below. Unknown commands, unknown flags, invalid flag values, and unsupported combinations must fail with exit code `2`.
+
+Lifecycle commands are explicit. Existing CDP commands resolve only `--endpoint`
+or `LANTERN_CDP_ENDPOINT` and must not auto-start or auto-select a managed
+browser.
 
 ## Shared Flags
 
@@ -88,6 +98,97 @@ Prints command or subcommand help and exits with code `0`.
 ### `-V`, `--version`
 
 Prints the Lantern CLI version and exits with code `0`.
+
+## Managed Browser Lifecycle
+
+Purpose: create and manage isolated disposable local Chromium/CDP containers for
+concurrent agents while preserving endpoint-pure inspection commands.
+
+Supported forms:
+
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS]`
+- `lantern browser list`
+- `lantern browser status <ID>`
+- `lantern browser endpoint <ID>`
+- `lantern browser stop <ID>`
+- `lantern browser prune`
+
+Default `start` behavior:
+
+- chooses `podman` when available, otherwise `docker`, unless `--runtime` is set
+- uses image `localhost/lantern-browser-cdp:stable`
+- creates a unique id when `--id` is omitted
+- creates a dedicated profile directory under `.smoogle/lantern/browser-instances/<id>/profile`
+- runs the container detached
+- publishes container CDP port `9222` to a runtime-assigned random host port on `127.0.0.1`
+- also publishes VNC `5900` and noVNC `6080` to random host-loopback ports when the runtime provides those mappings
+- labels containers with `dev.lantern.managed=true` and `dev.lantern.instance-id=<ID>`
+- waits for `/json/version` readiness before reporting success
+
+Human output should include the id, status, runtime, endpoint, noVNC URL when
+available, and profile path. JSON output shape for single-instance commands:
+
+```json
+{
+  "schema_version": 1,
+  "command": "browser_start",
+  "ok": true,
+  "instance": {
+    "id": "lantern-browser-123",
+    "name": "lantern-browser-123",
+    "runtime": "podman",
+    "image": "localhost/lantern-browser-cdp:stable",
+    "status": "running",
+    "endpoint": "http://127.0.0.1:43123",
+    "cdp_host_port": 43123,
+    "novnc_url": "http://127.0.0.1:43124/vnc.html",
+    "profile_dir": ".smoogle/lantern/browser-instances/lantern-browser-123/profile"
+  }
+}
+```
+
+`browser list` returns:
+
+```json
+{
+  "schema_version": 1,
+  "command": "browser_list",
+  "ok": true,
+  "instances": []
+}
+```
+
+`browser prune` returns:
+
+```json
+{
+  "schema_version": 1,
+  "command": "browser_prune",
+  "ok": true,
+  "pruned": ["lantern-browser-123"]
+}
+```
+
+Lifecycle commands must not accept `--endpoint`, `--target-id`, `--no-redact`,
+navigation, wait, DOM, screenshot, or interaction flags. Endpoint commands must
+not accept lifecycle flags.
+
+Command-specific error cases:
+
+- no installed selected runtime: exit code `1`, error code `browser_runtime_unavailable`
+- runtime command failure: exit code `1`, error code `browser_runtime_failed`
+- CDP port was not published: exit code `1`, error code `browser_port_missing`
+- managed browser readiness timeout: exit code `1`, error code `browser_not_ready`
+- state read/write failure: exit code `1`, error code `browser_state_failed`
+
+Security behavior:
+
+- CDP host publishing is loopback-only by default.
+- Managed profiles are local untracked runtime state and are disposable by
+  default.
+- The lifecycle registry stores endpoints, runtime metadata, and profile paths;
+  it must not store cookies, local storage, DOM dumps, screenshots, console
+  payloads, network bodies, or full browser artifacts.
 
 ## Endpoint Resolution
 
