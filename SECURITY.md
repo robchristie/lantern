@@ -57,7 +57,7 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Authenticated browser testing still relies on operator-owned dedicated profiles, loopback-only CDP exposure, and manual review of transcripts and screenshots.
 - Dependency and supply-chain policy is still first-version guidance.
 - Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
-- Managed browser container images and runtime behavior still require manual smoke review on representative podman/docker hosts.
+- Managed browser container images and runtime behavior have one rootless Podman smoke, but still require broader manual smoke review on representative podman/docker hosts.
 
 ## Synthesized Boundaries
 

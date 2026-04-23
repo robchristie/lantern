@@ -65,11 +65,47 @@ an internal CDP proxy, and health/readiness scripts.
   container scaffold under `ops/browser-cdp`.
 - 2026-04-23: Updated CLI, setup, workflow, security, and reliability docs for
   explicit managed lifecycle behavior.
+- 2026-04-23: Second pass fixed CLI contract drift so endpoint commands reject
+  lifecycle-only flags such as `--runtime` and `--id` with usage exit code `2`
+  instead of accepting inert browser lifecycle options.
+- 2026-04-23: Rootless Podman smoke found profile mount ownership drift with
+  `:U`; replaced it with Podman `--userns=keep-id:uid=1000,gid=1000` plus
+  `:Z`, preserving host-writable disposable profiles while allowing Chrome to
+  write `/profile`.
+- 2026-04-23: Real rootless Podman smoke passed after the ownership fix:
+  built `localhost/lantern-browser-cdp:stable`, started `agent1` and `agent2`
+  concurrently, verified both resolved endpoints with `lantern doctor`, then
+  stopped and pruned both instances.
+
+## Manual Smoke Evidence
+
+Executed on 2026-04-23 with Podman 5.8.2:
+
+```sh
+podman build -f ops/browser-cdp/Containerfile -t localhost/lantern-browser-cdp:stable ops/browser-cdp
+target/debug/lantern browser start --id agent1 --json
+target/debug/lantern browser start --id agent2 --json
+target/debug/lantern browser list --json
+target/debug/lantern doctor --endpoint "$(target/debug/lantern browser endpoint agent1 --json | jq -r .instance.endpoint)" --json
+target/debug/lantern doctor --endpoint "$(target/debug/lantern browser endpoint agent2 --json | jq -r .instance.endpoint)" --json
+podman ps --filter label=dev.lantern.managed=true --format '{{.Names}} {{.Status}} {{.Ports}}'
+target/debug/lantern browser stop agent1
+target/debug/lantern browser stop agent2
+target/debug/lantern browser prune
+target/debug/lantern browser list --json
+```
+
+Outcome: both instances started and reported separate loopback CDP endpoints
+(`agent1` used `http://127.0.0.1:37291`; `agent2` used
+`http://127.0.0.1:43287` in this run). `lantern doctor` returned
+`ok=true`, `Chrome/147.0.7727.117`, protocol `1.3`, and
+`websocket.available=true` for both endpoints. Cleanup left
+`browser list` empty and no managed instance records.
 
 ## Validation Plan
 
 - `cargo test -p lantern-storage`
-- focused CLI parser tests if useful
+- focused CLI parser/integration tests for lifecycle flag rejection
 - `scripts/validate.sh fast` during iteration
 - `scripts/validate.sh` before completion if feasible
 - `smoogle docs check` after docs and plan edits

@@ -1056,6 +1056,25 @@ fn doctor_json_uses_env_endpoint_and_reads_browser_metadata() {
 }
 
 #[test]
+fn doctor_json_rejects_browser_lifecycle_id_flag() {
+    let output = lantern(["doctor", "--id", "agent1", "--json"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "usage");
+    assert_eq!(
+        json["error"]["message"],
+        "Browser lifecycle flags are only supported by browser commands."
+    );
+}
+
+#[test]
 fn targets_json_orders_targets_and_redacts_browser_data() {
     let fixture = HttpFixture::one_response(
         "/devtools/json/list",
@@ -1158,6 +1177,25 @@ fn page_json_selects_single_attached_page_from_target_fixture() {
             + "\n"
     );
     fixture.finish();
+}
+
+#[test]
+fn page_json_rejects_browser_lifecycle_runtime_flag() {
+    let output = lantern(["page", "--runtime", "podman", "--json"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout(&output), "");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "usage");
+    assert_eq!(
+        json["error"]["message"],
+        "Browser lifecycle flags are only supported by browser commands."
+    );
 }
 
 #[test]

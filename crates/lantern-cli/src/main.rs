@@ -147,6 +147,14 @@ fn run(
         return run_browser_invocation(invocation);
     }
 
+    if invocation.has_browser_lifecycle_flags() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Browser lifecycle flags are only supported by browser commands.",
+            BROWSER_USAGE_HINT,
+        ));
+    }
+
     if command == Command::Open && invocation.open_url.is_none() {
         return Err(CliError::usage(
             invocation.json,
@@ -2158,6 +2166,13 @@ impl Invocation {
 
     fn has_dom_flags(&self) -> bool {
         self.dom_depth.is_some() || self.dom_max_nodes.is_some()
+    }
+
+    fn has_browser_lifecycle_flags(&self) -> bool {
+        self.browser_id.is_some()
+            || self.browser_runtime.is_some()
+            || self.browser_image.is_some()
+            || self.browser_wait_ms.is_some()
     }
 
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {

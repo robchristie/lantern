@@ -319,6 +319,7 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
 
     if runtime == RuntimeKind::Podman {
         args.insert(2, "--replace".to_owned());
+        args.insert(3, "--userns=keep-id:uid=1000,gid=1000".to_owned());
     }
 
     RuntimeCommand::new(runtime, args)
@@ -462,6 +463,11 @@ mod tests {
         let command = browser_run_command(RuntimeKind::Podman, &spec);
 
         assert_eq!(command.program, "podman");
+        assert!(
+            command
+                .args
+                .contains(&"--userns=keep-id:uid=1000,gid=1000".to_owned())
+        );
         assert!(command.args.contains(&"127.0.0.1::9222".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::5900".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::6080".to_owned()));
