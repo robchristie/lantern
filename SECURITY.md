@@ -6,9 +6,9 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-23**
+Last reviewed: **2026-04-24**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. The grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. Podman and Docker managed-browser smokes have exercised the loopback disposable-container boundary, but the grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
@@ -57,7 +57,7 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Authenticated browser testing still relies on operator-owned dedicated profiles, loopback-only CDP exposure, and manual review of transcripts and screenshots.
 - Dependency and supply-chain policy is still first-version guidance.
 - Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
-- Managed browser container images and runtime behavior have one rootless Podman smoke, but still require broader manual smoke review on representative podman/docker hosts.
+- Managed browser container images and runtime behavior have two-instance rootless Podman and Docker smoke evidence, but still require broader manual smoke review on representative hosts.
 
 ## Synthesized Boundaries
 
