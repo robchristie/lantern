@@ -1,6 +1,6 @@
 # ExecPlan: Add keyboard key press interaction
 
-Status: active
+Status: completed
 
 Consultation: `consult_20260429T103715Z_add-keyboard-key-press-primitive-using-c`
 
