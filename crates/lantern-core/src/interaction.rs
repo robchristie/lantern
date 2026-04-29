@@ -274,7 +274,7 @@ pub fn press_key(
     loop {
         if let Some(node_id) = query_selector(&mut socket, selector)? {
             let node_name = describe_node_name(&mut socket, node_id).ok().flatten();
-            socket.call("DOM.focus", Some(json!({ "nodeId": node_id })))?;
+            let _ = socket.call("DOM.focus", Some(json!({ "nodeId": node_id })));
             dispatch_key(&mut socket, key)?;
             return Ok(InteractionCommandOutput::success(
                 "key",
