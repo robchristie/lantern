@@ -6,9 +6,9 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-24**
+Last reviewed: **2026-04-29**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, explicit screenshot artifact opt-in, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. Podman and Docker managed-browser smokes have exercised the loopback disposable-container boundary, but the grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, bounded click/type/key interaction metadata, explicit screenshot artifact opt-in, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. Podman and Docker managed-browser smokes have exercised the loopback disposable-container boundary, but the grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
