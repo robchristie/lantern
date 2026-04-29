@@ -64,6 +64,7 @@ pub struct InteractionSummary {
 pub enum InteractionAction {
     Click,
     Type,
+    Key,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -71,6 +72,8 @@ pub struct InteractionObservedState {
     pub node_name: Option<String>,
     pub clickable_point: Option<InteractionPoint>,
     pub inserted_text_length: Option<usize>,
+    pub key: Option<String>,
+    pub key_event_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -125,6 +128,8 @@ pub fn click_element(
                             node_name,
                             clickable_point: Some(clickable_point),
                             inserted_text_length: None,
+                            key: None,
+                            key_event_count: None,
                         },
                         immediate_error: None,
                     },
@@ -146,6 +151,8 @@ pub fn click_element(
                             node_name,
                             clickable_point: None,
                             inserted_text_length: None,
+                            key: None,
+                            key_event_count: None,
                         },
                         immediate_error: Some("element_not_clickable"),
                     },
@@ -166,6 +173,8 @@ pub fn click_element(
                         node_name: None,
                         clickable_point: None,
                         inserted_text_length: None,
+                        key: None,
+                        key_event_count: None,
                     },
                     immediate_error: Some("selector_not_found"),
                 },
@@ -211,6 +220,8 @@ pub fn type_text(
                         node_name,
                         clickable_point: None,
                         inserted_text_length: Some(text.chars().count()),
+                        key: None,
+                        key_event_count: None,
                     },
                     immediate_error: None,
                 },
@@ -232,6 +243,78 @@ pub fn type_text(
                         node_name: None,
                         clickable_point: None,
                         inserted_text_length: None,
+                        key: None,
+                        key_event_count: None,
+                    },
+                    immediate_error: Some("selector_not_found"),
+                },
+            ));
+        }
+
+        sleep_until_next_poll(deadline);
+    }
+}
+
+pub fn press_key(
+    target: &TargetInfo,
+    selector: &str,
+    key: &str,
+    timeout: Duration,
+    mode: RedactionMode,
+) -> Result<InteractionCommandOutput, InteractionError> {
+    let web_socket_debugger_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or(InteractionError::TargetWebSocketMissing)?;
+
+    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let started = Instant::now();
+    let deadline = started + timeout;
+
+    loop {
+        if let Some(node_id) = query_selector(&mut socket, selector)? {
+            let node_name = describe_node_name(&mut socket, node_id).ok().flatten();
+            socket.call("DOM.focus", Some(json!({ "nodeId": node_id })))?;
+            dispatch_key(&mut socket, key)?;
+            return Ok(InteractionCommandOutput::success(
+                "key",
+                page_summary(target, mode),
+                InteractionSummary {
+                    action: InteractionAction::Key,
+                    selector: selector.to_owned(),
+                    dispatched: true,
+                    timed_out: false,
+                    elapsed_ms: duration_millis(started.elapsed()),
+                    timeout_ms: duration_millis(timeout),
+                    observed: InteractionObservedState {
+                        node_name,
+                        clickable_point: None,
+                        inserted_text_length: None,
+                        key: Some(key.to_owned()),
+                        key_event_count: Some(2),
+                    },
+                    immediate_error: None,
+                },
+            ));
+        }
+
+        if Instant::now() >= deadline {
+            return Ok(InteractionCommandOutput::success(
+                "key",
+                page_summary(target, mode),
+                InteractionSummary {
+                    action: InteractionAction::Key,
+                    selector: selector.to_owned(),
+                    dispatched: false,
+                    timed_out: true,
+                    elapsed_ms: duration_millis(started.elapsed()),
+                    timeout_ms: duration_millis(timeout),
+                    observed: InteractionObservedState {
+                        node_name: None,
+                        clickable_point: None,
+                        inserted_text_length: None,
+                        key: Some(key.to_owned()),
+                        key_event_count: Some(0),
                     },
                     immediate_error: Some("selector_not_found"),
                 },
@@ -358,6 +441,25 @@ fn dispatch_click(
             "y": point.y,
             "button": "left",
             "clickCount": 1
+        })),
+    )?;
+
+    Ok(())
+}
+
+fn dispatch_key(socket: &mut CdpWebSocket, key: &str) -> Result<(), InteractionError> {
+    socket.call(
+        "Input.dispatchKeyEvent",
+        Some(json!({
+            "type": "keyDown",
+            "key": key
+        })),
+    )?;
+    socket.call(
+        "Input.dispatchKeyEvent",
+        Some(json!({
+            "type": "keyUp",
+            "key": key
         })),
     )?;
 

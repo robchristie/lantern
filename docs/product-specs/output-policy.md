@@ -2,7 +2,7 @@
 
 This policy defines how Lantern writes human and JSON output, and how it redacts or truncates browser-derived data. It applies to first-milestone commands and to reserved future commands for DOM, console, network, and screenshot inspection.
 
-Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern layout`, `lantern screenshot`, `lantern click`, and `lantern type`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
+Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern layout`, `lantern screenshot`, `lantern click`, `lantern type`, and `lantern key`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
 ## Goals
 
@@ -111,6 +111,22 @@ Breaking JSON changes that require a `schema_version` bump:
 `lantern flow` is the first session-oriented command. It still exits after one bounded observation, but it keeps one CDP attachment open across optional navigation, waiting, console collection, network collection, and final page-state inspection. When `--open <URL>` is supplied, collection starts before the observed navigation and `console.collection_gap` and `network.collection_gap` may be `false` with `collection_gap_reason=collection_started_before_observed_flow`. Without `--open`, `flow` attaches to an already-running page and must report the same pre-attach collection gap as snapshot `console` and `network` commands.
 
 Flow output must follow the same redaction and truncation rules as `page`, `wait`, `console`, and `network`. It must not emit raw CDP payloads, request or response bodies, headers, cookies, local storage values, screenshot bytes, or full URLs by default.
+
+## Interaction Output
+
+`lantern click`, `lantern type`, and `lantern key` share one interaction output schema. The command-specific `interaction.action` values are `click`, `type`, and `key`.
+
+Successful interaction JSON must keep the observed metadata fields in this order:
+
+1. `node_name`
+2. `clickable_point`
+3. `inserted_text_length`
+4. `key`
+5. `key_event_count`
+
+Nullable command-specific fields must be present as `null` instead of omitted. `click` sets `inserted_text_length`, `key`, and `key_event_count` to `null`; `type` sets `clickable_point`, `key`, and `key_event_count` to `null`; `key` sets `clickable_point` and `inserted_text_length` to `null` and reports the requested key plus the number of dispatched key events.
+
+Interaction output must not emit DOM text, post-interaction input values, cookies, local storage values, raw CDP payloads, request or response bodies, headers, screenshots, or full URLs by default.
 
 ## Redaction Modes
 

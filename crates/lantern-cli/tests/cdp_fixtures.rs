@@ -991,6 +991,67 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_key_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+
+            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            assert!(
+                message.contains(r#""selector":"body""#),
+                "key fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":9}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"BODY"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+
+            read_expect(&mut socket, r#""method":"DOM.focus""#);
+            socket
+                .send(Message::Text(r#"{"id":4,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write focus response");
+
+            for (id, event_type) in [(5, "keyDown"), (6, "keyUp")] {
+                let message = read_expect(&mut socket, r#""method":"Input.dispatchKeyEvent""#);
+                assert!(
+                    message.contains(&format!(r#""type":"{event_type}""#)),
+                    "key fixture should dispatch {event_type}: {message:?}"
+                );
+                assert!(
+                    message.contains(r#""key":"ArrowUp""#),
+                    "key fixture should dispatch requested key: {message:?}"
+                );
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                    ))
+                    .expect("fixture should write key response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn one_click_selector_timeout_response() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
@@ -2429,6 +2490,61 @@ fn type_json_focuses_selected_element_and_inserts_text_without_echoing_value() {
 }
 
 #[test]
+fn key_json_focuses_selected_element_and_dispatches_key_events() {
+    let websocket = WebSocketFixture::one_key_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "key",
+            "--selector",
+            "body",
+            "--key",
+            "ArrowUp",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["command"], "key");
+    assert_eq!(json["interaction"]["action"], "key");
+    assert_eq!(json["interaction"]["selector"], "body");
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["timed_out"], false);
+    assert_eq!(json["interaction"]["timeout_ms"], 1000);
+    assert_eq!(json["interaction"]["observed"]["node_name"], "BODY");
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        json["interaction"]["observed"]["inserted_text_length"],
+        serde_json::Value::Null
+    );
+    assert_eq!(json["interaction"]["observed"]["key"], "ArrowUp");
+    assert_eq!(json["interaction"]["observed"]["key_event_count"], 2);
+    assert_eq!(
+        json["interaction"]["immediate_error"],
+        serde_json::Value::Null
+    );
+    assert!(
+        !stdout(&output).contains("https://user:pass@example.test"),
+        "key output should not echo full URLs: {:?}",
+        stdout(&output)
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
 fn click_json_reports_selector_timeout_as_undispatched_action() {
     let websocket = WebSocketFixture::one_click_selector_timeout_response();
     let fixture =
@@ -2455,6 +2571,45 @@ fn click_json_reports_selector_timeout_as_undispatched_action() {
     assert_eq!(json["interaction"]["dispatched"], false);
     assert_eq!(json["interaction"]["timed_out"], true);
     assert_eq!(json["interaction"]["immediate_error"], "selector_not_found");
+    assert_eq!(
+        json["interaction"]["observed"]["node_name"],
+        serde_json::Value::Null
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn key_json_reports_selector_timeout_as_undispatched_action() {
+    let websocket = WebSocketFixture::one_click_selector_timeout_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "key",
+            "--selector",
+            "[data-testid=missing]",
+            "--key",
+            "ArrowUp",
+            "--timeout-ms",
+            "1",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("stdout should be JSON");
+    assert_eq!(json["command"], "key");
+    assert_eq!(json["interaction"]["dispatched"], false);
+    assert_eq!(json["interaction"]["timed_out"], true);
+    assert_eq!(json["interaction"]["immediate_error"], "selector_not_found");
+    assert_eq!(json["interaction"]["observed"]["key"], "ArrowUp");
+    assert_eq!(json["interaction"]["observed"]["key_event_count"], 0);
     assert_eq!(
         json["interaction"]["observed"]["node_name"],
         serde_json::Value::Null
@@ -2506,6 +2661,120 @@ fn type_json_requires_selector_text_and_bounded_timeout_before_cdp() {
     assert_eq!(
         stderr(&invalid_timeout),
         r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_timeout_invalid","message":"Invalid interaction timeout.","hint":"Pass --timeout-ms from 1 through 30000."}}"#.to_owned()
+            + "\n"
+    );
+}
+
+#[test]
+fn key_json_requires_selector_key_and_bounded_timeout_before_cdp() {
+    let missing_key = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "key",
+            "--selector",
+            "body",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!missing_key.status.success());
+    assert_eq!(missing_key.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_key),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --key for key.","hint":"Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>."}}"#.to_owned()
+            + "\n"
+    );
+
+    let missing_selector = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "key",
+            "--key",
+            "ArrowUp",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!missing_selector.status.success());
+    assert_eq!(missing_selector.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_selector),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --selector for interaction.","hint":"Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>, lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>, or lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>."}}"#.to_owned()
+            + "\n"
+    );
+
+    let missing_timeout = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "key",
+            "--selector",
+            "body",
+            "--key",
+            "ArrowUp",
+        ],
+        None,
+    );
+    assert!(!missing_timeout.status.success());
+    assert_eq!(missing_timeout.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_timeout),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --timeout-ms for interaction.","hint":"Run lantern click, lantern type, or lantern key with --timeout-ms <MS> from 1 through 30000."}}"#.to_owned()
+            + "\n"
+    );
+
+    let invalid_timeout = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "key",
+            "--selector",
+            "body",
+            "--key",
+            "ArrowUp",
+            "--timeout-ms",
+            "30001",
+        ],
+        None,
+    );
+    assert!(!invalid_timeout.status.success());
+    assert_eq!(invalid_timeout.status.code(), Some(2));
+    assert_eq!(
+        stderr(&invalid_timeout),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_timeout_invalid","message":"Invalid interaction timeout.","hint":"Pass --timeout-ms from 1 through 30000."}}"#.to_owned()
+            + "\n"
+    );
+
+    let unsupported_text = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "key",
+            "--selector",
+            "body",
+            "--key",
+            "ArrowUp",
+            "--text",
+            "ignored",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!unsupported_text.status.success());
+    assert_eq!(unsupported_text.status.code(), Some(2));
+    assert_eq!(
+        stderr(&unsupported_text),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"--text is not supported by key.","hint":"Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>."}}"#.to_owned()
             + "\n"
     );
 }

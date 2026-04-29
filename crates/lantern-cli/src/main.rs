@@ -18,7 +18,7 @@ use lantern_core::{
     flow::{FlowCommandOutput, FlowError, FlowOptions, run_observation_flow},
     interaction::{
         INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
-        type_text,
+        press_key, type_text,
     },
     layout::{LayoutCommandOutput, LayoutFinding, LayoutReadError, read_layout_audit},
     navigation::{
@@ -176,12 +176,13 @@ fn run(
                 | Command::Layout
                 | Command::Click
                 | Command::Type
+                | Command::Key
                 | Command::Flow
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, and flow.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, and flow.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -210,31 +211,45 @@ fn run(
 
     if !matches!(
         command,
-        Command::Wait | Command::Click | Command::Type | Command::Flow
+        Command::Wait | Command::Click | Command::Type | Command::Key | Command::Flow
     ) && invocation.timeout_ms.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, and flow.",
+            "--timeout-ms is only supported by wait, click, type, key, and flow.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
 
-    if !matches!(command, Command::Wait | Command::Click | Command::Type)
-        && invocation.wait_selector.is_some()
+    if !matches!(
+        command,
+        Command::Wait | Command::Click | Command::Type | Command::Key
+    ) && invocation.wait_selector.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--selector is only supported by wait, click, and type.",
+            "--selector is only supported by wait, click, type, and key.",
             "Run a selected-element command with --selector <CSS_SELECTOR>.",
         ));
     }
 
-    if !matches!(command, Command::Wait | Command::Type) && invocation.wait_text.is_some() {
+    if !matches!(
+        command,
+        Command::Wait | Command::Type | Command::Click | Command::Key
+    ) && invocation.wait_text.is_some()
+    {
         return Err(CliError::usage(
             invocation.json,
             "--text is only supported by wait text and type.",
             "Run lantern wait text or lantern type with --text <TEXT>.",
+        ));
+    }
+
+    if command != Command::Key && invocation.key.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--key is only supported by key.",
+            "Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
         ));
     }
 
@@ -297,19 +312,23 @@ fn run(
         ));
     }
 
-    if matches!(command, Command::Click | Command::Type) && invocation.wait_selector.is_none() {
+    if matches!(command, Command::Click | Command::Type | Command::Key)
+        && invocation.wait_selector.is_none()
+    {
         return Err(CliError::usage(
             invocation.json,
             "Missing --selector for interaction.",
-            "Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS> or lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+            "Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>, lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>, or lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
         ));
     }
 
-    if matches!(command, Command::Click | Command::Type) && invocation.timeout_ms.is_none() {
+    if matches!(command, Command::Click | Command::Type | Command::Key)
+        && invocation.timeout_ms.is_none()
+    {
         return Err(CliError::usage(
             invocation.json,
             "Missing --timeout-ms for interaction.",
-            "Run lantern click or lantern type with --timeout-ms <MS> from 1 through 30000.",
+            "Run lantern click, lantern type, or lantern key with --timeout-ms <MS> from 1 through 30000.",
         ));
     }
 
@@ -327,6 +346,31 @@ fn run(
             "--text is not supported by click.",
             "Run lantern click with --selector <CSS_SELECTOR> --timeout-ms <MS>.",
         ));
+    }
+
+    if command == Command::Key && invocation.key.is_none() {
+        return Err(CliError::usage(
+            invocation.json,
+            "Missing --key for key.",
+            "Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
+        ));
+    }
+
+    if command == Command::Key && invocation.wait_text.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--text is not supported by key.",
+            "Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
+        ));
+    }
+
+    if matches!(command, Command::Click | Command::Type | Command::Key) {
+        validate_interaction_timeout(
+            invocation
+                .timeout_ms
+                .expect("interaction timeout checked before validation"),
+            invocation.json,
+        )?;
     }
 
     if command == Command::Dom {
@@ -353,6 +397,7 @@ fn run(
         invocation.wait_url_shape,
         invocation.wait_selector,
         invocation.wait_text,
+        invocation.key,
         invocation.quiet_ms,
         invocation.screenshot_output,
         invocation.screenshot_overwrite,
@@ -447,6 +492,7 @@ fn run_command(
     wait_url_shape: Option<String>,
     wait_selector: Option<String>,
     wait_text: Option<String>,
+    key: Option<String>,
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
@@ -656,6 +702,28 @@ fn run_command(
             .map_err(|error| CliError::from_interaction(error, json))?;
             write_interaction(output, json)?;
         }
+        Command::Key => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let key = key.as_deref().expect("key checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = press_key(
+                &page,
+                selector,
+                key,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
         Command::Browser => unreachable!("browser lifecycle commands bypass endpoint commands"),
     }
 
@@ -721,6 +789,7 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         || invocation.has_wait_only_flags()
         || invocation.wait_selector.is_some()
         || invocation.wait_text.is_some()
+        || invocation.key.is_some()
         || invocation.timeout_ms.is_some()
         || invocation.has_screenshot_flags()
         || invocation.has_dom_flags()
@@ -1847,11 +1916,18 @@ fn interaction_observed_human(
         .inserted_text_length
         .map(|length| length.to_string())
         .unwrap_or_else(|| "null".to_owned());
+    let key = observed.key.as_deref().unwrap_or("null");
+    let key_events = observed
+        .key_event_count
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "null".to_owned());
     format!(
-        "node={} point={} inserted_text_length={}",
+        "node={} point={} inserted_text_length={} key={} key_event_count={}",
         observed.node_name.as_deref().unwrap_or("null"),
         point,
-        inserted
+        inserted,
+        escape_human(key),
+        key_events
     )
 }
 
@@ -1971,7 +2047,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
@@ -1979,6 +2055,7 @@ fn print_help() {
        lantern screenshot --output <PATH> [--overwrite]
        lantern click --selector <CSS> --timeout-ms <MS>
        lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>
+       lantern key --selector <CSS> --key <KEY> --timeout-ms <MS>
 
 Shared flags:
   --endpoint <URL>  Local Chromium CDP HTTP endpoint
@@ -1991,8 +2068,9 @@ Navigation and wait flags:
   --timeout-ms <MS> Explicit timeout from 1 through 30000
   --state <STATE>   ready state: loading, interactive, or complete
   --url-shape <URL> Expected URL shape for wait url
-  --selector <CSS>  CSS selector for wait selector/text, click, or type
+  --selector <CSS>  CSS selector for wait selector/text, click, type, or key
   --text <TEXT>     Text substring for wait text, or inserted text for type
+  --key <KEY>       Single key value for key
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
 Screenshot flags:
@@ -2024,6 +2102,7 @@ struct Invocation {
     wait_url_shape: Option<String>,
     wait_selector: Option<String>,
     wait_text: Option<String>,
+    key: Option<String>,
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
@@ -2189,6 +2268,7 @@ impl Invocation {
             wait_url_shape: None,
             wait_selector: None,
             wait_text: None,
+            key: None,
             quiet_ms: None,
             screenshot_output: None,
             screenshot_overwrite: false,
@@ -2279,6 +2359,16 @@ impl Invocation {
                         ));
                     };
                     invocation.wait_text = Some(text);
+                }
+                "--key" => {
+                    let Some(key) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --key.",
+                            "Pass a single key value.",
+                        ));
+                    };
+                    invocation.key = Some(key);
                 }
                 "--open" => {
                     let Some(url) = args.next() else {
@@ -2380,7 +2470,7 @@ impl Invocation {
                         Some(parse_wait_millis(&wait_ms, invocation.json)?);
                 }
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
-                | "screenshot" | "layout" | "click" | "type" | "flow" => {
+                | "screenshot" | "layout" | "click" | "type" | "key" | "flow" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -2526,6 +2616,7 @@ enum Command {
     Layout,
     Click,
     Type,
+    Key,
     Flow,
     Browser,
 }
@@ -2545,6 +2636,7 @@ impl Command {
             "layout" => Some(Self::Layout),
             "click" => Some(Self::Click),
             "type" => Some(Self::Type),
+            "key" => Some(Self::Key),
             "flow" => Some(Self::Flow),
             _ => None,
         }

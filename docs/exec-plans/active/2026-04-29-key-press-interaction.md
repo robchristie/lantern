@@ -46,7 +46,14 @@ Implement a narrow `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-
 ### Implement `lantern key`
 
 <!-- smoogle-task: slice-key-command -->
-Status: pending
+Status: completed
 
 Add a single-key selected-element interaction command using CDP `Input.dispatchKeyEvent`, with CLI validation, fixture coverage, and CLI contract documentation.
 
+Progress:
+
+- Implemented `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>` through the existing selected-page interaction flow.
+- Core now focuses the selected node and dispatches exactly one `Input.dispatchKeyEvent` `keyDown` and one `keyUp`, with metadata-only observed output for the requested key and event count.
+- CLI validation covers missing selector, missing key, missing timeout, invalid timeout bounds, unsupported `--text` with `key`, and unsupported `--key` on other commands before target access.
+- Fixture tests cover successful dispatch, selector timeout, JSON metadata, usage failures, and existing click/type compatibility.
+- Product docs now include `key` in the command surface, target and timeout support, interaction JSON field ordering, redaction policy, stable error-code references, and examples.
