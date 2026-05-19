@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lantern UI Inspection"
+  short_description: "Inspect local web UIs with Lantern CDP"
+  default_prompt: "Use $lantern-ui-inspection to inspect this local web UI with Lantern and report UI, console, network, or screenshot findings."
