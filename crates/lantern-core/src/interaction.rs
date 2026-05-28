@@ -13,7 +13,9 @@ use crate::{
 
 pub const INTERACTION_SCHEMA_VERSION: u8 = 1;
 pub const INTERACTION_MAX_TIMEOUT_MS: u64 = 30_000;
+pub const INTERACTION_MAX_DURATION_MS: u64 = 30_000;
 const INTERACTION_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const DRAG_STEP_INTERVAL: Duration = Duration::from_millis(16);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InteractionCommandOutput {
@@ -65,6 +67,9 @@ pub enum InteractionAction {
     Click,
     Type,
     Key,
+    Hover,
+    Wheel,
+    Drag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -74,12 +79,115 @@ pub struct InteractionObservedState {
     pub inserted_text_length: Option<usize>,
     pub key: Option<String>,
     pub key_event_count: Option<usize>,
+    pub pointer_start: Option<InteractionPoint>,
+    pub pointer_end: Option<InteractionPoint>,
+    pub delta_x: Option<f64>,
+    pub delta_y: Option<f64>,
+    pub duration_ms: Option<u64>,
+    pub input_event_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct InteractionPoint {
     pub x: f64,
     pub y: f64,
+}
+
+impl InteractionObservedState {
+    fn click(node_name: Option<String>, clickable_point: Option<InteractionPoint>) -> Self {
+        Self {
+            node_name,
+            clickable_point,
+            inserted_text_length: None,
+            key: None,
+            key_event_count: None,
+            pointer_start: None,
+            pointer_end: None,
+            delta_x: None,
+            delta_y: None,
+            duration_ms: None,
+            input_event_count: None,
+        }
+    }
+
+    fn type_text(node_name: Option<String>, inserted_text_length: Option<usize>) -> Self {
+        Self {
+            node_name,
+            clickable_point: None,
+            inserted_text_length,
+            key: None,
+            key_event_count: None,
+            pointer_start: None,
+            pointer_end: None,
+            delta_x: None,
+            delta_y: None,
+            duration_ms: None,
+            input_event_count: None,
+        }
+    }
+
+    fn key(node_name: Option<String>, key: &str, key_event_count: usize) -> Self {
+        Self {
+            node_name,
+            clickable_point: None,
+            inserted_text_length: None,
+            key: Some(key.to_owned()),
+            key_event_count: Some(key_event_count),
+            pointer_start: None,
+            pointer_end: None,
+            delta_x: None,
+            delta_y: None,
+            duration_ms: None,
+            input_event_count: None,
+        }
+    }
+
+    fn pointer(
+        node_name: Option<String>,
+        point: Option<InteractionPoint>,
+        delta_x: Option<f64>,
+        delta_y: Option<f64>,
+        duration_ms: Option<u64>,
+        input_event_count: Option<usize>,
+    ) -> Self {
+        Self {
+            node_name,
+            clickable_point: point,
+            inserted_text_length: None,
+            key: None,
+            key_event_count: None,
+            pointer_start: point,
+            pointer_end: None,
+            delta_x,
+            delta_y,
+            duration_ms,
+            input_event_count,
+        }
+    }
+
+    fn drag(
+        node_name: Option<String>,
+        start: Option<InteractionPoint>,
+        end: Option<InteractionPoint>,
+        delta_x: f64,
+        delta_y: f64,
+        duration_ms: u64,
+        input_event_count: usize,
+    ) -> Self {
+        Self {
+            node_name,
+            clickable_point: start,
+            inserted_text_length: None,
+            key: None,
+            key_event_count: None,
+            pointer_start: start,
+            pointer_end: end,
+            delta_x: Some(delta_x),
+            delta_y: Some(delta_y),
+            duration_ms: Some(duration_ms),
+            input_event_count: Some(input_event_count),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,13 +232,7 @@ pub fn click_element(
                         timed_out: false,
                         elapsed_ms: duration_millis(started.elapsed()),
                         timeout_ms: duration_millis(timeout),
-                        observed: InteractionObservedState {
-                            node_name,
-                            clickable_point: Some(clickable_point),
-                            inserted_text_length: None,
-                            key: None,
-                            key_event_count: None,
-                        },
+                        observed: InteractionObservedState::click(node_name, Some(clickable_point)),
                         immediate_error: None,
                     },
                 ));
@@ -147,13 +249,7 @@ pub fn click_element(
                         timed_out: true,
                         elapsed_ms: duration_millis(started.elapsed()),
                         timeout_ms: duration_millis(timeout),
-                        observed: InteractionObservedState {
-                            node_name,
-                            clickable_point: None,
-                            inserted_text_length: None,
-                            key: None,
-                            key_event_count: None,
-                        },
+                        observed: InteractionObservedState::click(node_name, None),
                         immediate_error: Some("element_not_clickable"),
                     },
                 ));
@@ -169,13 +265,7 @@ pub fn click_element(
                     timed_out: true,
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
-                    observed: InteractionObservedState {
-                        node_name: None,
-                        clickable_point: None,
-                        inserted_text_length: None,
-                        key: None,
-                        key_event_count: None,
-                    },
+                    observed: InteractionObservedState::click(None, None),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -216,13 +306,10 @@ pub fn type_text(
                     timed_out: false,
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
-                    observed: InteractionObservedState {
+                    observed: InteractionObservedState::type_text(
                         node_name,
-                        clickable_point: None,
-                        inserted_text_length: Some(text.chars().count()),
-                        key: None,
-                        key_event_count: None,
-                    },
+                        Some(text.chars().count()),
+                    ),
                     immediate_error: None,
                 },
             ));
@@ -239,13 +326,7 @@ pub fn type_text(
                     timed_out: true,
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
-                    observed: InteractionObservedState {
-                        node_name: None,
-                        clickable_point: None,
-                        inserted_text_length: None,
-                        key: None,
-                        key_event_count: None,
-                    },
+                    observed: InteractionObservedState::type_text(None, None),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -286,13 +367,7 @@ pub fn press_key(
                     timed_out: false,
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
-                    observed: InteractionObservedState {
-                        node_name,
-                        clickable_point: None,
-                        inserted_text_length: None,
-                        key: Some(key.to_owned()),
-                        key_event_count: Some(2),
-                    },
+                    observed: InteractionObservedState::key(node_name, key, 2),
                     immediate_error: None,
                 },
             ));
@@ -309,13 +384,302 @@ pub fn press_key(
                     timed_out: true,
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
-                    observed: InteractionObservedState {
-                        node_name: None,
-                        clickable_point: None,
-                        inserted_text_length: None,
-                        key: Some(key.to_owned()),
-                        key_event_count: Some(0),
+                    observed: InteractionObservedState::key(None, key, 0),
+                    immediate_error: Some("selector_not_found"),
+                },
+            ));
+        }
+
+        sleep_until_next_poll(deadline);
+    }
+}
+
+pub fn hover_element(
+    target: &TargetInfo,
+    selector: &str,
+    timeout: Duration,
+    mode: RedactionMode,
+) -> Result<InteractionCommandOutput, InteractionError> {
+    let web_socket_debugger_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or(InteractionError::TargetWebSocketMissing)?;
+
+    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let started = Instant::now();
+    let deadline = started + timeout;
+
+    loop {
+        if let Some(node_id) = query_selector(&mut socket, selector)? {
+            let node_name = describe_node_name(&mut socket, node_id).ok().flatten();
+            if let Some(point) = clickable_point(&mut socket, node_id)? {
+                dispatch_hover(&mut socket, point)?;
+                return Ok(InteractionCommandOutput::success(
+                    "hover",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Hover,
+                        selector: selector.to_owned(),
+                        dispatched: true,
+                        timed_out: false,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::pointer(
+                            node_name,
+                            Some(point),
+                            None,
+                            None,
+                            None,
+                            Some(1),
+                        ),
+                        immediate_error: None,
                     },
+                ));
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(InteractionCommandOutput::success(
+                    "hover",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Hover,
+                        selector: selector.to_owned(),
+                        dispatched: false,
+                        timed_out: true,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::pointer(
+                            node_name,
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(0),
+                        ),
+                        immediate_error: Some("element_not_pointable"),
+                    },
+                ));
+            }
+        } else if Instant::now() >= deadline {
+            return Ok(InteractionCommandOutput::success(
+                "hover",
+                page_summary(target, mode),
+                InteractionSummary {
+                    action: InteractionAction::Hover,
+                    selector: selector.to_owned(),
+                    dispatched: false,
+                    timed_out: true,
+                    elapsed_ms: duration_millis(started.elapsed()),
+                    timeout_ms: duration_millis(timeout),
+                    observed: InteractionObservedState::pointer(
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(0),
+                    ),
+                    immediate_error: Some("selector_not_found"),
+                },
+            ));
+        }
+
+        sleep_until_next_poll(deadline);
+    }
+}
+
+pub fn wheel_element(
+    target: &TargetInfo,
+    selector: &str,
+    delta_x: f64,
+    delta_y: f64,
+    timeout: Duration,
+    mode: RedactionMode,
+) -> Result<InteractionCommandOutput, InteractionError> {
+    let web_socket_debugger_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or(InteractionError::TargetWebSocketMissing)?;
+
+    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let started = Instant::now();
+    let deadline = started + timeout;
+
+    loop {
+        if let Some(node_id) = query_selector(&mut socket, selector)? {
+            let node_name = describe_node_name(&mut socket, node_id).ok().flatten();
+            if let Some(point) = clickable_point(&mut socket, node_id)? {
+                dispatch_wheel(&mut socket, point, delta_x, delta_y)?;
+                return Ok(InteractionCommandOutput::success(
+                    "wheel",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Wheel,
+                        selector: selector.to_owned(),
+                        dispatched: true,
+                        timed_out: false,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::pointer(
+                            node_name,
+                            Some(point),
+                            Some(delta_x),
+                            Some(delta_y),
+                            None,
+                            Some(1),
+                        ),
+                        immediate_error: None,
+                    },
+                ));
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(InteractionCommandOutput::success(
+                    "wheel",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Wheel,
+                        selector: selector.to_owned(),
+                        dispatched: false,
+                        timed_out: true,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::pointer(
+                            node_name,
+                            None,
+                            Some(delta_x),
+                            Some(delta_y),
+                            None,
+                            Some(0),
+                        ),
+                        immediate_error: Some("element_not_pointable"),
+                    },
+                ));
+            }
+        } else if Instant::now() >= deadline {
+            return Ok(InteractionCommandOutput::success(
+                "wheel",
+                page_summary(target, mode),
+                InteractionSummary {
+                    action: InteractionAction::Wheel,
+                    selector: selector.to_owned(),
+                    dispatched: false,
+                    timed_out: true,
+                    elapsed_ms: duration_millis(started.elapsed()),
+                    timeout_ms: duration_millis(timeout),
+                    observed: InteractionObservedState::pointer(
+                        None,
+                        None,
+                        Some(delta_x),
+                        Some(delta_y),
+                        None,
+                        Some(0),
+                    ),
+                    immediate_error: Some("selector_not_found"),
+                },
+            ));
+        }
+
+        sleep_until_next_poll(deadline);
+    }
+}
+
+pub fn drag_element(
+    target: &TargetInfo,
+    selector: &str,
+    delta_x: f64,
+    delta_y: f64,
+    duration: Duration,
+    timeout: Duration,
+    mode: RedactionMode,
+) -> Result<InteractionCommandOutput, InteractionError> {
+    let web_socket_debugger_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or(InteractionError::TargetWebSocketMissing)?;
+
+    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let started = Instant::now();
+    let deadline = started + timeout;
+
+    loop {
+        if let Some(node_id) = query_selector(&mut socket, selector)? {
+            let node_name = describe_node_name(&mut socket, node_id).ok().flatten();
+            if let Some(start_point) = clickable_point(&mut socket, node_id)? {
+                let end_point = InteractionPoint {
+                    x: (start_point.x + delta_x).round(),
+                    y: (start_point.y + delta_y).round(),
+                };
+                let input_event_count =
+                    dispatch_drag(&mut socket, start_point, end_point, duration)?;
+                return Ok(InteractionCommandOutput::success(
+                    "drag",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Drag,
+                        selector: selector.to_owned(),
+                        dispatched: true,
+                        timed_out: false,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::drag(
+                            node_name,
+                            Some(start_point),
+                            Some(end_point),
+                            delta_x,
+                            delta_y,
+                            duration_millis(duration),
+                            input_event_count,
+                        ),
+                        immediate_error: None,
+                    },
+                ));
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(InteractionCommandOutput::success(
+                    "drag",
+                    page_summary(target, mode),
+                    InteractionSummary {
+                        action: InteractionAction::Drag,
+                        selector: selector.to_owned(),
+                        dispatched: false,
+                        timed_out: true,
+                        elapsed_ms: duration_millis(started.elapsed()),
+                        timeout_ms: duration_millis(timeout),
+                        observed: InteractionObservedState::drag(
+                            node_name,
+                            None,
+                            None,
+                            delta_x,
+                            delta_y,
+                            duration_millis(duration),
+                            0,
+                        ),
+                        immediate_error: Some("element_not_pointable"),
+                    },
+                ));
+            }
+        } else if Instant::now() >= deadline {
+            return Ok(InteractionCommandOutput::success(
+                "drag",
+                page_summary(target, mode),
+                InteractionSummary {
+                    action: InteractionAction::Drag,
+                    selector: selector.to_owned(),
+                    dispatched: false,
+                    timed_out: true,
+                    elapsed_ms: duration_millis(started.elapsed()),
+                    timeout_ms: duration_millis(timeout),
+                    observed: InteractionObservedState::drag(
+                        None,
+                        None,
+                        None,
+                        delta_x,
+                        delta_y,
+                        duration_millis(duration),
+                        0,
+                    ),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -447,6 +811,102 @@ fn dispatch_click(
     Ok(())
 }
 
+fn dispatch_hover(
+    socket: &mut CdpWebSocket,
+    point: InteractionPoint,
+) -> Result<(), InteractionError> {
+    socket.call(
+        "Input.dispatchMouseEvent",
+        Some(json!({
+            "type": "mouseMoved",
+            "x": point.x,
+            "y": point.y,
+            "button": "none"
+        })),
+    )?;
+
+    Ok(())
+}
+
+fn dispatch_wheel(
+    socket: &mut CdpWebSocket,
+    point: InteractionPoint,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<(), InteractionError> {
+    socket.call(
+        "Input.dispatchMouseEvent",
+        Some(json!({
+            "type": "mouseWheel",
+            "x": point.x,
+            "y": point.y,
+            "deltaX": delta_x,
+            "deltaY": delta_y
+        })),
+    )?;
+
+    Ok(())
+}
+
+fn dispatch_drag(
+    socket: &mut CdpWebSocket,
+    start: InteractionPoint,
+    end: InteractionPoint,
+    duration: Duration,
+) -> Result<usize, InteractionError> {
+    dispatch_hover(socket, start)?;
+    socket.call(
+        "Input.dispatchMouseEvent",
+        Some(json!({
+            "type": "mousePressed",
+            "x": start.x,
+            "y": start.y,
+            "button": "left",
+            "buttons": 1,
+            "clickCount": 1
+        })),
+    )?;
+
+    let steps = drag_step_count(duration);
+    let mut event_count = 2;
+    for step in 1..=steps {
+        let progress = step as f64 / steps as f64;
+        let point = InteractionPoint {
+            x: (start.x + ((end.x - start.x) * progress)).round(),
+            y: (start.y + ((end.y - start.y) * progress)).round(),
+        };
+        socket.call(
+            "Input.dispatchMouseEvent",
+            Some(json!({
+                "type": "mouseMoved",
+                "x": point.x,
+                "y": point.y,
+                "button": "left",
+                "buttons": 1
+            })),
+        )?;
+        event_count += 1;
+        if step < steps {
+            thread::sleep((duration / steps).min(DRAG_STEP_INTERVAL));
+        }
+    }
+
+    socket.call(
+        "Input.dispatchMouseEvent",
+        Some(json!({
+            "type": "mouseReleased",
+            "x": end.x,
+            "y": end.y,
+            "button": "left",
+            "buttons": 0,
+            "clickCount": 1
+        })),
+    )?;
+    event_count += 1;
+
+    Ok(event_count)
+}
+
 fn dispatch_key(socket: &mut CdpWebSocket, key: &str) -> Result<(), InteractionError> {
     socket.call(
         "Input.dispatchKeyEvent",
@@ -464,6 +924,15 @@ fn dispatch_key(socket: &mut CdpWebSocket, key: &str) -> Result<(), InteractionE
     )?;
 
     Ok(())
+}
+
+fn drag_step_count(duration: Duration) -> u32 {
+    let duration_ms = duration.as_millis();
+    if duration_ms == 0 {
+        1
+    } else {
+        duration_ms.div_ceil(DRAG_STEP_INTERVAL.as_millis()).min(60) as u32
+    }
 }
 
 fn page_summary(target: &TargetInfo, mode: RedactionMode) -> InteractionPageSummary {

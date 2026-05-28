@@ -34,7 +34,8 @@ The current milestone keeps browser inspection endpoint-based while adding an ex
 - `lantern targets`
 - `lantern page`
 
-Later ExecPlans have added bounded navigation, interaction, screenshots,
+Later ExecPlans have added bounded navigation, click/type/key and pointer
+interactions, visible-viewport screenshots with optional regions,
 DOM/layout/console/network summaries, one session-observation flow, and the
 explicit managed browser lifecycle. JavaScript evaluation and broad DevTools
 replacement behavior remain out of scope.

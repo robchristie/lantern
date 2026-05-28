@@ -6,9 +6,9 @@ This file records the repository's current reliability contract. Keep it focused
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-29**
+Last reviewed: **2026-05-28**
 
-Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, fixture coverage for the implemented frontend feedback loop, bounded click/type/key interaction commands, session-oriented flow observation that keeps console/network evidence tied to one browser lifecycle, and an explicit managed browser lifecycle for disposable concurrent containers. Two-instance managed-browser smokes have passed with rootless Podman and Docker, but the grade remains `C` until broader real-browser/container smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
+Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, fixture coverage for the implemented frontend feedback loop, bounded click/type/key and pointer interaction commands, screenshot region capture, session-oriented flow observation that keeps console/network evidence tied to one browser lifecycle, and an explicit managed browser lifecycle for disposable concurrent containers. Two-instance managed-browser smokes have passed with rootless Podman and Docker, but the grade remains `C` until broader real-browser/container smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
 
 ## Grade Scale
 
@@ -47,7 +47,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 ## Known Reliability Gaps
 
-- Feature-specific fixture tests cover the implemented CLI loop, click/type/key interactions, and flow observation path, and two-instance Podman and Docker browser smokes have passed, but real-browser smoke coverage is still limited.
+- Feature-specific fixture tests cover the implemented CLI loop, click/type/key/pointer interactions, screenshot regions, and flow observation path, and two-instance Podman and Docker browser smokes have passed, but real-browser smoke coverage is still limited.
 - Recovery and landing behavior have not yet been proven by repeated assisted or unattended runs.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the broader host/runtime/image matrix has not been smoke-tested across representative setups yet.
 - Managed browser lifecycle commands have deterministic parser, registry, and runtime-command tests, but normal validation does not build the image or require a real podman/docker daemon.

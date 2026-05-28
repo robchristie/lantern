@@ -63,8 +63,9 @@ The endpoint-based CLI contract includes:
 - `lantern page`: summarize one page target with title, origin or URL shape, and loading state without exposing the full URL by default.
 
 The broader implemented contract also includes bounded navigation, waiting,
-DOM/layout/console/network summaries, screenshots, click/type interactions,
-flow observation, and explicit managed browser lifecycle commands.
+DOM/layout/console/network summaries, visible-viewport screenshots with
+optional regions, click/type/key and pointer interactions, flow observation,
+and explicit managed browser lifecycle commands.
 
 JavaScript evaluation, full DevTools replacement behavior, daemon mode, and
 non-Chromium adapters remain outside this milestone. Browser lifecycle support

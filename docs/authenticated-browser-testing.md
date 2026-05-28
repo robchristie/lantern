@@ -82,12 +82,15 @@ Use `--target-id` once multiple tabs exist. It prevents accidental inspection or
 Use interaction commands only after the target and selector have been reviewed:
 
 ```sh
-lantern wait --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> selector --selector '#composer'
-lantern click --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '#composer'
-lantern type --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '#composer' --text 'draft text'
+lantern wait --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> selector --selector '#composer' --timeout-ms 1000
+lantern click --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '#composer' --timeout-ms 1000
+lantern type --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '#composer' --text 'draft text' --timeout-ms 1000
+lantern key --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector body --key ArrowUp --timeout-ms 1000
+lantern wheel --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '[data-testid=viewer-canvas]' --delta-y -400 --timeout-ms 1000
+lantern drag --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --selector '[data-testid=viewer-canvas]' --dx 160 --dy -80 --duration-ms 250 --timeout-ms 1000
 ```
 
-`lantern type` does not echo the typed text in its output, but the text is still sent to the selected browser page. A later click, Enter key behavior in the page, or site autosave may submit or persist it. Lantern does not provide ChatGPT-specific safeguards or automatic submit prevention.
+`lantern type` does not echo the typed text in its output, but the text is still sent to the selected browser page. Pointer and keyboard interactions can also trigger app navigation, autosave, downloads, or submission behavior. Lantern does not provide ChatGPT-specific safeguards or automatic submit prevention.
 
 ## Screenshots
 
@@ -99,6 +102,15 @@ lantern screenshot \
   --endpoint http://127.0.0.1:9222 \
   --target-id <PAGE_TARGET_ID> \
   --output .smoogle/artifacts/chatgpt-smoke.png
+
+lantern screenshot \
+  --endpoint http://127.0.0.1:9222 \
+  --target-id <PAGE_TARGET_ID> \
+  --output .smoogle/artifacts/viewer-region.png \
+  --region-x 100 \
+  --region-y 80 \
+  --region-width 320 \
+  --region-height 240
 ```
 
 Screenshots are not redacted. They may include conversation contents, account metadata, prompt text, workspace names, avatars, and browser UI. Store them under untracked local state such as `.smoogle/artifacts/` unless the operator intentionally chooses another local path.
@@ -113,7 +125,7 @@ Default output is safer for transcripts than `--no-redact`, but it is not a guar
 - Console output: Lantern emits bounded error and exception summaries only. Default message text redacts URL-shaped values, sensitive-looking assignments, and bearer/JWT-like tokens. It does not serialize full object graphs, stack traces, cookies, local storage, or raw CDP payloads.
 - Network output: Lantern reports failed requests and HTTP error responses as bounded metadata. It does not collect request bodies, response bodies, headers, cookies, authorization values, redirect chains, or HAR data. URL output uses URL shapes by default.
 - Screenshot output: Lantern writes PNG bytes only to the explicit `--output` path. Screenshot pixels are not redacted.
-- Interaction output: `click` and `type` report metadata about dispatch and selected page state. They do not print DOM text, input values, headers, bodies, cookies, storage, or screenshots. `type` still sends the supplied text to the page.
+- Interaction output: `click`, `type`, `key`, `hover`, `wheel`, and `drag` report metadata about dispatch and selected page state. They do not print DOM text, input values, headers, bodies, cookies, storage, or screenshots. `type` still sends the supplied text to the page.
 - `--no-redact`: this may expose full URLs and untruncated text fields for the current invocation. It does not make Lantern collect cookies, storage, headers, bodies, full DOM HTML, screenshot bytes in JSON, or raw CDP payloads.
 
 ## Cleanup
