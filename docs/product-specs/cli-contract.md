@@ -7,9 +7,9 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 ## Scope
 
 The command surface is bounded browser inspection, selected-page navigation,
-selected-page console feedback, selected-page network failure feedback, one
+selected-page console feedback, selected-page network failure feedback, selected-page layout auditing, one
 bounded session-observation flow, explicit selected-page screenshot capture,
-selected-element click/text-entry/key interactions against an explicit Chromium
+selected-element click/text-entry/key/pointer interactions against an explicit Chromium
 DevTools Protocol endpoint, and opt-in managed browser lifecycles for disposable
 containers and explicitly named persistent profiles. Endpoint-based commands do
 not launch Chromium, manage browser lifetime, create browser tabs, evaluate
@@ -31,11 +31,15 @@ Implemented commands:
 - `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
 - `lantern network`
+- `lantern layout`
 - `lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]`
 - `lantern screenshot --output <PATH>`
 - `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
 - `lantern type --selector <CSS_SELECTOR> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>`
 - `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>`
+- `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
+- `lantern wheel --selector <CSS_SELECTOR> [--dx <PX>] [--dy <PX>] --timeout-ms <MS>`
+- `lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
 - `lantern browser start`
 - `lantern browser list`
 - `lantern browser status <ID>`
@@ -99,11 +103,15 @@ Supported commands:
 - `lantern wait`
 - `lantern console`
 - `lantern network`
+- `lantern layout`
 - `lantern flow`
 - `lantern screenshot`
 - `lantern click`
 - `lantern type`
 - `lantern key`
+- `lantern hover`
+- `lantern wheel`
+- `lantern drag`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
