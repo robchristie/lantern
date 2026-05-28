@@ -868,8 +868,12 @@ fn dispatch_drag(
     )?;
 
     let steps = drag_step_count(duration);
+    let drag_started = Instant::now();
     let mut event_count = 2;
     for step in 1..=steps {
+        if !duration.is_zero() {
+            sleep_until(drag_started + drag_step_elapsed(duration, step, steps));
+        }
         let progress = step as f64 / steps as f64;
         let point = InteractionPoint {
             x: (start.x + ((end.x - start.x) * progress)).round(),
@@ -886,9 +890,6 @@ fn dispatch_drag(
             })),
         )?;
         event_count += 1;
-        if step < steps {
-            thread::sleep((duration / steps).min(DRAG_STEP_INTERVAL));
-        }
     }
 
     socket.call(
@@ -935,6 +936,11 @@ fn drag_step_count(duration: Duration) -> u32 {
     }
 }
 
+fn drag_step_elapsed(duration: Duration, step: u32, steps: u32) -> Duration {
+    let nanos = duration.as_nanos() * u128::from(step) / u128::from(steps);
+    Duration::from_nanos(nanos.min(u128::from(u64::MAX)) as u64)
+}
+
 fn page_summary(target: &TargetInfo, mode: RedactionMode) -> InteractionPageSummary {
     InteractionPageSummary {
         target_id: target.id.clone(),
@@ -950,6 +956,13 @@ fn sleep_until_next_poll(deadline: Instant) {
     let now = Instant::now();
     if now < deadline {
         thread::sleep((deadline - now).min(INTERACTION_POLL_INTERVAL));
+    }
+}
+
+fn sleep_until(deadline: Instant) {
+    let now = Instant::now();
+    if now < deadline {
+        thread::sleep(deadline - now);
     }
 }
 
@@ -1015,6 +1028,30 @@ mod tests {
             point_from_quad(&[10.0, 20.0, 10.0, 20.0, 10.0, 20.0, 10.0, 20.0])
                 .expect("quad should parse"),
             None
+        );
+    }
+
+    #[test]
+    fn drag_timing_spans_requested_duration_with_bounded_steps() {
+        let long_duration = Duration::from_millis(30_000);
+        let long_steps = drag_step_count(long_duration);
+
+        assert_eq!(long_steps, 60);
+        assert_eq!(
+            drag_step_elapsed(long_duration, 1, long_steps),
+            Duration::from_millis(500)
+        );
+        assert_eq!(
+            drag_step_elapsed(long_duration, long_steps, long_steps),
+            long_duration
+        );
+
+        let smoke_duration = Duration::from_millis(250);
+        let smoke_steps = drag_step_count(smoke_duration);
+        assert_eq!(smoke_steps, 16);
+        assert_eq!(
+            drag_step_elapsed(smoke_duration, smoke_steps, smoke_steps),
+            smoke_duration
         );
     }
 }
