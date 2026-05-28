@@ -10,9 +10,9 @@ Last reviewed: **2026-08-20**
 
 Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git,
 conservative harness profiles, a documented secrets policy, redacted and
-bounded CLI output by default, bounded click/type/key interaction metadata,
+bounded CLI output by default, bounded click/type/key and pointer interaction metadata,
 owner-private no-follow file-backed secret entry for `type`,
-explicit screenshot artefact opt-in, explicit opt-in managed browser
+explicit screenshot artefact opt-in including region/crop coordinates, explicit opt-in managed browser
 containers with loopback CDP publishing, owner-private named persistent
 profiles, session-oriented flow evidence, and optional dependency advisory
 checks in `scripts/quality-sweep.sh`. Persistent profiles retain sensitive

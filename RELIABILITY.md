@@ -10,8 +10,8 @@ Last reviewed: **2026-08-16**
 
 Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates,
 validation profile scripts, conservative harness defaults, fixture coverage for
-the implemented frontend feedback loop, bounded click/type/key interaction
-commands, session-oriented flow observation, and explicit managed browser
+the implemented frontend feedback loop, bounded click/type/key and pointer interaction
+commands, screenshot region capture, session-oriented flow observation, and explicit managed browser
 lifecycles for disposable containers and dedicated persistent profiles. The
 grade remains `C` until broader real-browser/container smoke coverage, recovery
 behaviour, and landing behaviour are proven across representative local setups.
@@ -62,7 +62,7 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 ## Known Reliability Gaps
 
-- Feature-specific fixture tests cover the implemented CLI loop, click/type/key interactions, and flow observation path, and two-instance Podman and Docker browser smokes have passed, but real-browser smoke coverage is still limited.
+- Feature-specific fixture tests cover the implemented CLI loop, click/type/key/pointer interactions, screenshot regions, and flow observation path, and two-instance Podman and Docker browser smokes have passed, but real-browser smoke coverage is still limited.
 - Recovery and landing behavior have not yet been proven by repeated assisted or unattended runs.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the broader host/runtime/image matrix has not been smoke-tested across representative setups yet.
 - Managed browser lifecycle commands have deterministic parser, registry, and runtime-command tests, but normal validation does not build the image or require a real podman/docker daemon.

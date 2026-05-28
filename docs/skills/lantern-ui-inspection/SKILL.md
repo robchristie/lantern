@@ -146,6 +146,9 @@ Use interaction commands only for explicit, bounded UI checks. Keep them separat
 lantern click --endpoint "$ENDPOINT" --selector '[data-testid=save]' --timeout-ms 1000 --json
 lantern type --endpoint "$ENDPOINT" --selector 'input[name=q]' --text 'hello' --timeout-ms 1000 --json
 lantern key --endpoint "$ENDPOINT" --selector body --key ArrowUp --timeout-ms 1000 --json
+lantern hover --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --timeout-ms 1000 --json
+lantern wheel --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --delta-y -400 --timeout-ms 1000 --json
+lantern drag --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --dx 160 --dy -80 --duration-ms 250 --timeout-ms 1000 --json
 ```
 
 After an interaction, re-check the focused surface with `page`, `dom`, `layout`, `console`, `network`, or a screenshot as appropriate.
@@ -158,7 +161,7 @@ When UI inspection is awkward because Lantern lacks a narrow affordance, record 
 
 - Do not expose local dashboards broadly; use non-loopback binding only for trusted local/container setups.
 - Do not use `eval`-style browser operations unless the task explicitly requires it and the code is small, local, and inspectable.
-- Do not add web mutation routes just because Lantern can click/type. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
+- Do not add web mutation routes just because Lantern can dispatch click, type, key, or pointer interactions. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
 - Treat named profile data as sensitive local credential material. Never inspect
   or export its cookie/storage databases, include it in Git or support bundles,
   or reuse a daily personal browser profile.

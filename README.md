@@ -46,5 +46,6 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
    `lantern browser start --profile <NAME>`.
 5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
 6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
-7. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-8. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
+7. Use `lantern hover`, `lantern wheel`, and `lantern drag` for explicit canvas or viewport pointer checks after reviewing the target and selector.
+8. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+9. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
