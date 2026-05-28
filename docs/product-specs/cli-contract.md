@@ -983,6 +983,11 @@ CDP inputs are identical to `lantern click` through point computation, then Lant
 - one or more interpolated `mouseMoved` events with the left button pressed
 - `mouseReleased` at the computed end point
 
+Lantern caps drag interpolation at 60 movement events, but schedules those
+events across the requested duration. The final interpolated move is scheduled
+at the requested duration before the release event is sent; CDP transport
+latency can still make the wall-clock command runtime slightly longer.
+
 Command-specific error cases:
 
 - missing `--selector`, `--duration-ms`, or `--timeout-ms`: exit code `2`, error code `usage`
