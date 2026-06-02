@@ -28,21 +28,30 @@ ENDPOINT=http://127.0.0.1:9222
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance and pass its endpoint explicitly:
+For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance, keep the instance id, install a shell cleanup trap, and pass its endpoint explicitly:
 
 ```bash
 ID="$(lantern browser start --json | jq -r .instance.id)"
+cleanup_lantern_browser() {
+  if [ -n "${ID:-}" ]; then
+    lantern browser stop "$ID" --json >/dev/null 2>&1 || true
+    lantern browser prune --json >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_lantern_browser EXIT
 lantern browser list --json
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-Stop disposable instances when finished:
+Before finishing any turn that started a managed browser, explicitly stop and prune it even if the trap should also run:
 
 ```bash
 lantern browser stop "$ID" --json
 lantern browser prune --json
 ```
+
+`lantern browser prune` removes stopped, missing, or errored managed instances recorded under this repo's `.smoogle/` state. If exited containers still accumulate, run `lantern browser list --json` in the same repo to confirm Lantern can see them, then `lantern browser prune --json`; containers from stale or deleted registry state may need operator cleanup through the container runtime.
 
 ## Smoogle Dashboard Loop
 
