@@ -267,6 +267,39 @@ impl fmt::Display for RuntimeKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserGraphicsMode {
+    Disabled,
+    SwiftShader,
+    Gpu,
+}
+
+impl BrowserGraphicsMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "disabled" => Some(Self::Disabled),
+            "swiftshader" | "software" => Some(Self::SwiftShader),
+            "gpu" => Some(Self::Gpu),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::SwiftShader => "swiftshader",
+            Self::Gpu => "gpu",
+        }
+    }
+}
+
+impl fmt::Display for BrowserGraphicsMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCommand {
     pub program: String,
@@ -288,6 +321,7 @@ pub struct BrowserRunSpec {
     pub name: String,
     pub image: String,
     pub profile_dir: PathBuf,
+    pub graphics: BrowserGraphicsMode,
 }
 
 pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> RuntimeCommand {
@@ -312,6 +346,8 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
         "VNC_PORT=5900".to_owned(),
         "-e".to_owned(),
         "NOVNC_PORT=6080".to_owned(),
+        "-e".to_owned(),
+        format!("CHROME_GRAPHICS={}", spec.graphics.as_str()),
         "-v".to_owned(),
         profile_volume_arg(runtime, &spec.profile_dir),
         spec.image.clone(),
@@ -483,6 +519,7 @@ mod tests {
             name: "lantern-browser-test".to_owned(),
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: PathBuf::from("/tmp/lantern-profile"),
+            graphics: BrowserGraphicsMode::Disabled,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
@@ -496,6 +533,11 @@ mod tests {
         assert!(command.args.contains(&"127.0.0.1::9222".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::5900".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::6080".to_owned()));
+        assert!(
+            command
+                .args
+                .contains(&"CHROME_GRAPHICS=disabled".to_owned())
+        );
         assert!(command.args.contains(&format!("{MANAGED_LABEL_KEY}=true")));
         assert!(
             command
@@ -524,6 +566,7 @@ mod tests {
             name: "lantern-browser-test".to_owned(),
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: layout.profile_dir.clone(),
+            graphics: BrowserGraphicsMode::SwiftShader,
         };
 
         let command = browser_run_command(RuntimeKind::Docker, &spec);
@@ -537,6 +580,11 @@ mod tests {
         assert!(command.args.contains(&"--user".to_owned()));
         assert!(command.args.contains(&"HOME=/tmp".to_owned()));
         assert!(command.args.contains(&"CHROME_NO_SANDBOX=1".to_owned()));
+        assert!(
+            command
+                .args
+                .contains(&"CHROME_GRAPHICS=swiftshader".to_owned())
+        );
     }
 
     #[test]

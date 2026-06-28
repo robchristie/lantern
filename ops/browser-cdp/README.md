@@ -25,3 +25,9 @@ host profile-directory owner, sets `HOME=/tmp`, and sets
 `CHROME_NO_SANDBOX=1`. The entrypoint converts that flag to Chromium
 `--no-sandbox` for Docker environments where the Chromium sandbox is not
 available inside the container.
+
+The managed browser defaults to `CHROME_GRAPHICS=disabled`, preserving the
+historical `--disable-gpu` launch behavior. For WebGL smoke checks without host
+GPU passthrough, start through Lantern with `--graphics swiftshader`; the
+entrypoint enables Chrome's SwiftShader/ANGLE software renderer. For
+operator-managed GPU passthrough experiments, use `--graphics gpu`.

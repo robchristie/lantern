@@ -37,11 +37,11 @@ use lantern_core::{
     },
 };
 use lantern_storage::{
-    BrowserInstanceRecord, BrowserInstanceStatus, BrowserRegistry, BrowserRunSpec,
-    DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
-    browser_port_command, browser_ps_managed_command, browser_rm_command, browser_run_command,
-    browser_stop_command, generate_instance_id, instance_name, parse_published_port,
-    parse_runtime_status,
+    BrowserGraphicsMode, BrowserInstanceRecord, BrowserInstanceStatus, BrowserRegistry,
+    BrowserRunSpec, DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind,
+    browser_inspect_status_command, browser_port_command, browser_ps_managed_command,
+    browser_rm_command, browser_run_command, browser_stop_command, generate_instance_id,
+    instance_name, parse_published_port, parse_runtime_status,
 };
 use serde::Serialize;
 
@@ -101,6 +101,9 @@ const BROWSER_ID_MISSING_HINT: &str =
     "Run lantern browser list, then pass the id to status, endpoint, or stop.";
 const BROWSER_RUNTIME_INVALID_MESSAGE: &str = "Invalid browser runtime.";
 const BROWSER_RUNTIME_INVALID_HINT: &str = "Use --runtime podman or --runtime docker.";
+const BROWSER_GRAPHICS_INVALID_MESSAGE: &str = "Invalid browser graphics mode.";
+const BROWSER_GRAPHICS_INVALID_HINT: &str =
+    "Use --graphics disabled, --graphics swiftshader, or --graphics gpu.";
 const BROWSER_RUNTIME_UNAVAILABLE_MESSAGE: &str = "No supported container runtime was found.";
 const BROWSER_RUNTIME_UNAVAILABLE_HINT: &str =
     "Install podman or docker, or pass --runtime to select an installed runtime.";
@@ -931,6 +934,9 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
                 .unwrap_or_else(|| DEFAULT_BROWSER_IMAGE.to_owned()),
             invocation.browser_id,
             invocation.browser_wait_ms.unwrap_or(15_000),
+            invocation
+                .browser_graphics
+                .unwrap_or(BrowserGraphicsMode::Disabled),
             invocation.json,
         ),
         BrowserCommand::List => browser_list(&registry, invocation.json),
@@ -984,12 +990,13 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
     if command != BrowserCommand::Start
         && (invocation.browser_runtime.is_some()
             || invocation.browser_image.is_some()
-            || invocation.browser_wait_ms.is_some())
+            || invocation.browser_wait_ms.is_some()
+            || invocation.browser_graphics.is_some())
     {
         return Err(CliError::usage(
             invocation.json,
             "Start-only browser flag was used with another browser subcommand.",
-            "Use --runtime, --image, and --wait-ms only with lantern browser start.",
+            "Use --runtime, --image, --wait-ms, and --graphics only with lantern browser start.",
         ));
     }
 
@@ -1018,6 +1025,7 @@ fn browser_start(
     image: String,
     requested_id: Option<String>,
     wait_ms: u64,
+    graphics: BrowserGraphicsMode,
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
@@ -1054,6 +1062,7 @@ fn browser_start(
         name: name.clone(),
         image,
         profile_dir: layout.profile_dir,
+        graphics,
     };
     let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
     let cdp_port = runtime_port(runtime, &name, 9222, json)?;
@@ -2403,6 +2412,7 @@ Browser lifecycle flags:
   --image <IMAGE>   Container image for browser start
   --id <ID>         Optional browser instance id for start, or selected instance
   --wait-ms <MS>    Browser start readiness timeout
+  --graphics <MODE> Browser graphics mode for start: disabled, swiftshader, or gpu
 
   -h, --help        Print help
   -V, --version     Print version"
@@ -2441,6 +2451,7 @@ struct Invocation {
     browser_runtime: Option<RuntimeKind>,
     browser_image: Option<String>,
     browser_wait_ms: Option<u64>,
+    browser_graphics: Option<BrowserGraphicsMode>,
     help: bool,
     version: bool,
 }
@@ -2585,6 +2596,7 @@ impl Invocation {
             || self.browser_runtime.is_some()
             || self.browser_image.is_some()
             || self.browser_wait_ms.is_some()
+            || self.browser_graphics.is_some()
     }
 
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
@@ -2619,6 +2631,7 @@ impl Invocation {
             browser_runtime: None,
             browser_image: None,
             browser_wait_ms: None,
+            browser_graphics: None,
             help: false,
             version: false,
         };
@@ -2915,6 +2928,23 @@ impl Invocation {
                     };
                     invocation.browser_wait_ms =
                         Some(parse_wait_millis(&wait_ms, invocation.json)?);
+                }
+                "--graphics" => {
+                    let Some(graphics) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --graphics.",
+                            BROWSER_GRAPHICS_INVALID_HINT,
+                        ));
+                    };
+                    invocation.browser_graphics =
+                        Some(BrowserGraphicsMode::parse(&graphics).ok_or_else(|| {
+                            CliError::usage(
+                                invocation.json,
+                                BROWSER_GRAPHICS_INVALID_MESSAGE,
+                                BROWSER_GRAPHICS_INVALID_HINT,
+                            )
+                        })?);
                 }
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" | "layout" | "click" | "type" | "key" | "hover" | "wheel"
@@ -3733,6 +3763,8 @@ mod tests {
             "agent1".to_string(),
             "--wait-ms".to_string(),
             "1000".to_string(),
+            "--graphics".to_string(),
+            "swiftshader".to_string(),
             "--json".to_string(),
         ])
         .expect("browser start should parse");
@@ -3746,7 +3778,25 @@ mod tests {
         );
         assert_eq!(invocation.browser_id.as_deref(), Some("agent1"));
         assert_eq!(invocation.browser_wait_ms, Some(1000));
+        assert_eq!(
+            invocation.browser_graphics,
+            Some(BrowserGraphicsMode::SwiftShader)
+        );
         assert!(invocation.json);
+    }
+
+    #[test]
+    fn rejects_invalid_browser_graphics_mode() {
+        let error = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "raster-pixies".to_string(),
+        ])
+        .expect_err("invalid graphics mode should fail");
+
+        assert_eq!(error.exit_code, 2);
+        assert!(error.message.contains(BROWSER_GRAPHICS_INVALID_MESSAGE));
     }
 
     #[test]

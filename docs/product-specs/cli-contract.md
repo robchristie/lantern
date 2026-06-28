@@ -116,7 +116,7 @@ concurrent agents while preserving endpoint-pure inspection commands.
 
 Supported forms:
 
-- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS]`
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS] [--graphics disabled|swiftshader|gpu]`
 - `lantern browser list`
 - `lantern browser status <ID>`
 - `lantern browser endpoint <ID>`
