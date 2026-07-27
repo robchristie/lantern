@@ -167,6 +167,10 @@ pub struct BrowserInstanceRecord {
     pub name: String,
     pub runtime: RuntimeKind,
     pub image: String,
+    #[serde(default)]
+    pub graphics: BrowserGraphicsMode,
+    #[serde(default)]
+    pub gpu_device: Option<String>,
     pub container_id: Option<String>,
     pub status: BrowserInstanceStatus,
     pub endpoint: Option<String>,
@@ -186,6 +190,8 @@ impl BrowserInstanceRecord {
         runtime: RuntimeKind,
         image: String,
         profile_dir: PathBuf,
+        graphics: BrowserGraphicsMode,
+        gpu_device: Option<String>,
     ) -> Self {
         let now = now_unix_ms();
         Self {
@@ -194,6 +200,8 @@ impl BrowserInstanceRecord {
             name,
             runtime,
             image,
+            graphics,
+            gpu_device,
             container_id: None,
             status: BrowserInstanceStatus::Starting,
             endpoint: None,
@@ -273,6 +281,13 @@ pub enum BrowserGraphicsMode {
     Disabled,
     SwiftShader,
     Gpu,
+    WebGpu,
+}
+
+impl Default for BrowserGraphicsMode {
+    fn default() -> Self {
+        Self::Disabled
+    }
 }
 
 impl BrowserGraphicsMode {
@@ -281,6 +296,7 @@ impl BrowserGraphicsMode {
             "disabled" => Some(Self::Disabled),
             "swiftshader" | "software" => Some(Self::SwiftShader),
             "gpu" => Some(Self::Gpu),
+            "webgpu" => Some(Self::WebGpu),
             _ => None,
         }
     }
@@ -290,6 +306,7 @@ impl BrowserGraphicsMode {
             Self::Disabled => "disabled",
             Self::SwiftShader => "swiftshader",
             Self::Gpu => "gpu",
+            Self::WebGpu => "webgpu",
         }
     }
 }
@@ -322,6 +339,7 @@ pub struct BrowserRunSpec {
     pub image: String,
     pub profile_dir: PathBuf,
     pub graphics: BrowserGraphicsMode,
+    pub gpu_device: Option<String>,
 }
 
 pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> RuntimeCommand {
@@ -352,6 +370,13 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
         profile_volume_arg(runtime, &spec.profile_dir),
         spec.image.clone(),
     ];
+
+    if let Some(device) = &spec.gpu_device {
+        args.splice(
+            args.len() - 1..args.len() - 1,
+            ["--device".to_owned(), device.clone()],
+        );
+    }
 
     if runtime == RuntimeKind::Podman {
         args.insert(2, "--replace".to_owned());
@@ -520,6 +545,7 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: PathBuf::from("/tmp/lantern-profile"),
             graphics: BrowserGraphicsMode::Disabled,
+            gpu_device: None,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
@@ -567,6 +593,7 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: layout.profile_dir.clone(),
             graphics: BrowserGraphicsMode::SwiftShader,
+            gpu_device: None,
         };
 
         let command = browser_run_command(RuntimeKind::Docker, &spec);
@@ -606,6 +633,8 @@ mod tests {
             RuntimeKind::Podman,
             DEFAULT_BROWSER_IMAGE.to_owned(),
             layout.profile_dir,
+            BrowserGraphicsMode::Disabled,
+            None,
         );
 
         registry
@@ -616,5 +645,55 @@ mod tests {
         assert_eq!(records, vec![record]);
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn hardware_webgpu_command_passes_explicit_device_and_mode() {
+        let spec = BrowserRunSpec {
+            id: "lantern-browser-webgpu".to_owned(),
+            name: "lantern-browser-webgpu".to_owned(),
+            image: DEFAULT_BROWSER_IMAGE.to_owned(),
+            profile_dir: PathBuf::from("/tmp/lantern-webgpu-profile"),
+            graphics: BrowserGraphicsMode::WebGpu,
+            gpu_device: Some("nvidia.com/gpu=0".to_owned()),
+        };
+
+        let command = browser_run_command(RuntimeKind::Podman, &spec);
+        let device_position = command
+            .args
+            .iter()
+            .position(|argument| argument == "--device")
+            .expect("hardware mode passes a runtime device");
+
+        assert_eq!(command.args[device_position + 1], "nvidia.com/gpu=0");
+        assert!(command.args.contains(&"CHROME_GRAPHICS=webgpu".to_owned()));
+        assert_eq!(command.args.last(), Some(&DEFAULT_BROWSER_IMAGE.to_owned()));
+    }
+
+    #[test]
+    fn old_instance_records_default_to_disabled_graphics_without_a_device() {
+        let record: BrowserInstanceRecord = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "id": "legacy",
+                "name": "legacy",
+                "runtime": "podman",
+                "image": "browser:old",
+                "container_id": null,
+                "status": "stopped",
+                "endpoint": null,
+                "cdp_host_port": null,
+                "novnc_url": null,
+                "novnc_host_port": null,
+                "vnc_host_port": null,
+                "profile_dir": "/tmp/legacy",
+                "created_at_unix_ms": 1,
+                "updated_at_unix_ms": 1
+            }"#,
+        )
+        .expect("legacy record remains readable");
+
+        assert_eq!(record.graphics, BrowserGraphicsMode::Disabled);
+        assert_eq!(record.gpu_device, None);
     }
 }

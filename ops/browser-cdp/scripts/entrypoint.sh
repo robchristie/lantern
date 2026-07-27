@@ -97,6 +97,14 @@ case "$graphics" in
     ;;
   gpu)
     ;;
+  webgpu)
+    chrome_args+=(
+      "--use-angle=vulkan"
+      "--enable-features=Vulkan"
+      "--disable-vulkan-surface"
+      "--enable-unsafe-webgpu"
+    )
+    ;;
   *)
     printf 'unsupported CHROME_GRAPHICS value: %s\n' "$graphics" >&2
     exit 1

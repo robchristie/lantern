@@ -36,6 +36,8 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.
 4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`, or explicitly start a disposable managed instance with `lantern browser start`.
+   For a trusted hardware-WebGPU application, use `--graphics webgpu` with an
+   explicit `--gpu-device`; Lantern never selects a host device implicitly.
 5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
 6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
 7. Use `lantern hover`, `lantern wheel`, and `lantern drag` for explicit canvas or viewport pointer checks after reviewing the target and selector.

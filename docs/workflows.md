@@ -22,6 +22,22 @@
 5. Verify the endpoint with `lantern doctor --endpoint <ENDPOINT>`.
 6. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
 
+## Hardware WebGPU Browser Loop
+
+1. Use only a disposable managed profile and a trusted application URL; the
+   mode opts into Chrome's unsafe WebGPU boundary.
+2. Select the device explicitly, for example
+   `lantern browser start --graphics webgpu --gpu-device nvidia.com/gpu=0 --json`.
+3. Confirm `browser start` output reports `graphics=webgpu`, the intended
+   device, and `unsafe_webgpu=true`.
+4. Use `flow` so console and network collection begin before navigation.
+5. Require application readiness and visibly nonblank WebGPU canvas pixels;
+   CDP readiness and an empty console alone do not prove rendering.
+6. Inspect interactions and capture only the bounded screenshots the task
+   needs, then explicitly run `browser stop` and `browser prune`.
+7. Treat the result as selected Linux/Vulkan hardware evidence, not a
+   replacement for production Chrome, Metal, D3D12, or other-device coverage.
+
 ## Browser Session Observation Loop
 
 1. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when the agent needs one coherent `open -> wait -> inspect` observation rather than separate snapshot commands.

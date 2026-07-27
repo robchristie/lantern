@@ -103,7 +103,17 @@ const BROWSER_RUNTIME_INVALID_MESSAGE: &str = "Invalid browser runtime.";
 const BROWSER_RUNTIME_INVALID_HINT: &str = "Use --runtime podman or --runtime docker.";
 const BROWSER_GRAPHICS_INVALID_MESSAGE: &str = "Invalid browser graphics mode.";
 const BROWSER_GRAPHICS_INVALID_HINT: &str =
-    "Use --graphics disabled, --graphics swiftshader, or --graphics gpu.";
+    "Use --graphics disabled, --graphics swiftshader, --graphics gpu, or --graphics webgpu.";
+const BROWSER_GPU_DEVICE_INVALID_MESSAGE: &str = "Invalid browser GPU device.";
+const BROWSER_GPU_DEVICE_INVALID_HINT: &str = "Pass one explicit container-runtime device selector such as nvidia.com/gpu=0 or /dev/dri/renderD128.";
+const BROWSER_GPU_DEVICE_MODE_MESSAGE: &str =
+    "Browser GPU device requires a hardware graphics mode.";
+const BROWSER_GPU_DEVICE_MODE_HINT: &str =
+    "Use --gpu-device only with --graphics gpu or --graphics webgpu.";
+const BROWSER_WEBGPU_DEVICE_REQUIRED_MESSAGE: &str =
+    "Hardware WebGPU requires an explicit GPU device.";
+const BROWSER_WEBGPU_DEVICE_REQUIRED_HINT: &str =
+    "Pass --gpu-device with a runtime selector such as nvidia.com/gpu=0.";
 const BROWSER_RUNTIME_UNAVAILABLE_MESSAGE: &str = "No supported container runtime was found.";
 const BROWSER_RUNTIME_UNAVAILABLE_HINT: &str =
     "Install podman or docker, or pass --runtime to select an installed runtime.";
@@ -937,6 +947,7 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             invocation
                 .browser_graphics
                 .unwrap_or(BrowserGraphicsMode::Disabled),
+            invocation.browser_gpu_device,
             invocation.json,
         ),
         BrowserCommand::List => browser_list(&registry, invocation.json),
@@ -991,13 +1002,51 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         && (invocation.browser_runtime.is_some()
             || invocation.browser_image.is_some()
             || invocation.browser_wait_ms.is_some()
-            || invocation.browser_graphics.is_some())
+            || invocation.browser_graphics.is_some()
+            || invocation.browser_gpu_device.is_some())
     {
         return Err(CliError::usage(
             invocation.json,
             "Start-only browser flag was used with another browser subcommand.",
-            "Use --runtime, --image, --wait-ms, and --graphics only with lantern browser start.",
+            "Use --runtime, --image, --wait-ms, --graphics, and --gpu-device only with lantern browser start.",
         ));
+    }
+
+    if command == BrowserCommand::Start {
+        let graphics = invocation
+            .browser_graphics
+            .unwrap_or(BrowserGraphicsMode::Disabled);
+        if let Some(device) = invocation.browser_gpu_device.as_deref() {
+            if device.is_empty()
+                || device != device.trim()
+                || device.starts_with('-')
+                || device.len() > 256
+                || device.chars().any(char::is_control)
+            {
+                return Err(CliError::usage(
+                    invocation.json,
+                    BROWSER_GPU_DEVICE_INVALID_MESSAGE,
+                    BROWSER_GPU_DEVICE_INVALID_HINT,
+                ));
+            }
+            if !matches!(
+                graphics,
+                BrowserGraphicsMode::Gpu | BrowserGraphicsMode::WebGpu
+            ) {
+                return Err(CliError::usage(
+                    invocation.json,
+                    BROWSER_GPU_DEVICE_MODE_MESSAGE,
+                    BROWSER_GPU_DEVICE_MODE_HINT,
+                ));
+            }
+        }
+        if graphics == BrowserGraphicsMode::WebGpu && invocation.browser_gpu_device.is_none() {
+            return Err(CliError::usage(
+                invocation.json,
+                BROWSER_WEBGPU_DEVICE_REQUIRED_MESSAGE,
+                BROWSER_WEBGPU_DEVICE_REQUIRED_HINT,
+            ));
+        }
     }
 
     if command == BrowserCommand::List && invocation.browser_id.is_some() {
@@ -1026,6 +1075,7 @@ fn browser_start(
     requested_id: Option<String>,
     wait_ms: u64,
     graphics: BrowserGraphicsMode,
+    gpu_device: Option<String>,
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
@@ -1047,6 +1097,8 @@ fn browser_start(
         runtime,
         image.clone(),
         layout.profile_dir.clone(),
+        graphics,
+        gpu_device.clone(),
     );
     registry.write_record_atomic(&record).map_err(|_| {
         CliError::runtime(
@@ -1063,6 +1115,7 @@ fn browser_start(
         image,
         profile_dir: layout.profile_dir,
         graphics,
+        gpu_device,
     };
     let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
     let cdp_port = runtime_port(runtime, &name, 9222, json)?;
@@ -1119,10 +1172,13 @@ fn browser_list(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> 
 
     for record in records {
         println!(
-            "{} status={} runtime={} endpoint={} profile={}",
+            "{} status={} runtime={} graphics={} gpu_device={} unsafe_webgpu={} endpoint={} profile={}",
             record.id,
             record.status.as_str(),
             record.runtime.as_str(),
+            record.graphics.as_str(),
+            record.gpu_device.as_deref().unwrap_or("null"),
+            record.graphics == BrowserGraphicsMode::WebGpu,
             record.endpoint.as_deref().unwrap_or("null"),
             record.profile_dir.display()
         );
@@ -1156,6 +1212,8 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
                 name: name.to_owned(),
                 runtime,
                 image: String::new(),
+                graphics: BrowserGraphicsMode::Disabled,
+                gpu_device: None,
                 container_id: None,
                 status,
                 endpoint: None,
@@ -1313,11 +1371,14 @@ fn write_browser_output(
     }
 
     println!(
-        "{}: id={} status={} runtime={} endpoint={} novnc={} profile={}",
+        "{}: id={} status={} runtime={} graphics={} gpu_device={} unsafe_webgpu={} endpoint={} novnc={} profile={}",
         command,
         record.id,
         record.status.as_str(),
         record.runtime.as_str(),
+        record.graphics.as_str(),
+        record.gpu_device.as_deref().unwrap_or("null"),
+        record.graphics == BrowserGraphicsMode::WebGpu,
         record.endpoint.as_deref().unwrap_or("null"),
         record.novnc_url.as_deref().unwrap_or("null"),
         record.profile_dir.display()
@@ -2412,7 +2473,8 @@ Browser lifecycle flags:
   --image <IMAGE>   Container image for browser start
   --id <ID>         Optional browser instance id for start, or selected instance
   --wait-ms <MS>    Browser start readiness timeout
-  --graphics <MODE> Browser graphics mode for start: disabled, swiftshader, or gpu
+  --graphics <MODE> Browser graphics mode: disabled, swiftshader, gpu, or webgpu
+  --gpu-device <DEV> Explicit runtime device for gpu/webgpu; required by webgpu
 
   -h, --help        Print help
   -V, --version     Print version"
@@ -2452,6 +2514,7 @@ struct Invocation {
     browser_image: Option<String>,
     browser_wait_ms: Option<u64>,
     browser_graphics: Option<BrowserGraphicsMode>,
+    browser_gpu_device: Option<String>,
     help: bool,
     version: bool,
 }
@@ -2548,6 +2611,9 @@ struct BrowserInstanceOutput {
     runtime: &'static str,
     image: String,
     status: &'static str,
+    graphics: &'static str,
+    gpu_device: Option<String>,
+    unsafe_webgpu: bool,
     endpoint: Option<String>,
     cdp_host_port: Option<u16>,
     novnc_url: Option<String>,
@@ -2562,6 +2628,9 @@ impl BrowserInstanceOutput {
             runtime: record.runtime.as_str(),
             image: record.image,
             status: record.status.as_str(),
+            graphics: record.graphics.as_str(),
+            gpu_device: record.gpu_device,
+            unsafe_webgpu: record.graphics == BrowserGraphicsMode::WebGpu,
             endpoint: record.endpoint,
             cdp_host_port: record.cdp_host_port,
             novnc_url: record.novnc_url,
@@ -2597,6 +2666,7 @@ impl Invocation {
             || self.browser_image.is_some()
             || self.browser_wait_ms.is_some()
             || self.browser_graphics.is_some()
+            || self.browser_gpu_device.is_some()
     }
 
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
@@ -2632,6 +2702,7 @@ impl Invocation {
             browser_image: None,
             browser_wait_ms: None,
             browser_graphics: None,
+            browser_gpu_device: None,
             help: false,
             version: false,
         };
@@ -2945,6 +3016,16 @@ impl Invocation {
                                 BROWSER_GRAPHICS_INVALID_HINT,
                             )
                         })?);
+                }
+                "--gpu-device" => {
+                    let Some(device) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --gpu-device.",
+                            BROWSER_GPU_DEVICE_INVALID_HINT,
+                        ));
+                    };
+                    invocation.browser_gpu_device = Some(device);
                 }
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" | "layout" | "click" | "type" | "key" | "hover" | "wheel"
@@ -3782,7 +3863,90 @@ mod tests {
             invocation.browser_graphics,
             Some(BrowserGraphicsMode::SwiftShader)
         );
+        assert_eq!(invocation.browser_gpu_device, None);
         assert!(invocation.json);
+    }
+
+    #[test]
+    fn parses_and_validates_explicit_hardware_webgpu_start() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "webgpu".to_string(),
+            "--gpu-device".to_string(),
+            "nvidia.com/gpu=0".to_string(),
+        ])
+        .expect("hardware WebGPU start should parse");
+
+        validate_browser_invocation(&invocation).expect("hardware WebGPU start should validate");
+        assert_eq!(
+            invocation.browser_graphics,
+            Some(BrowserGraphicsMode::WebGpu)
+        );
+        assert_eq!(
+            invocation.browser_gpu_device.as_deref(),
+            Some("nvidia.com/gpu=0")
+        );
+    }
+
+    #[test]
+    fn hardware_webgpu_requires_an_explicit_device() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "webgpu".to_string(),
+        ])
+        .expect("hardware WebGPU start should parse before semantic validation");
+
+        let error = validate_browser_invocation(&invocation)
+            .expect_err("hardware WebGPU without a device should fail");
+
+        assert_eq!(error.exit_code, 2);
+        assert!(
+            error
+                .message
+                .contains(BROWSER_WEBGPU_DEVICE_REQUIRED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn gpu_device_is_rejected_for_non_hardware_modes() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "swiftshader".to_string(),
+            "--gpu-device".to_string(),
+            "/dev/dri/renderD128".to_string(),
+        ])
+        .expect("device selector should parse before semantic validation");
+
+        let error = validate_browser_invocation(&invocation)
+            .expect_err("software graphics with a hardware device should fail");
+
+        assert_eq!(error.exit_code, 2);
+        assert!(error.message.contains(BROWSER_GPU_DEVICE_MODE_MESSAGE));
+    }
+
+    #[test]
+    fn gpu_device_rejects_runtime_option_injection() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "gpu".to_string(),
+            "--gpu-device".to_string(),
+            "--privileged".to_string(),
+        ])
+        .expect("device selector should parse before semantic validation");
+
+        let error = validate_browser_invocation(&invocation)
+            .expect_err("runtime option injection should fail");
+
+        assert_eq!(error.exit_code, 2);
+        assert!(error.message.contains(BROWSER_GPU_DEVICE_INVALID_MESSAGE));
     }
 
     #[test]

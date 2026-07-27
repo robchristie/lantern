@@ -1,5 +1,7 @@
 # Managed Browser WebGL Graphics Mode
 
+Status: completed
+
 ## Summary
 
 Lantern managed browser containers previously launched Chrome with

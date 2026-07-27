@@ -116,7 +116,7 @@ concurrent agents while preserving endpoint-pure inspection commands.
 
 Supported forms:
 
-- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS] [--graphics disabled|swiftshader|gpu]`
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS] [--graphics disabled|swiftshader|gpu|webgpu] [--gpu-device DEVICE]`
 - `lantern browser list`
 - `lantern browser status <ID>`
 - `lantern browser endpoint <ID>`
@@ -135,9 +135,24 @@ Default `start` behavior:
 - labels containers with `dev.lantern.managed=true` and `dev.lantern.instance-id=<ID>`
 - for Docker, runs the container as the host profile-directory owner, sets `HOME=/tmp`, and passes `CHROME_NO_SANDBOX=1` so the image adds Chromium `--no-sandbox`
 - waits for `/json/version` readiness before reporting success
+- defaults to `graphics=disabled` with no selected GPU device
 
-Human output should include the id, status, runtime, endpoint, noVNC URL when
-available, and profile path. JSON output shape for single-instance commands:
+Graphics behavior:
+
+- `disabled` preserves the default `--disable-gpu` compatibility mode.
+- `swiftshader` opts into ANGLE/SwiftShader for software WebGL; it is not
+  WebGPU coverage.
+- `gpu` removes `--disable-gpu` for a generic operator-managed GPU setup and
+  optionally accepts one `--gpu-device` runtime selector.
+- `webgpu` requires `--gpu-device`, passes that value as one runtime `--device`
+  argument, and enables the reviewed Chrome Vulkan/unsafe-WebGPU flags.
+- `--gpu-device` is rejected with `disabled` or `swiftshader`, and values that
+  are empty, control-bearing, longer than 256 bytes, padded with whitespace, or
+  begin with `-` are rejected before invoking the runtime.
+
+Human output should include the id, status, runtime, graphics mode, GPU device,
+unsafe-WebGPU state, endpoint, noVNC URL when available, and profile path. JSON
+output shape for single-instance commands:
 
 ```json
 {
@@ -150,6 +165,9 @@ available, and profile path. JSON output shape for single-instance commands:
     "runtime": "podman",
     "image": "localhost/lantern-browser-cdp:stable",
     "status": "running",
+    "graphics": "webgpu",
+    "gpu_device": "nvidia.com/gpu=0",
+    "unsafe_webgpu": true,
     "endpoint": "http://127.0.0.1:43123",
     "cdp_host_port": 43123,
     "novnc_url": "http://127.0.0.1:43124/vnc.html",
@@ -197,6 +215,10 @@ Security behavior:
 - CDP host publishing is loopback-only by default.
 - Managed profiles are local untracked runtime state and are disposable by
   default.
+- Hardware WebGPU is explicit, records its selected device and unsafe state,
+  and is limited to disposable trusted-site development sessions.
+- No GPU is auto-detected, no endpoint command auto-starts a GPU container, and
+  `webgpu` never silently falls back to software or a device-free launch.
 - The lifecycle registry stores endpoints, runtime metadata, and profile paths;
   it must not store cookies, local storage, DOM dumps, screenshots, console
   payloads, network bodies, or full browser artifacts.

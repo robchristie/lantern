@@ -107,6 +107,28 @@ This removes `--disable-gpu` and enables Chrome's SwiftShader/ANGLE renderer.
 Use `--graphics gpu` only when the operator has configured GPU device
 passthrough for the selected container runtime.
 
+For a disposable trusted-site WebGPU check on a Linux host, let Lantern inject
+one explicit runtime device and use Chrome's Vulkan WebGPU path:
+
+```sh
+lantern browser start \
+  --graphics webgpu \
+  --gpu-device nvidia.com/gpu=0 \
+  --json
+```
+
+The device value is passed as one container-runtime `--device` argument. The
+example uses NVIDIA Container Toolkit CDI; `/dev/dri/renderD128` is a possible
+operator-selected value for an appropriately provisioned non-NVIDIA image.
+Lantern never discovers or selects a GPU automatically.
+
+This mode passes `--enable-unsafe-webgpu` alongside the tested Vulkan flags.
+Use it only with disposable profiles and trusted applications. It bypasses
+some Chrome adapter rollout/blocklist policy, so it proves that the application
+works on the selected hardware and browser implementation but does not replace
+an ordinary production-browser acceptance run. Verify a nonblank WebGPU canvas
+and application readiness; CDP readiness or an empty console is insufficient.
+
 If Lantern runs in the same container as Chromium, keep Chromium bound to `127.0.0.1` and use `--endpoint http://127.0.0.1:9222` inside that container.
 
 If Lantern runs in a different container, expose Chromium to Lantern as a loopback HTTP endpoint inside Lantern's network namespace, for example with an explicit port-forwarding sidecar or by running both processes in the same container namespace. A plain Docker service name such as `http://chromium:9222` is outside Lantern's first-milestone endpoint contract because the CLI currently accepts only local HTTP hosts.

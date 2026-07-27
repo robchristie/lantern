@@ -6,9 +6,17 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-05-28**
+Last reviewed: **2026-07-27**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git, conservative harness profiles, a documented secrets policy, redacted and bounded CLI output by default, bounded click/type/key and pointer interaction metadata, explicit screenshot artifact opt-in including explicit region/crop coordinates, explicit opt-in managed browser containers with loopback CDP publishing, no hidden browser artifact persistence, session-oriented flow evidence, and optional dependency advisory checks in `scripts/quality-sweep.sh`. Podman and Docker managed-browser smokes have exercised the loopback disposable-container boundary, but the grade remains `C` until dependency review, automated secret scanning, broader artifact handling, and unsafe-boundary behavior are better proven.
+Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git,
+conservative harness profiles, a documented secrets policy, redacted and
+bounded CLI output, explicit screenshot artifacts, opt-in managed containers
+with loopback CDP, no hidden browser artifact persistence, session-oriented
+flow evidence, and optional dependency advisory checks. Hardware WebGPU
+requires an explicit runtime device and mode, reports Chrome's unsafe WebGPU
+boundary, and retains disposable profiles and loopback-only CDP. The grade
+remains `C` until dependency review, automated secret scanning, broader
+artifact handling, and unsafe-boundary behavior are better proven.
 
 ## Grade Scale
 
@@ -43,6 +51,11 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Default to local-first operation.
 - Keep `.smoogle/` out of Git.
 - Managed browser lifecycle commands must be explicit; endpoint-based commands must not auto-start containers.
+- GPU devices must be selected explicitly. Do not auto-discover a host GPU or
+  silently enable `--enable-unsafe-webgpu`.
+- Use hardware WebGPU only for disposable profiles loading trusted sites; it
+  bypasses browser adapter safety policy and exposes a host device to the
+  container.
 - Publish managed CDP ports to host loopback only by default.
 - Prefer `approval_policy = "never"` for non-interactive runs.
 - Keep review profiles read-only unless a task explicitly requires mutation.
@@ -58,6 +71,9 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Dependency and supply-chain policy is still first-version guidance.
 - Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
 - Managed browser container images and runtime behavior have two-instance rootless Podman and Docker smoke evidence, but still require broader manual smoke review on representative hosts.
+- The hardware-WebGPU trust boundary is proven on one rootless Podman/NVIDIA
+  host; other runtimes, device selectors, drivers, and untrusted-page behavior
+  have not been broadly exercised.
 
 ## Synthesized Boundaries
 
