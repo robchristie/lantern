@@ -1028,6 +1028,8 @@ fn browser_start(
             .read(profile_name)
             .map_err(|error| browser_profile_store_error(error, json))?;
         let expected = profile.attachment.clone();
+        let mut selected_target_owned =
+            persistent_attachment_owns_runtime_target(expected.as_ref(), runtime, &name);
         let mut stale_containers = Vec::new();
         if let Some(attachment) = expected.as_ref() {
             if attachment.state == BrowserProfileAttachmentState::Stopping {
@@ -1071,7 +1073,7 @@ fn browser_start(
             }
         }
 
-        let known_persistent_record = match persistent_registry.read_record(&id) {
+        match persistent_registry.read_record(&id) {
             Ok(existing) => {
                 if existing.profile_name.as_deref() != Some(profile_name) {
                     return Err(CliError::runtime(
@@ -1081,6 +1083,8 @@ fn browser_start(
                         BROWSER_STATE_FAILED_HINT,
                     ));
                 }
+                selected_target_owned |=
+                    persistent_record_owns_runtime_target(&existing, runtime, &name);
                 let status = managed_runtime_status(existing.runtime, &existing.name, json)?;
                 if matches!(
                     status,
@@ -1102,26 +1106,13 @@ fn browser_start(
                 {
                     stale_containers.push((existing.runtime, existing.name));
                 }
-                true
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return Err(browser_state_error(json)),
-        };
+        }
 
-        if expected.is_none() && !known_persistent_record {
-            match disposable_registry.read_record(&id) {
-                Ok(_) => {
-                    return Err(CliError::runtime(
-                        json,
-                        "browser_profile_in_use",
-                        BROWSER_PROFILE_IN_USE_MESSAGE,
-                        BROWSER_PROFILE_IN_USE_HINT,
-                    ));
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Err(browser_state_error(json)),
-            }
-            if managed_runtime_status(runtime, &name, json)? != BrowserInstanceStatus::Missing {
+        match disposable_registry.read_record(&id) {
+            Ok(_) => {
                 return Err(CliError::runtime(
                     json,
                     "browser_profile_in_use",
@@ -1129,6 +1120,18 @@ fn browser_start(
                     BROWSER_PROFILE_IN_USE_HINT,
                 ));
             }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(browser_state_error(json)),
+        }
+        if !selected_target_owned
+            && managed_runtime_status(runtime, &name, json)? != BrowserInstanceStatus::Missing
+        {
+            return Err(CliError::runtime(
+                json,
+                "browser_profile_in_use",
+                BROWSER_PROFILE_IN_USE_MESSAGE,
+                BROWSER_PROFILE_IN_USE_HINT,
+            ));
         }
 
         let profile_dir = profile_registry
@@ -2195,6 +2198,24 @@ fn profile_record_has_fresh_starting_reservation(
     record.profile_kind == BrowserProfileKind::Persistent
         && record.status == BrowserInstanceStatus::Starting
         && profile_attachment_is_within_starting_grace(record.updated_at_unix_ms, now_unix_ms)
+}
+
+fn persistent_attachment_owns_runtime_target(
+    attachment: Option<&BrowserProfileAttachment>,
+    runtime: RuntimeKind,
+    container_name: &str,
+) -> bool {
+    attachment.is_some_and(|attachment| {
+        attachment.runtime == runtime && attachment.container_name == container_name
+    })
+}
+
+fn persistent_record_owns_runtime_target(
+    record: &BrowserInstanceRecord,
+    runtime: RuntimeKind,
+    container_name: &str,
+) -> bool {
+    record.runtime == runtime && record.name == container_name
 }
 
 fn profile_attachment_from_record(
@@ -4579,6 +4600,48 @@ mod tests {
         record.status = BrowserInstanceStatus::Stopped;
         assert!(!profile_record_has_fresh_starting_reservation(
             &record, 1_001
+        ));
+    }
+
+    #[test]
+    fn stale_owner_does_not_claim_the_same_name_on_another_runtime() {
+        let attachment = BrowserProfileAttachment {
+            instance_id: "review-browser".to_owned(),
+            container_name: "review-browser".to_owned(),
+            runtime: RuntimeKind::Podman,
+            reservation_id: "reservation-review".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
+        };
+        let record = BrowserInstanceRecord::pending(
+            "review-browser".to_owned(),
+            "review-browser".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            PathBuf::from("/tmp/review-profile"),
+            BrowserProfileKind::Persistent,
+            Some("review".to_owned()),
+            Some("reservation-review".to_owned()),
+        );
+
+        assert!(persistent_attachment_owns_runtime_target(
+            Some(&attachment),
+            RuntimeKind::Podman,
+            "review-browser"
+        ));
+        assert!(persistent_record_owns_runtime_target(
+            &record,
+            RuntimeKind::Podman,
+            "review-browser"
+        ));
+        assert!(!persistent_attachment_owns_runtime_target(
+            Some(&attachment),
+            RuntimeKind::Docker,
+            "review-browser"
+        ));
+        assert!(!persistent_record_owns_runtime_target(
+            &record,
+            RuntimeKind::Docker,
+            "review-browser"
         ));
     }
 
