@@ -36,11 +36,12 @@ use lantern_core::{
     },
 };
 use lantern_storage::{
-    BrowserInstanceRecord, BrowserInstanceStatus, BrowserRegistry, BrowserRunSpec,
+    BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment, BrowserProfileKind,
+    BrowserProfileRecord, BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec,
     DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
     browser_port_command, browser_ps_managed_command, browser_rm_command, browser_run_command,
     browser_stop_command, generate_instance_id, instance_name, parse_published_port,
-    parse_runtime_status,
+    parse_runtime_status, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -87,7 +88,8 @@ const SCREENSHOT_WRITE_FAILED_HINT: &str =
 const DOM_LIMIT_INVALID_MESSAGE: &str = "Invalid DOM summary limit.";
 const DOM_LIMIT_INVALID_HINT: &str =
     "Pass --depth from 1 through 12 and --max-nodes from 1 through 500.";
-const BROWSER_USAGE_HINT: &str = "Run lantern browser <start|list|status|endpoint|stop|prune>.";
+const BROWSER_USAGE_HINT: &str =
+    "Run lantern browser <start|list|status|endpoint|stop|prune|profile>.";
 const BROWSER_ID_MISSING_MESSAGE: &str = "Missing browser instance id.";
 const BROWSER_ID_MISSING_HINT: &str =
     "Run lantern browser list, then pass the id to status, endpoint, or stop.";
@@ -106,8 +108,25 @@ const BROWSER_NOT_READY_MESSAGE: &str = "Managed browser did not become ready.";
 const BROWSER_NOT_READY_HINT: &str =
     "Check the container logs, then stop or prune the failed managed browser instance.";
 const BROWSER_STATE_FAILED_MESSAGE: &str = "Managed browser state could not be updated.";
-const BROWSER_STATE_FAILED_HINT: &str =
-    "Check .smoogle/lantern/browser-instances permissions and retry.";
+const BROWSER_STATE_FAILED_HINT: &str = "Check repository-local disposable state and the operator-owned Lantern state-home permissions, then retry.";
+const BROWSER_PROFILE_MISSING_MESSAGE: &str = "Missing browser profile name.";
+const BROWSER_PROFILE_MISSING_HINT: &str =
+    "Pass a profile name made from ASCII letters, numbers, hyphen, or underscore.";
+const BROWSER_PROFILE_NOT_FOUND_MESSAGE: &str = "Managed browser profile was not found.";
+const BROWSER_PROFILE_NOT_FOUND_HINT: &str =
+    "Run lantern browser profile list, or create the named profile first.";
+const BROWSER_PROFILE_EXISTS_MESSAGE: &str = "Managed browser profile already exists.";
+const BROWSER_PROFILE_EXISTS_HINT: &str =
+    "Reuse it with lantern browser start --profile NAME, or choose another name.";
+const BROWSER_PROFILE_IN_USE_MESSAGE: &str = "Managed browser profile is already in use.";
+const BROWSER_PROFILE_IN_USE_HINT: &str =
+    "Stop the attached managed browser before starting or deleting this profile.";
+const BROWSER_PROFILE_DELETE_CONFIRM_MESSAGE: &str = "Profile deletion requires confirmation.";
+const BROWSER_PROFILE_DELETE_CONFIRM_HINT: &str =
+    "Review the dedicated profile name, then repeat with --yes.";
+const BROWSER_PROFILE_STARTING_GRACE_MS: u128 = 60_000;
+const BROWSER_STATE_HOME_INVALID_MESSAGE: &str = "Lantern state home is invalid.";
+const BROWSER_STATE_HOME_INVALID_HINT: &str = "Set LANTERN_STATE_HOME or XDG_STATE_HOME to an absolute operator-owned directory, or configure HOME.";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
@@ -743,33 +762,82 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             BROWSER_STATE_FAILED_HINT,
         )
     })?;
-    let registry = BrowserRegistry::under_repo(repo_root);
+    let disposable_registry = BrowserRegistry::under_repo(repo_root);
+    let persistent_state =
+        if command == BrowserCommand::Start && invocation.browser_profile_name.is_none() {
+            None
+        } else {
+            let state_home = lantern_state_home(invocation.json)?;
+            Some((
+                BrowserRegistry::new(state_home.join("browser-instances")),
+                BrowserProfileRegistry::new(state_home.join("browser-profiles")),
+            ))
+        };
+    let persistent_registry = persistent_state.as_ref().map(|state| &state.0);
+    let profile_registry = persistent_state.as_ref().map(|state| &state.1);
 
     match command {
         BrowserCommand::Start => browser_start(
-            &registry,
+            &disposable_registry,
+            persistent_registry,
+            profile_registry,
             invocation.browser_runtime,
             invocation
                 .browser_image
                 .unwrap_or_else(|| DEFAULT_BROWSER_IMAGE.to_owned()),
             invocation.browser_id,
             invocation.browser_wait_ms.unwrap_or(15_000),
+            invocation.browser_profile_name,
             invocation.json,
         ),
-        BrowserCommand::List => browser_list(&registry, invocation.json),
+        BrowserCommand::List => browser_list(
+            &disposable_registry,
+            persistent_registry.expect("persistent state resolved for browser list"),
+            invocation.json,
+        ),
         BrowserCommand::Status => {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
-            browser_status(&registry, &id, invocation.json)
+            browser_status(
+                &disposable_registry,
+                persistent_registry.expect("persistent state resolved for browser status"),
+                &id,
+                invocation.json,
+            )
         }
         BrowserCommand::Endpoint => {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
-            browser_endpoint(&registry, &id, invocation.json)
+            browser_endpoint(
+                &disposable_registry,
+                persistent_registry.expect("persistent state resolved for browser endpoint"),
+                &id,
+                invocation.json,
+            )
         }
         BrowserCommand::Stop => {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
-            browser_stop(&registry, &id, invocation.json)
+            browser_stop(
+                &disposable_registry,
+                persistent_registry.expect("persistent state resolved for browser stop"),
+                profile_registry.expect("profile state resolved for browser stop"),
+                &id,
+                invocation.json,
+            )
         }
-        BrowserCommand::Prune => browser_prune(&registry, invocation.json),
+        BrowserCommand::Prune => browser_prune(
+            &disposable_registry,
+            persistent_registry.expect("persistent state resolved for browser prune"),
+            profile_registry.expect("profile state resolved for browser prune"),
+            invocation.json,
+        ),
+        BrowserCommand::Profile => run_browser_profile_invocation(
+            profile_registry.expect("profile state resolved for profile command"),
+            invocation
+                .browser_profile_command
+                .expect("profile subcommand checked before run"),
+            invocation.browser_profile_name,
+            invocation.browser_confirm,
+            invocation.json,
+        ),
     }
 }
 
@@ -801,7 +869,7 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         ));
     }
 
-    if command != BrowserCommand::Start
+    if !matches!(command, BrowserCommand::Start)
         && (invocation.browser_runtime.is_some()
             || invocation.browser_image.is_some()
             || invocation.browser_wait_ms.is_some())
@@ -829,29 +897,202 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         ));
     }
 
+    if command == BrowserCommand::Start {
+        if let Some(name) = invocation.browser_profile_name.as_deref() {
+            validate_browser_profile_name(name, invocation.json)?;
+        }
+        if invocation.browser_profile_command.is_some() || invocation.browser_confirm {
+            return Err(CliError::usage(
+                invocation.json,
+                "Profile command flag was used with browser start.",
+                "Use --profile NAME with start; use --yes only with browser profile delete.",
+            ));
+        }
+    } else if command != BrowserCommand::Profile && invocation.browser_profile_name.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--profile is only supported by browser start.",
+            "Run lantern browser start --profile NAME.",
+        ));
+    }
+
+    if command == BrowserCommand::Profile {
+        let profile_command = invocation.browser_profile_command.ok_or_else(|| {
+            CliError::usage(
+                invocation.json,
+                "Missing browser profile subcommand.",
+                "Run lantern browser profile <create|list|status|delete>.",
+            )
+        })?;
+        if invocation.browser_id.is_some() {
+            return Err(CliError::usage(
+                invocation.json,
+                "Browser profile commands do not accept an instance id.",
+                "Pass the profile name positionally after create, status, or delete.",
+            ));
+        }
+        let requires_name = !matches!(profile_command, BrowserProfileCommand::List);
+        if requires_name && invocation.browser_profile_name.is_none() {
+            return Err(CliError::usage(
+                invocation.json,
+                BROWSER_PROFILE_MISSING_MESSAGE,
+                BROWSER_PROFILE_MISSING_HINT,
+            ));
+        }
+        if !requires_name && invocation.browser_profile_name.is_some() {
+            return Err(CliError::usage(
+                invocation.json,
+                "Profile list does not accept a profile name.",
+                "Run lantern browser profile list.",
+            ));
+        }
+        if let Some(name) = invocation.browser_profile_name.as_deref() {
+            validate_browser_profile_name(name, invocation.json)?;
+        }
+        if invocation.browser_confirm && profile_command != BrowserProfileCommand::Delete {
+            return Err(CliError::usage(
+                invocation.json,
+                "--yes is only supported by browser profile delete.",
+                "Run lantern browser profile delete NAME --yes.",
+            ));
+        }
+    } else if invocation.browser_confirm {
+        return Err(CliError::usage(
+            invocation.json,
+            "--yes is only supported by browser profile delete.",
+            "Run lantern browser profile delete NAME --yes.",
+        ));
+    }
+
     Ok(())
 }
 
 fn browser_start(
-    registry: &BrowserRegistry,
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
+    profile_registry: Option<&BrowserProfileRegistry>,
     requested_runtime: Option<RuntimeKind>,
     image: String,
     requested_id: Option<String>,
     wait_ms: u64,
+    profile_name: Option<String>,
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
-    let id = requested_id.unwrap_or_else(generate_instance_id);
+    let id =
+        requested_id.unwrap_or_else(|| profile_name.clone().unwrap_or_else(generate_instance_id));
     validate_browser_id(&id, json)?;
     let name = instance_name(&id);
-    let layout = registry.create_instance_layout(&id).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+    let (registry, layout, profile_kind) = if let Some(profile_name) = profile_name.as_deref() {
+        let persistent_registry =
+            persistent_registry.expect("persistent state resolved for named profile start");
+        let profile_registry =
+            profile_registry.expect("profile state resolved for named profile start");
+        let profile = profile_registry
+            .read(profile_name)
+            .map_err(|error| browser_profile_store_error(error, json))?;
+        let expected = profile.attachment.clone();
+        let mut stale_containers = Vec::new();
+        if let Some(attachment) = expected.as_ref() {
+            let status = run_runtime_command(
+                browser_inspect_status_command(attachment.runtime, &attachment.container_name),
+                false,
+            )
+            .map(|status| parse_runtime_status(&status))
+            .unwrap_or(BrowserInstanceStatus::Missing);
+            if matches!(
+                status,
+                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+            ) {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
+            if status == BrowserInstanceStatus::Missing
+                && profile_attachment_is_within_starting_grace(
+                    profile.updated_at_unix_ms,
+                    lantern_storage::now_unix_ms(),
+                )
+            {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
+            if status != BrowserInstanceStatus::Missing {
+                stale_containers.push((attachment.runtime, attachment.container_name.clone()));
+            }
+        }
+
+        if let Ok(existing) = persistent_registry.read_record(&id) {
+            if existing.profile_name.as_deref() != Some(profile_name) {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_state_failed",
+                    BROWSER_STATE_FAILED_MESSAGE,
+                    BROWSER_STATE_FAILED_HINT,
+                ));
+            }
+            let status = run_runtime_command(
+                browser_inspect_status_command(existing.runtime, &existing.name),
+                false,
+            )
+            .map(|status| parse_runtime_status(&status))
+            .unwrap_or(BrowserInstanceStatus::Missing);
+            if matches!(
+                status,
+                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+            ) {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
+            if status != BrowserInstanceStatus::Missing
+                && !stale_containers
+                    .iter()
+                    .any(|(_, name)| name == &existing.name)
+            {
+                stale_containers.push((existing.runtime, existing.name));
+            }
+        }
+
+        let profile_dir = profile_registry
+            .data_dir(profile_name)
+            .map_err(|error| browser_profile_store_error(error, json))?;
+        let layout = persistent_registry
+            .create_persistent_instance_layout(&id, profile_dir)
+            .map_err(|_| browser_state_error(json))?;
+        let attachment = BrowserProfileAttachment {
+            instance_id: id.clone(),
+            container_name: name.clone(),
+            runtime,
+        };
+        profile_registry
+            .compare_and_swap_attachment(profile_name, expected.as_ref(), Some(attachment))
+            .map_err(|error| browser_profile_store_error(error, json))?;
+        for (stale_runtime, stale_name) in stale_containers {
+            if let Err(error) =
+                run_runtime_command(browser_rm_command(stale_runtime, &stale_name), json)
+            {
+                let _ = profile_registry.release_if_owner(profile_name, &id);
+                return Err(error);
+            }
+        }
+        (persistent_registry, layout, BrowserProfileKind::Persistent)
+    } else {
+        let layout = disposable_registry
+            .create_instance_layout(&id)
+            .map_err(|_| browser_state_error(json))?;
+        (disposable_registry, layout, BrowserProfileKind::Disposable)
+    };
 
     let mut record = BrowserInstanceRecord::pending(
         id.clone(),
@@ -859,60 +1100,93 @@ fn browser_start(
         runtime,
         image.clone(),
         layout.profile_dir.clone(),
+        profile_kind,
+        profile_name.clone(),
     );
-    registry.write_record_atomic(&record).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+    let mut runtime_started = false;
+    let start_result = (|| {
+        registry
+            .write_record_atomic(&record)
+            .map_err(|_| browser_state_error(json))?;
+        let spec = BrowserRunSpec {
+            id: id.clone(),
+            name: name.clone(),
+            image,
+            profile_dir: layout.profile_dir,
+            profile_name: profile_name.clone(),
+        };
+        let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
+        runtime_started = true;
+        let cdp_port = runtime_port(runtime, &name, 9222, json)?;
+        let vnc_port = runtime_port(runtime, &name, 5900, json).ok();
+        let novnc_port = runtime_port(runtime, &name, 6080, json).ok();
+        let endpoint = format!("http://127.0.0.1:{cdp_port}");
+        let novnc_url = novnc_port.map(|port| format!("http://127.0.0.1:{port}/vnc.html"));
 
-    let spec = BrowserRunSpec {
-        id: id.clone(),
-        name: name.clone(),
-        image,
-        profile_dir: layout.profile_dir,
-    };
-    let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
-    let cdp_port = runtime_port(runtime, &name, 9222, json)?;
-    let vnc_port = runtime_port(runtime, &name, 5900, json).ok();
-    let novnc_port = runtime_port(runtime, &name, 6080, json).ok();
-    let endpoint = format!("http://127.0.0.1:{cdp_port}");
-    let novnc_url = novnc_port.map(|port| format!("http://127.0.0.1:{port}/vnc.html"));
+        wait_for_browser_ready(&endpoint, Duration::from_millis(wait_ms), json)?;
 
-    wait_for_browser_ready(&endpoint, Duration::from_millis(wait_ms), json)?;
+        record.container_id = Some(container_id.trim().to_owned());
+        record.status = BrowserInstanceStatus::Running;
+        record.endpoint = Some(endpoint);
+        record.cdp_host_port = Some(cdp_port);
+        record.vnc_host_port = vnc_port;
+        record.novnc_host_port = novnc_port;
+        record.novnc_url = novnc_url;
+        record.updated_at_unix_ms = lantern_storage::now_unix_ms();
+        registry
+            .write_record_atomic(&record)
+            .map_err(|_| browser_state_error(json))?;
 
-    record.container_id = Some(container_id.trim().to_owned());
-    record.status = BrowserInstanceStatus::Running;
-    record.endpoint = Some(endpoint);
-    record.cdp_host_port = Some(cdp_port);
-    record.vnc_host_port = vnc_port;
-    record.novnc_host_port = novnc_port;
-    record.novnc_url = novnc_url;
-    record.updated_at_unix_ms = lantern_storage::now_unix_ms();
-    registry.write_record_atomic(&record).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+        write_browser_output("browser_start", record, json)
+    })();
 
-    write_browser_output("browser_start", record, json)
+    if start_result.is_err() {
+        if let Some(profile_name) = profile_name.as_deref() {
+            let profile_registry =
+                profile_registry.expect("profile state resolved for named profile cleanup");
+            let safe_to_release = if runtime_started {
+                let removed =
+                    run_runtime_command(browser_rm_command(runtime, &name), false).is_ok();
+                removed
+                    || run_runtime_command(browser_inspect_status_command(runtime, &name), false)
+                        .map(|status| {
+                            !matches!(
+                                parse_runtime_status(&status),
+                                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+                            )
+                        })
+                        .unwrap_or(false)
+            } else {
+                true
+            };
+            if safe_to_release {
+                let _ = profile_registry.release_if_owner(profile_name, &id);
+            }
+        }
+    }
+    start_result
 }
 
-fn browser_list(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> {
-    let mut records = registry.list_records().map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+fn browser_list(
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: &BrowserRegistry,
+    json: bool,
+) -> Result<(), CliError> {
+    let mut records = disposable_registry
+        .list_records()
+        .map_err(|_| browser_state_error(json))?;
+    records.extend(
+        persistent_registry
+            .list_records()
+            .map_err(|_| browser_state_error(json))?,
+    );
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    if records
+        .windows(2)
+        .any(|records| records[0].id == records[1].id)
+    {
+        return Err(browser_state_error(json));
+    }
     reconcile_labeled_runtime_instances(&mut records);
 
     if json {
@@ -930,11 +1204,13 @@ fn browser_list(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> 
 
     for record in records {
         println!(
-            "{} status={} runtime={} endpoint={} profile={}",
+            "{} status={} runtime={} endpoint={} profile_kind={} profile_name={} profile={}",
             record.id,
             record.status.as_str(),
             record.runtime.as_str(),
             record.endpoint.as_deref().unwrap_or("null"),
+            record.profile_kind.as_str(),
+            record.profile_name.as_deref().unwrap_or("null"),
             record.profile_dir.display()
         );
     }
@@ -975,6 +1251,8 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
                 novnc_host_port: None,
                 vnc_host_port: None,
                 profile_dir: PathBuf::new(),
+                profile_kind: BrowserProfileKind::Disposable,
+                profile_name: None,
                 created_at_unix_ms: now,
                 updated_at_unix_ms: now,
             });
@@ -985,15 +1263,14 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
     records.sort_by(|left, right| left.id.cmp(&right.id));
 }
 
-fn browser_status(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
-    let mut record = registry.read_record(id).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+fn browser_status(
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: &BrowserRegistry,
+    id: &str,
+    json: bool,
+) -> Result<(), CliError> {
+    let (registry, mut record) =
+        find_browser_instance(disposable_registry, persistent_registry, id, json)?;
 
     if let Ok(status) = run_runtime_command(
         browser_inspect_status_command(record.runtime, &record.name),
@@ -1016,29 +1293,47 @@ fn browser_status(registry: &BrowserRegistry, id: &str, json: bool) -> Result<()
     write_browser_output("browser_status", record, json)
 }
 
-fn browser_endpoint(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
-    let record = registry.read_record(id).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+fn browser_endpoint(
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: &BrowserRegistry,
+    id: &str,
+    json: bool,
+) -> Result<(), CliError> {
+    let (_, record) = find_browser_instance(disposable_registry, persistent_registry, id, json)?;
     write_browser_output("browser_endpoint", record, json)
 }
 
-fn browser_stop(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), CliError> {
-    let mut record = registry.read_record(id).map_err(|_| {
-        CliError::runtime(
-            json,
-            "browser_state_failed",
-            BROWSER_STATE_FAILED_MESSAGE,
-            BROWSER_STATE_FAILED_HINT,
-        )
-    })?;
+fn browser_stop(
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: &BrowserRegistry,
+    profile_registry: &BrowserProfileRegistry,
+    id: &str,
+    json: bool,
+) -> Result<(), CliError> {
+    let (registry, mut record) =
+        find_browser_instance(disposable_registry, persistent_registry, id, json)?;
 
-    let _ = run_runtime_command(browser_stop_command(record.runtime, &record.name), json);
+    let stop_result = run_runtime_command(browser_stop_command(record.runtime, &record.name), json);
+    if record.profile_kind == BrowserProfileKind::Persistent {
+        stop_result?;
+        let status = run_runtime_command(
+            browser_inspect_status_command(record.runtime, &record.name),
+            json,
+        )
+        .map(|status| parse_runtime_status(&status))
+        .unwrap_or(BrowserInstanceStatus::Missing);
+        if matches!(
+            status,
+            BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+        ) {
+            return Err(CliError::runtime(
+                json,
+                "browser_profile_in_use",
+                BROWSER_PROFILE_IN_USE_MESSAGE,
+                BROWSER_PROFILE_IN_USE_HINT,
+            ));
+        }
+    }
     record.status = BrowserInstanceStatus::Stopped;
     record.updated_at_unix_ms = lantern_storage::now_unix_ms();
     registry.write_record_atomic(&record).map_err(|_| {
@@ -1049,11 +1344,51 @@ fn browser_stop(registry: &BrowserRegistry, id: &str, json: bool) -> Result<(), 
             BROWSER_STATE_FAILED_HINT,
         )
     })?;
+    if let Some(profile_name) = record.profile_name.as_deref() {
+        profile_registry
+            .release_if_owner(profile_name, id)
+            .map_err(|error| browser_profile_store_error(error, json))?;
+    }
 
     write_browser_output("browser_stop", record, json)
 }
 
-fn browser_prune(registry: &BrowserRegistry, json: bool) -> Result<(), CliError> {
+fn browser_prune(
+    disposable_registry: &BrowserRegistry,
+    persistent_registry: &BrowserRegistry,
+    profile_registry: &BrowserProfileRegistry,
+    json: bool,
+) -> Result<(), CliError> {
+    let mut pruned = prune_browser_registry(disposable_registry, profile_registry, json)?;
+    pruned.extend(prune_browser_registry(
+        persistent_registry,
+        profile_registry,
+        json,
+    )?);
+    pruned.sort();
+
+    if json {
+        write_json(&BrowserPruneOutput {
+            schema_version: 1,
+            command: "browser_prune",
+            ok: true,
+            pruned,
+        })?;
+        return Ok(());
+    }
+
+    println!("browser_prune: pruned={}", pruned.len());
+    for id in pruned {
+        println!("{id}");
+    }
+    Ok(())
+}
+
+fn prune_browser_registry(
+    registry: &BrowserRegistry,
+    profile_registry: &BrowserProfileRegistry,
+    json: bool,
+) -> Result<Vec<String>, CliError> {
     let records = registry.list_records().map_err(|_| {
         CliError::runtime(
             json,
@@ -1078,7 +1413,18 @@ fn browser_prune(registry: &BrowserRegistry, json: bool) -> Result<(), CliError>
                 | BrowserInstanceStatus::Missing
                 | BrowserInstanceStatus::Error
         ) {
-            let _ = run_runtime_command(browser_rm_command(record.runtime, &record.name), json);
+            let remove_result =
+                run_runtime_command(browser_rm_command(record.runtime, &record.name), json);
+            if record.profile_kind == BrowserProfileKind::Persistent
+                && status != BrowserInstanceStatus::Missing
+            {
+                remove_result?;
+            }
+            if let Some(profile_name) = record.profile_name.as_deref() {
+                profile_registry
+                    .release_if_owner(profile_name, &record.id)
+                    .map_err(|error| browser_profile_store_error(error, json))?;
+            }
             registry.remove_instance_dir(&record.id).map_err(|_| {
                 CliError::runtime(
                     json,
@@ -1091,21 +1437,150 @@ fn browser_prune(registry: &BrowserRegistry, json: bool) -> Result<(), CliError>
         }
     }
 
-    if json {
-        write_json(&BrowserPruneOutput {
-            schema_version: 1,
-            command: "browser_prune",
-            ok: true,
-            pruned,
-        })?;
-        return Ok(());
-    }
+    Ok(pruned)
+}
 
-    println!("browser_prune: pruned={}", pruned.len());
-    for id in pruned {
-        println!("{id}");
+fn find_browser_instance<'a>(
+    disposable_registry: &'a BrowserRegistry,
+    persistent_registry: &'a BrowserRegistry,
+    id: &str,
+    json: bool,
+) -> Result<(&'a BrowserRegistry, BrowserInstanceRecord), CliError> {
+    let disposable = disposable_registry.read_record(id);
+    let persistent = persistent_registry.read_record(id);
+    match (disposable, persistent) {
+        (Ok(_), Ok(_)) => Err(browser_state_error(json)),
+        (Ok(record), Err(error)) if error.kind() == ErrorKind::NotFound => {
+            Ok((disposable_registry, record))
+        }
+        (Err(error), Ok(record)) if error.kind() == ErrorKind::NotFound => {
+            Ok((persistent_registry, record))
+        }
+        (Err(left), Err(right))
+            if left.kind() == ErrorKind::NotFound && right.kind() == ErrorKind::NotFound =>
+        {
+            Err(browser_state_error(json))
+        }
+        _ => Err(browser_state_error(json)),
     }
+}
+
+fn run_browser_profile_invocation(
+    registry: &BrowserProfileRegistry,
+    command: BrowserProfileCommand,
+    profile_name: Option<String>,
+    confirm: bool,
+    json: bool,
+) -> Result<(), CliError> {
+    match command {
+        BrowserProfileCommand::Create => {
+            let name = required_browser_profile_name(profile_name, json)?;
+            let record = registry
+                .create(&name)
+                .map_err(|error| browser_profile_store_error(error, json))?;
+            write_browser_profile_output("browser_profile_create", registry, record, json)
+        }
+        BrowserProfileCommand::List => {
+            let records = registry
+                .list()
+                .map_err(|error| browser_profile_store_error(error, json))?;
+            let profiles = records
+                .into_iter()
+                .map(|record| browser_profile_output(registry, record, json))
+                .collect::<Result<Vec<_>, _>>()?;
+            if json {
+                return write_json(&BrowserProfileListOutput {
+                    schema_version: 1,
+                    command: "browser_profile_list",
+                    ok: true,
+                    profiles,
+                });
+            }
+            for profile in profiles {
+                println!(
+                    "{} attached_instance={} profile={}",
+                    profile.name,
+                    profile.attached_instance_id.as_deref().unwrap_or("null"),
+                    profile.profile_dir
+                );
+            }
+            Ok(())
+        }
+        BrowserProfileCommand::Status => {
+            let name = required_browser_profile_name(profile_name, json)?;
+            let record = registry
+                .read(&name)
+                .map_err(|error| browser_profile_store_error(error, json))?;
+            write_browser_profile_output("browser_profile_status", registry, record, json)
+        }
+        BrowserProfileCommand::Delete => {
+            let name = required_browser_profile_name(profile_name, json)?;
+            if !confirm {
+                return Err(CliError::usage(
+                    json,
+                    BROWSER_PROFILE_DELETE_CONFIRM_MESSAGE,
+                    BROWSER_PROFILE_DELETE_CONFIRM_HINT,
+                ));
+            }
+            registry
+                .delete(&name)
+                .map_err(|error| browser_profile_store_error(error, json))?;
+            if json {
+                return write_json(&BrowserProfileDeleteOutput {
+                    schema_version: 1,
+                    command: "browser_profile_delete",
+                    ok: true,
+                    deleted_profile: name,
+                });
+            }
+            println!("browser_profile_delete: deleted={name}");
+            Ok(())
+        }
+    }
+}
+
+fn write_browser_profile_output(
+    command: &'static str,
+    registry: &BrowserProfileRegistry,
+    record: BrowserProfileRecord,
+    json: bool,
+) -> Result<(), CliError> {
+    let profile = browser_profile_output(registry, record, json)?;
+    if json {
+        return write_json(&BrowserProfileCommandOutput {
+            schema_version: 1,
+            command,
+            ok: true,
+            profile,
+        });
+    }
+    println!(
+        "{command}: name={} attached_instance={} profile={}",
+        profile.name,
+        profile.attached_instance_id.as_deref().unwrap_or("null"),
+        profile.profile_dir
+    );
     Ok(())
+}
+
+fn browser_profile_output(
+    registry: &BrowserProfileRegistry,
+    record: BrowserProfileRecord,
+    json: bool,
+) -> Result<BrowserProfileOutput, CliError> {
+    let profile_dir = registry
+        .data_dir(&record.name)
+        .map_err(|error| browser_profile_store_error(error, json))?;
+    Ok(BrowserProfileOutput {
+        name: record.name,
+        profile_dir: profile_dir.display().to_string(),
+        attached_instance_id: record
+            .attachment
+            .as_ref()
+            .map(|attachment| attachment.instance_id.clone()),
+        created_at_unix_ms: record.created_at_unix_ms,
+        updated_at_unix_ms: record.updated_at_unix_ms,
+    })
 }
 
 fn write_browser_output(
@@ -1124,13 +1599,15 @@ fn write_browser_output(
     }
 
     println!(
-        "{}: id={} status={} runtime={} endpoint={} novnc={} profile={}",
+        "{}: id={} status={} runtime={} endpoint={} novnc={} profile_kind={} profile_name={} profile={}",
         command,
         record.id,
         record.status.as_str(),
         record.runtime.as_str(),
         record.endpoint.as_deref().unwrap_or("null"),
         record.novnc_url.as_deref().unwrap_or("null"),
+        record.profile_kind.as_str(),
+        record.profile_name.as_deref().unwrap_or("null"),
         record.profile_dir.display()
     );
     Ok(())
@@ -1243,6 +1720,28 @@ fn required_browser_id(id: Option<String>, json: bool) -> Result<String, CliErro
     Ok(id)
 }
 
+fn required_browser_profile_name(name: Option<String>, json: bool) -> Result<String, CliError> {
+    let name = name.ok_or_else(|| {
+        CliError::usage(
+            json,
+            BROWSER_PROFILE_MISSING_MESSAGE,
+            BROWSER_PROFILE_MISSING_HINT,
+        )
+    })?;
+    validate_browser_profile_name(&name, json)?;
+    Ok(name)
+}
+
+fn validate_browser_profile_name(name: &str, json: bool) -> Result<(), CliError> {
+    validate_profile_name(name).map_err(|_| {
+        CliError::usage(
+            json,
+            "Invalid browser profile name.",
+            BROWSER_PROFILE_MISSING_HINT,
+        )
+    })
+}
+
 fn validate_browser_id(id: &str, json: bool) -> Result<(), CliError> {
     let valid = !id.is_empty()
         && id.len() <= 80
@@ -1271,6 +1770,83 @@ fn repo_root() -> std::io::Result<PathBuf> {
         }
     }
     env::current_dir()
+}
+
+fn lantern_state_home(json: bool) -> Result<PathBuf, CliError> {
+    let lantern_home = env::var("LANTERN_STATE_HOME").ok();
+    let xdg_home = env::var("XDG_STATE_HOME").ok();
+    let home = env::var("HOME").ok();
+    resolve_lantern_state_home(
+        lantern_home.as_deref(),
+        xdg_home.as_deref(),
+        home.as_deref(),
+    )
+    .ok_or_else(|| {
+        CliError::runtime(
+            json,
+            "browser_state_home_invalid",
+            BROWSER_STATE_HOME_INVALID_MESSAGE,
+            BROWSER_STATE_HOME_INVALID_HINT,
+        )
+    })
+}
+
+fn resolve_lantern_state_home(
+    lantern_home: Option<&str>,
+    xdg_home: Option<&str>,
+    home: Option<&str>,
+) -> Option<PathBuf> {
+    if let Some(path) = lantern_home.filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(path);
+        return path.is_absolute().then_some(path);
+    }
+    if let Some(path) = xdg_home.filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(path);
+        return path.is_absolute().then(|| path.join("lantern"));
+    }
+    let home = PathBuf::from(home.filter(|value| !value.is_empty())?);
+    home.is_absolute()
+        .then(|| home.join(".local").join("state").join("lantern"))
+}
+
+fn profile_attachment_is_within_starting_grace(
+    updated_at_unix_ms: u128,
+    now_unix_ms: u128,
+) -> bool {
+    now_unix_ms.saturating_sub(updated_at_unix_ms) < BROWSER_PROFILE_STARTING_GRACE_MS
+}
+
+fn browser_state_error(json: bool) -> CliError {
+    CliError::runtime(
+        json,
+        "browser_state_failed",
+        BROWSER_STATE_FAILED_MESSAGE,
+        BROWSER_STATE_FAILED_HINT,
+    )
+}
+
+fn browser_profile_store_error(error: std::io::Error, json: bool) -> CliError {
+    match error.kind() {
+        ErrorKind::NotFound => CliError::runtime(
+            json,
+            "browser_profile_not_found",
+            BROWSER_PROFILE_NOT_FOUND_MESSAGE,
+            BROWSER_PROFILE_NOT_FOUND_HINT,
+        ),
+        ErrorKind::AlreadyExists => CliError::runtime(
+            json,
+            "browser_profile_exists",
+            BROWSER_PROFILE_EXISTS_MESSAGE,
+            BROWSER_PROFILE_EXISTS_HINT,
+        ),
+        ErrorKind::WouldBlock => CliError::runtime(
+            json,
+            "browser_profile_in_use",
+            BROWSER_PROFILE_IN_USE_MESSAGE,
+            BROWSER_PROFILE_IN_USE_HINT,
+        ),
+        _ => browser_state_error(json),
+    }
 }
 
 fn build_dom_summary_options(
@@ -2049,6 +2625,7 @@ fn print_help() {
     println!(
         "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
+       lantern browser profile <create|list|status|delete> [NAME] [--yes] [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
        lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
@@ -2082,6 +2659,8 @@ Browser lifecycle flags:
   --image <IMAGE>   Container image for browser start
   --id <ID>         Optional browser instance id for start, or selected instance
   --wait-ms <MS>    Browser start readiness timeout
+  --profile <NAME>  Existing persistent profile selected only for browser start
+  --yes             Confirm explicit browser profile deletion
 
   -h, --help        Print help
   -V, --version     Print version"
@@ -2113,6 +2692,9 @@ struct Invocation {
     browser_runtime: Option<RuntimeKind>,
     browser_image: Option<String>,
     browser_wait_ms: Option<u64>,
+    browser_profile_command: Option<BrowserProfileCommand>,
+    browser_profile_name: Option<String>,
+    browser_confirm: bool,
     help: bool,
     version: bool,
 }
@@ -2203,6 +2785,39 @@ struct BrowserPruneOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct BrowserProfileCommandOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    profile: BrowserProfileOutput,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserProfileListOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    profiles: Vec<BrowserProfileOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserProfileDeleteOutput {
+    schema_version: u8,
+    command: &'static str,
+    ok: bool,
+    deleted_profile: String,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserProfileOutput {
+    name: String,
+    profile_dir: String,
+    attached_instance_id: Option<String>,
+    created_at_unix_ms: u128,
+    updated_at_unix_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
 struct BrowserInstanceOutput {
     id: String,
     name: String,
@@ -2213,6 +2828,8 @@ struct BrowserInstanceOutput {
     cdp_host_port: Option<u16>,
     novnc_url: Option<String>,
     profile_dir: String,
+    profile_kind: &'static str,
+    profile_name: Option<String>,
 }
 
 impl BrowserInstanceOutput {
@@ -2227,6 +2844,8 @@ impl BrowserInstanceOutput {
             cdp_host_port: record.cdp_host_port,
             novnc_url: record.novnc_url,
             profile_dir: record.profile_dir.display().to_string(),
+            profile_kind: record.profile_kind.as_str(),
+            profile_name: record.profile_name,
         }
     }
 }
@@ -2252,6 +2871,9 @@ impl Invocation {
             || self.browser_runtime.is_some()
             || self.browser_image.is_some()
             || self.browser_wait_ms.is_some()
+            || self.browser_profile_command.is_some()
+            || self.browser_profile_name.is_some()
+            || self.browser_confirm
     }
 
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
@@ -2279,6 +2901,9 @@ impl Invocation {
             browser_runtime: None,
             browser_image: None,
             browser_wait_ms: None,
+            browser_profile_command: None,
+            browser_profile_name: None,
+            browser_confirm: false,
             help: false,
             version: false,
         };
@@ -2469,6 +3094,17 @@ impl Invocation {
                     invocation.browser_wait_ms =
                         Some(parse_wait_millis(&wait_ms, invocation.json)?);
                 }
+                "--profile" => {
+                    let Some(name) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            BROWSER_PROFILE_MISSING_MESSAGE,
+                            BROWSER_PROFILE_MISSING_HINT,
+                        ));
+                    };
+                    invocation.browser_profile_name = Some(name);
+                }
+                "--yes" => invocation.browser_confirm = true,
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" | "layout" | "click" | "type" | "key" | "flow" => {
                     if invocation.command.is_some() {
@@ -2526,6 +3162,19 @@ impl Invocation {
                         Some(parse_browser_command(&arg, invocation.json)?);
                 }
                 _ if invocation.command == Some(Command::Browser)
+                    && invocation.browser_command == Some(BrowserCommand::Profile)
+                    && invocation.browser_profile_command.is_none() =>
+                {
+                    invocation.browser_profile_command =
+                        Some(parse_browser_profile_command(&arg, invocation.json)?);
+                }
+                _ if invocation.command == Some(Command::Browser)
+                    && invocation.browser_command == Some(BrowserCommand::Profile)
+                    && invocation.browser_profile_name.is_none() =>
+                {
+                    invocation.browser_profile_name = Some(arg);
+                }
+                _ if invocation.command == Some(Command::Browser)
                     && invocation.browser_id.is_none() =>
                 {
                     invocation.browser_id = Some(arg);
@@ -2579,10 +3228,28 @@ fn parse_browser_command(value: &str, json: bool) -> Result<BrowserCommand, CliE
         "endpoint" => Ok(BrowserCommand::Endpoint),
         "stop" => Ok(BrowserCommand::Stop),
         "prune" => Ok(BrowserCommand::Prune),
+        "profile" => Ok(BrowserCommand::Profile),
         _ => Err(CliError::usage(
             json,
             "Unknown browser subcommand.",
             BROWSER_USAGE_HINT,
+        )),
+    }
+}
+
+fn parse_browser_profile_command(
+    value: &str,
+    json: bool,
+) -> Result<BrowserProfileCommand, CliError> {
+    match value {
+        "create" => Ok(BrowserProfileCommand::Create),
+        "list" => Ok(BrowserProfileCommand::List),
+        "status" => Ok(BrowserProfileCommand::Status),
+        "delete" => Ok(BrowserProfileCommand::Delete),
+        _ => Err(CliError::usage(
+            json,
+            "Unknown browser profile subcommand.",
+            "Run lantern browser profile <create|list|status|delete>.",
         )),
     }
 }
@@ -2651,6 +3318,15 @@ enum BrowserCommand {
     Endpoint,
     Stop,
     Prune,
+    Profile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserProfileCommand {
+    Create,
+    List,
+    Status,
+    Delete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3270,6 +3946,140 @@ mod tests {
         assert_eq!(invocation.command, Some(Command::Browser));
         assert_eq!(invocation.browser_command, Some(BrowserCommand::Status));
         assert_eq!(invocation.browser_id.as_deref(), Some("agent1"));
+    }
+
+    #[test]
+    fn parses_persistent_browser_start_with_named_profile() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--profile".to_string(),
+            "geometis-review".to_string(),
+            "--id".to_string(),
+            "geometis-review".to_string(),
+        ])
+        .expect("persistent browser start should parse");
+
+        assert_eq!(invocation.browser_command, Some(BrowserCommand::Start));
+        assert_eq!(
+            invocation.browser_profile_name.as_deref(),
+            Some("geometis-review")
+        );
+        assert_eq!(invocation.browser_id.as_deref(), Some("geometis-review"));
+        validate_browser_invocation(&invocation).expect("persistent start should validate");
+    }
+
+    #[test]
+    fn parses_browser_profile_lifecycle_commands() {
+        let create = Invocation::parse([
+            "browser".to_string(),
+            "profile".to_string(),
+            "create".to_string(),
+            "geometis-review".to_string(),
+        ])
+        .expect("profile create should parse");
+        assert_eq!(create.browser_command, Some(BrowserCommand::Profile));
+        assert_eq!(
+            create.browser_profile_command,
+            Some(BrowserProfileCommand::Create)
+        );
+        assert_eq!(
+            create.browser_profile_name.as_deref(),
+            Some("geometis-review")
+        );
+        validate_browser_invocation(&create).expect("profile create should validate");
+
+        let list = Invocation::parse([
+            "browser".to_string(),
+            "profile".to_string(),
+            "list".to_string(),
+        ])
+        .expect("profile list should parse");
+        assert_eq!(
+            list.browser_profile_command,
+            Some(BrowserProfileCommand::List)
+        );
+        validate_browser_invocation(&list).expect("profile list should validate");
+
+        let delete = Invocation::parse([
+            "browser".to_string(),
+            "profile".to_string(),
+            "delete".to_string(),
+            "geometis-review".to_string(),
+            "--yes".to_string(),
+        ])
+        .expect("profile delete should parse");
+        assert_eq!(
+            delete.browser_profile_command,
+            Some(BrowserProfileCommand::Delete)
+        );
+        assert!(delete.browser_confirm);
+        validate_browser_invocation(&delete).expect("confirmed delete should validate");
+    }
+
+    #[test]
+    fn profile_delete_requires_confirmation_and_profile_names_are_bounded() {
+        let delete = Invocation::parse([
+            "browser".to_string(),
+            "profile".to_string(),
+            "delete".to_string(),
+            "geometis-review".to_string(),
+        ])
+        .expect("profile delete should parse");
+        validate_browser_invocation(&delete).expect("shape should validate before execution");
+        let error = run_browser_profile_invocation(
+            &BrowserProfileRegistry::new("/tmp/not-used"),
+            BrowserProfileCommand::Delete,
+            Some("geometis-review".to_owned()),
+            false,
+            true,
+        )
+        .expect_err("unconfirmed deletion should fail before storage access");
+        assert_eq!(error.exit_code, 2);
+        assert_eq!(error.code, "usage");
+
+        let invalid = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--profile".to_string(),
+            "../daily".to_string(),
+        ])
+        .expect("invalid name should parse before semantic validation");
+        assert!(validate_browser_invocation(&invalid).is_err());
+    }
+
+    #[test]
+    fn resolves_persistent_state_home_outside_repository_state() {
+        assert_eq!(
+            resolve_lantern_state_home(Some("/var/lib/lantern-test"), None, None),
+            Some(PathBuf::from("/var/lib/lantern-test"))
+        );
+        assert_eq!(
+            resolve_lantern_state_home(None, Some("/var/state"), Some("/home/test")),
+            Some(PathBuf::from("/var/state/lantern"))
+        );
+        assert_eq!(
+            resolve_lantern_state_home(None, None, Some("/home/test")),
+            Some(PathBuf::from("/home/test/.local/state/lantern"))
+        );
+        assert_eq!(
+            resolve_lantern_state_home(Some("relative"), None, Some("/home/test")),
+            None
+        );
+    }
+
+    #[test]
+    fn missing_profile_attachment_retains_a_bounded_starting_grace() {
+        assert!(profile_attachment_is_within_starting_grace(1_000, 1_000));
+        assert!(profile_attachment_is_within_starting_grace(
+            1_000,
+            1_000 + BROWSER_PROFILE_STARTING_GRACE_MS - 1
+        ));
+        assert!(!profile_attachment_is_within_starting_grace(
+            1_000,
+            1_000 + BROWSER_PROFILE_STARTING_GRACE_MS
+        ));
+        assert!(profile_attachment_is_within_starting_grace(2_000, 1_000));
     }
 
     #[test]

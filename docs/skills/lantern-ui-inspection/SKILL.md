@@ -15,7 +15,10 @@ Do not use this skill for non-UI backend tasks. Do not expand Lantern's command 
 
 - Confirm the app server is running or start it yourself when safe.
 - Use plain `lantern` first; in Smoogle child runs a run-local shim is injected when Lantern is discoverable. If unavailable, try the command path in `$LANTERN_BIN`, `/usr/local/bin/lantern`, `/nvme/development/lantern/target/release/lantern`, then `/nvme/development/lantern/target/debug/lantern`.
-- Confirm a Chromium or Chrome instance exposes a local CDP HTTP endpoint, or explicitly start a disposable managed instance with `lantern browser start`.
+- Confirm a Chromium or Chrome instance exposes a local CDP HTTP endpoint, or
+  explicitly start a disposable managed instance with `lantern browser start`.
+  For repeated authenticated checks, use an existing dedicated persistent
+  profile rather than creating another disposable login.
 - If the browser runs in a container, open the app through a container-reachable URL such as `http://host.docker.internal:<port>/`, not host loopback.
 - Keep Smoogle dashboard non-loopback binding explicit and local/trusted.
 
@@ -43,6 +46,35 @@ Stop disposable instances when finished:
 lantern browser stop "$ID" --json
 lantern browser prune --json
 ```
+
+For a repeated authenticated journey, create one dedicated named profile once,
+then reuse it. The first start may require the operator to log in through the
+returned noVNC URL; subsequent stop/start cycles retain Chromium's session
+state until the service expires or revokes it:
+
+```bash
+PROFILE=geometis-review
+lantern browser profile status "$PROFILE" --json >/dev/null 2>&1 || \
+  lantern browser profile create "$PROFILE" --json
+
+ID="$(lantern browser start --profile "$PROFILE" --json | jq -r .instance.id)"
+ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
+lantern doctor --endpoint "$ENDPOINT" --json
+```
+
+Stop the browser when inspection is complete; do not delete or recursively
+clean the profile:
+
+```bash
+lantern browser stop "$ID" --json
+lantern browser prune --json
+lantern browser profile status "$PROFILE" --json
+```
+
+Only an operator-approved retirement uses
+`lantern browser profile delete "$PROFILE" --yes`. If server-side session
+revocation matters, log out in the visible browser before stopping and deleting
+the profile.
 
 ## Smoogle Dashboard Loop
 
@@ -110,3 +142,6 @@ When UI inspection is awkward because Lantern lacks a narrow affordance, record 
 - Do not expose local dashboards broadly; use non-loopback binding only for trusted local/container setups.
 - Do not use `eval`-style browser operations unless the task explicitly requires it and the code is small, local, and inspectable.
 - Do not add web mutation routes just because Lantern can click/type. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
+- Treat named profile data as sensitive local credential material. Never inspect
+  or export its cookie/storage databases, include it in Git or support bundles,
+  or reuse a daily personal browser profile.

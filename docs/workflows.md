@@ -18,9 +18,12 @@
 1. Choose either an operator-owned endpoint or an explicit managed instance; existing inspection commands never auto-start a browser.
 2. For operator-owned Chromium, use the headless, container, or VNC-compatible pattern in `docs/headless-chromium.md`.
 3. For a disposable managed instance, build `ops/browser-cdp/Containerfile`, then run `lantern browser start`.
-4. Keep CDP bound to loopback wherever possible, or publish container CDP ports to host loopback only.
-5. Verify the endpoint with `lantern doctor --endpoint <ENDPOINT>`.
-6. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
+4. For a repeated authenticated journey, create one dedicated profile with
+   `lantern browser profile create <NAME>` and reuse it through
+   `lantern browser start --profile <NAME>`; do not use a daily browser profile.
+5. Keep CDP bound to loopback wherever possible, or publish container CDP ports to host loopback only.
+6. Verify the endpoint with `lantern doctor --endpoint <ENDPOINT>`.
+7. Use `lantern targets` and `lantern page` only after `doctor` confirms the endpoint behaves like Chromium CDP.
 
 ## Browser Session Observation Loop
 
@@ -36,6 +39,8 @@
 3. Keep the CDP endpoint loopback-only, including container port publishing.
 4. Run read-only smoke commands before navigation or interaction commands.
 5. Avoid `--no-redact` and review screenshot output paths because authenticated page output and pixels remain sensitive.
+6. Stop and prune the managed instance after inspection, but preserve its named
+   profile. Use explicit confirmed deletion only when retiring the session.
 
 ## Task Review Loop
 

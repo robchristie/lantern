@@ -6,7 +6,18 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 
 ## Scope
 
-The command surface is bounded browser inspection, selected-page navigation, selected-page console feedback, selected-page network failure feedback, one bounded session-observation flow, explicit selected-page screenshot capture, selected-element click/text-entry/key interactions against an explicit Chromium DevTools Protocol endpoint, and an opt-in managed disposable browser container lifecycle. Endpoint-based commands do not launch Chromium, manage browser lifetime, create browser tabs, evaluate arbitrary JavaScript, perform full network capture or HAR generation, crawl pages, run test-runner abstractions, or persist browser artifacts beyond an explicitly requested screenshot output path. DOM inspection is limited to the bounded `lantern dom` summary documented below; full HTML dumps and broad DOM artifact capture remain out of scope.
+The command surface is bounded browser inspection, selected-page navigation,
+selected-page console feedback, selected-page network failure feedback, one
+bounded session-observation flow, explicit selected-page screenshot capture,
+selected-element click/text-entry/key interactions against an explicit Chromium
+DevTools Protocol endpoint, and opt-in managed browser lifecycles for disposable
+containers and explicitly named persistent profiles. Endpoint-based commands do
+not launch Chromium, manage browser lifetime, create browser tabs, evaluate
+arbitrary JavaScript, perform full network capture or HAR generation, crawl
+pages, run test-runner abstractions, or persist browser artefacts beyond an
+explicitly requested screenshot output path. DOM inspection is limited to the
+bounded `lantern dom` summary documented below; full HTML dumps and broad DOM
+artefact capture remain out of scope.
 
 ## Command Surface
 
@@ -31,10 +42,13 @@ Implemented commands:
 - `lantern browser endpoint <ID>`
 - `lantern browser stop <ID>`
 - `lantern browser prune`
+- `lantern browser profile create <NAME>`
+- `lantern browser profile list`
+- `lantern browser profile status <NAME>`
+- `lantern browser profile delete <NAME> --yes`
 
 Reserved for future milestones and not implemented yet:
 
-- persistent authenticated managed browser profiles
 - JavaScript evaluation
 - full network inspection, HAR, request body, or response body commands
 - daemon, MCP, TUI, or web UI commands
@@ -103,17 +117,24 @@ Prints the Lantern CLI version and exits with code `0`.
 
 ## Managed Browser Lifecycle
 
-Purpose: create and manage isolated disposable local Chromium/CDP containers for
-concurrent agents while preserving endpoint-pure inspection commands.
+Purpose: create and manage isolated local Chromium/CDP containers for concurrent
+agents while preserving endpoint-pure inspection commands. Disposable profiles
+remain the default. A named persistent profile is an explicit opt-in for a
+dedicated authenticated identity whose Chromium-owned session state must survive
+ordinary browser stop/restart cycles.
 
 Supported forms:
 
-- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--wait-ms MS]`
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--profile NAME] [--wait-ms MS]`
 - `lantern browser list`
 - `lantern browser status <ID>`
 - `lantern browser endpoint <ID>`
 - `lantern browser stop <ID>`
 - `lantern browser prune`
+- `lantern browser profile create <NAME>`
+- `lantern browser profile list`
+- `lantern browser profile status <NAME>`
+- `lantern browser profile delete <NAME> --yes`
 
 Default `start` behavior:
 
@@ -127,6 +148,26 @@ Default `start` behavior:
 - labels containers with `dev.lantern.managed=true` and `dev.lantern.instance-id=<ID>`
 - for Docker, runs the container as the host profile-directory owner, sets `HOME=/tmp`, and passes `CHROME_NO_SANDBOX=1` so the image adds Chromium `--no-sandbox`
 - waits for `/json/version` readiness before reporting success
+
+Persistent-profile behaviour:
+
+- a profile must first be created explicitly with
+  `browser profile create <NAME>`
+- `browser start --profile <NAME>` defaults the instance id to the profile name
+  unless `--id` is supplied
+- profile names are bounded identifiers containing only ASCII letters, numbers,
+  hyphen and underscore; they are never interpreted as paths
+- state resolves from absolute `LANTERN_STATE_HOME`, then
+  `XDG_STATE_HOME/lantern`, then `$HOME/.local/state/lantern`
+- profile data and persistent instance records live below that state home, not
+  below the current repository
+- one starting or running browser may own a profile; a second owner fails
+- a stopped owner may be recovered by a later start; a missing owner remains
+  reserved for a bounded starting grace period before it is considered stale
+- stop releases the attachment while preserving Chromium data
+- prune removes stopped instance/container records but never profile data
+- delete requires `--yes`, rejects an attached profile, and recursively removes
+  only the selected, root-contained persistent profile
 
 Human output should include the id, status, runtime, endpoint, noVNC URL when
 available, and profile path. JSON output shape for single-instance commands:
@@ -145,7 +186,27 @@ available, and profile path. JSON output shape for single-instance commands:
     "endpoint": "http://127.0.0.1:43123",
     "cdp_host_port": 43123,
     "novnc_url": "http://127.0.0.1:43124/vnc.html",
-    "profile_dir": ".smoogle/lantern/browser-instances/lantern-browser-123/profile"
+    "profile_dir": ".smoogle/lantern/browser-instances/lantern-browser-123/profile",
+    "profile_kind": "disposable",
+    "profile_name": null
+  }
+}
+```
+
+Persistent profile commands return a closed metadata projection, not browser
+session contents:
+
+```json
+{
+  "schema_version": 1,
+  "command": "browser_profile_status",
+  "ok": true,
+  "profile": {
+    "name": "geometis-review",
+    "profile_dir": "/home/operator/.local/state/lantern/browser-profiles/geometis-review/data",
+    "attached_instance_id": null,
+    "created_at_unix_ms": 1786870000000,
+    "updated_at_unix_ms": 1786870000000
   }
 }
 ```
@@ -183,15 +244,32 @@ Command-specific error cases:
 - CDP port was not published: exit code `1`, error code `browser_port_missing`
 - managed browser readiness timeout: exit code `1`, error code `browser_not_ready`
 - state read/write failure: exit code `1`, error code `browser_state_failed`
+- persistent state home is missing or non-absolute: exit code `1`, error code
+  `browser_state_home_invalid`
+- named profile does not exist: exit code `1`, error code
+  `browser_profile_not_found`
+- named profile already exists: exit code `1`, error code
+  `browser_profile_exists`
+- named profile is attached or otherwise in use: exit code `1`, error code
+  `browser_profile_in_use`
+- profile delete without `--yes`: exit code `2`
 
 Security behavior:
 
 - CDP host publishing is loopback-only by default.
-- Managed profiles are local untracked runtime state and are disposable by
-  default.
+- Managed profiles are disposable by default and remain repository-local,
+  untracked runtime state.
+- Named persistent profiles are owner-private local credential material by
+  design. Profile directories and registry roots use mode `0700`, and profile
+  records use mode `0600`, on Unix.
+- Profile paths are derived from validated names beneath the resolved state
+  home. Symlink profile directories, non-directories and root escapes fail
+  closed.
 - The lifecycle registry stores endpoints, runtime metadata, and profile paths;
   it must not store cookies, local storage, DOM dumps, screenshots, console
   payloads, network bodies, or full browser artifacts.
+- Lantern never reads cookie, password, local-storage or session-storage
+  databases to decide whether a persistent browser is logged in.
 
 ## Endpoint Resolution
 

@@ -149,7 +149,7 @@ lantern targets --endpoint http://127.0.0.1:9222
 lantern page --endpoint http://127.0.0.1:9222
 ```
 
-## Lantern-Managed Disposable Containers
+## Lantern-Managed Containers
 
 `lantern browser start` creates one disposable Chrome-for-Testing container
 with an isolated profile directory under
@@ -168,6 +168,8 @@ Docker is also supported for the same image:
 ```sh
 docker build -f ops/browser-cdp/Containerfile -t localhost/lantern-browser-cdp:stable ops/browser-cdp
 ```
+
+### Disposable instances
 
 Start and inspect a disposable instance:
 
@@ -202,6 +204,43 @@ Remove stopped, missing, or errored managed instance state:
 lantern browser prune
 ```
 
+### Dedicated persistent profiles
+
+Use a named persistent profile only for a dedicated automation identity whose
+session should survive ordinary stop/restart cycles. The profile is outside the
+source checkout under the operator's private Lantern state home:
+
+```sh
+lantern browser profile create geometis-review
+lantern browser start --profile geometis-review
+lantern browser profile status geometis-review
+```
+
+The first start may require a manual login through the returned noVNC URL. Stop
+the browser after inspection and restart the same profile later:
+
+```sh
+lantern browser stop geometis-review
+lantern browser prune
+lantern browser start --profile geometis-review
+```
+
+`stop` and `prune` preserve persistent Chromium state. Ordinary application or
+container restarts therefore do not require another login while the service's
+own session remains valid. Lantern does not extend, refresh, inspect or bypass
+that service session.
+
+Retire the profile only after stopping it. Use the explicit confirmation flag;
+if server-side revocation matters, log out in the visible browser first:
+
+```sh
+lantern browser profile delete geometis-review --yes
+```
+
+`LANTERN_STATE_HOME` may select another absolute operator-owned state root.
+Otherwise Lantern uses `XDG_STATE_HOME/lantern`, then
+`$HOME/.local/state/lantern`.
+
 Managed containers are labeled with `dev.lantern.managed=true` and
 `dev.lantern.instance-id=<ID>` so `lantern browser list` can surface labeled
 containers even when the local registry is stale.
@@ -211,6 +250,10 @@ Security boundaries:
 - CDP is published to host loopback only.
 - Managed profiles are disposable by default and are stored under untracked
   `.smoogle/`.
+- Named persistent profiles are an explicit exception: they live outside source
+  worktrees, use private filesystem modes, and retain sensitive browser-owned
+  session state. Do not back them up, share them, inspect their databases, or
+  use a daily personal browser profile.
 - Docker-managed containers run Chromium with `--no-sandbox` and run the
   container process as the host profile-directory owner so the bind-mounted
   disposable profile is writable.

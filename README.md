@@ -10,8 +10,12 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 
 - primary user: A technically fluent local operator using Codex or Smoogle on headless Linux.
 - primary interface: cli
-- storage model: local-first; managed browser runtime state lives under untracked `.smoogle/`, while SQLite remains reserved for future session/task metadata.
-- current milestone: Keep endpoint-based browser inspection stable and add an explicit opt-in managed Chromium/CDP container lifecycle for disposable local agents.
+- storage model: local-first; disposable managed-browser state lives under
+  untracked `.smoogle/`, while explicitly named persistent browser profiles
+  live under the operator's private Lantern state home.
+- current milestone: Keep endpoint-based browser inspection stable and provide
+  explicit opt-in managed Chromium/CDP lifecycles for disposable agents and
+  dedicated authenticated profiles.
 - future interfaces reserved: tui, web ui
 
 ## Repo Guide
@@ -35,7 +39,11 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 1. Read the generated docs contract before changing code.
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.
-4. Start an operator-owned Chromium CDP endpoint using `docs/headless-chromium.md`, or explicitly start a disposable managed instance with `lantern browser start`.
+4. Start an operator-owned Chromium CDP endpoint using
+   `docs/headless-chromium.md`, explicitly start a disposable managed instance
+   with `lantern browser start`, or create a dedicated authenticated profile
+   with `lantern browser profile create <NAME>` and start it using
+   `lantern browser start --profile <NAME>`.
 5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
 6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
 7. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.

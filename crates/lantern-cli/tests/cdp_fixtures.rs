@@ -4,7 +4,7 @@ use std::{
     net::{TcpListener, TcpStream},
     process::{Command, Output},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tungstenite::Message;
@@ -2975,6 +2975,82 @@ fn target_list_with_websocket(web_socket_debugger_url: &str) -> String {
     )
 }
 
+#[test]
+fn browser_profile_cli_lifecycle_is_explicit_and_private() {
+    let state_home = unique_temp_state_home("profile-cli-lifecycle");
+
+    let created = lantern_with_state(
+        ["browser", "profile", "create", "geometis-review", "--json"],
+        &state_home,
+    );
+    assert_success(&created);
+    let created_json: serde_json::Value =
+        serde_json::from_str(&stdout(&created)).expect("create output should be JSON");
+    assert_eq!(created_json["command"], "browser_profile_create");
+    assert_eq!(created_json["profile"]["name"], "geometis-review");
+    assert_eq!(
+        created_json["profile"]["attached_instance_id"],
+        serde_json::Value::Null
+    );
+    assert!(
+        created_json["profile"]["profile_dir"]
+            .as_str()
+            .unwrap()
+            .starts_with(state_home.to_str().unwrap())
+    );
+
+    let listed = lantern_with_state(["browser", "profile", "list", "--json"], &state_home);
+    assert_success(&listed);
+    let listed_json: serde_json::Value =
+        serde_json::from_str(&stdout(&listed)).expect("list output should be JSON");
+    assert_eq!(listed_json["profiles"].as_array().unwrap().len(), 1);
+    assert_eq!(listed_json["profiles"][0]["name"], "geometis-review");
+
+    let unconfirmed = lantern_with_state(
+        ["browser", "profile", "delete", "geometis-review", "--json"],
+        &state_home,
+    );
+    assert!(!unconfirmed.status.success());
+    assert_eq!(unconfirmed.status.code(), Some(2));
+    let unconfirmed_json: serde_json::Value = serde_json::from_str(&stderr(&unconfirmed))
+        .expect("unconfirmed delete error should be JSON");
+    assert_eq!(unconfirmed_json["error"]["code"], "usage");
+
+    let deleted = lantern_with_state(
+        [
+            "browser",
+            "profile",
+            "delete",
+            "geometis-review",
+            "--yes",
+            "--json",
+        ],
+        &state_home,
+    );
+    assert_success(&deleted);
+    let deleted_json: serde_json::Value =
+        serde_json::from_str(&stdout(&deleted)).expect("delete output should be JSON");
+    assert_eq!(deleted_json["deleted_profile"], "geometis-review");
+    assert!(!state_home.join("browser-profiles/geometis-review").exists());
+
+    fs::remove_dir_all(state_home).expect("test state home should be removed");
+}
+
+#[test]
+fn non_browser_commands_reject_persistent_profile_flag() {
+    let output = lantern(["page", "--profile", "geometis-review", "--json"], None);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    let json: serde_json::Value =
+        serde_json::from_str(&stderr(&output)).expect("error should be JSON");
+    assert_eq!(json["error"]["code"], "usage");
+    assert_eq!(
+        json["error"]["message"],
+        "Browser lifecycle flags are only supported by browser commands."
+    );
+}
+
 fn dom_document_response() -> &'static str {
     r##"{"id":1,"result":{"root":{"nodeId":1,"nodeType":9,"nodeName":"#document","localName":"","childNodeCount":1,"children":[{"nodeId":2,"nodeType":1,"nodeName":"HTML","localName":"html","attributes":["class","root shell"],"childNodeCount":1,"children":[{"nodeId":3,"nodeType":1,"nodeName":"BODY","localName":"body","attributes":["id","app","role","document","onclick","steal()","data-token","secret"],"childNodeCount":1,"children":[{"nodeId":5,"nodeType":1,"nodeName":"MAIN","localName":"main","attributes":["data-testid","dashboard","aria-label","Main panel","name","search","href","https://example.test/reset/abcdabcdabcdabcdabcdabcd?token=secret#frag","src","https://cdn.example.test/assets/app.js?version=123","title","Main title","password","hunter2","name","session"],"childNodeCount":2,"children":[{"nodeId":6,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"Dashboard"},{"nodeId":7,"nodeType":1,"nodeName":"SCRIPT","localName":"script","childNodeCount":1,"children":[{"nodeId":70,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"secretScript()"}]},{"nodeId":8,"nodeType":1,"nodeName":"SECTION","localName":"section","attributes":["data-cy","primary-section"],"childNodeCount":1,"children":[{"nodeId":9,"nodeType":1,"nodeName":"BUTTON","localName":"button","attributes":["data-test","save-button"],"childNodeCount":0}]}]}]}]}]}}}"##
 }
@@ -3004,6 +3080,25 @@ fn lantern<const N: usize>(args: [&str; N], env_endpoint: Option<&str>) -> Outpu
     }
 
     command.output().expect("lantern should run")
+}
+
+fn lantern_with_state<const N: usize>(args: [&str; N], state_home: &std::path::Path) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lantern"));
+    command.args(args);
+    command.env_remove("LANTERN_CDP_ENDPOINT");
+    command.env("LANTERN_STATE_HOME", state_home);
+    command.output().expect("lantern should run")
+}
+
+fn unique_temp_state_home(label: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "lantern-{label}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos()
+    ))
 }
 
 fn assert_wait_irrelevant_flags_rejected<const N: usize>(

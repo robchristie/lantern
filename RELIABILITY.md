@@ -6,9 +6,15 @@ This file records the repository's current reliability contract. Keep it focused
 
 Overall grade: **C**
 
-Last reviewed: **2026-04-29**
+Last reviewed: **2026-08-16**
 
-Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates, validation profile scripts, conservative harness defaults, fixture coverage for the implemented frontend feedback loop, bounded click/type/key interaction commands, session-oriented flow observation that keeps console/network evidence tied to one browser lifecycle, and an explicit managed browser lifecycle for disposable concurrent containers. Two-instance managed-browser smokes have passed with rootless Podman and Docker, but the grade remains `C` until broader real-browser/container smoke coverage, recovery behavior, and landing behavior are proven across representative local setups.
+Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates,
+validation profile scripts, conservative harness defaults, fixture coverage for
+the implemented frontend feedback loop, bounded click/type/key interaction
+commands, session-oriented flow observation, and explicit managed browser
+lifecycles for disposable containers and dedicated persistent profiles. The
+grade remains `C` until broader real-browser/container smoke coverage, recovery
+behaviour, and landing behaviour are proven across representative local setups.
 
 ## Grade Scale
 
@@ -24,6 +30,12 @@ Use `+` or `-` only when the repo is clearly between two grades.
 
 - Keep runtime state under `.smoogle/` and out of Git.
 - Store managed browser records under `.smoogle/lantern/browser-instances/` and treat them as reconstructable local runtime state.
+- Store named persistent profiles under the operator state home, never under a
+  source checkout; treat their Chromium data as durable sensitive state rather
+  than reconstructable runtime metadata.
+- Permit at most one starting or running managed browser to own a persistent
+  profile. A stale stopped or missing attachment may be recovered explicitly
+  during the next start.
 - Create an initial Git commit before task worktrees are used.
 - Treat checked-in docs and prompt templates as the system of record.
 - Prefer local-first workflows and deterministic local validation.
@@ -44,6 +56,9 @@ Use `+` or `-` only when the repo is clearly between two grades.
 2. Use task notes for durable context that should travel with a task.
 3. Prefer fixing repo-local guidance, checks, templates, or code over repeating one-off operator instructions.
 4. Put real but deferred reliability work in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
+5. Use `lantern browser profile status <NAME>` before recovering a persistent
+   profile. Delete it only after stopping its browser and deciding whether a
+   service-side logout is also required.
 
 ## Known Reliability Gaps
 
