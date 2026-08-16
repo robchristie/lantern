@@ -7,6 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_BROWSER_IMAGE: &str = "localhost/lantern-browser-cdp:stable";
@@ -15,6 +16,7 @@ pub const MANAGED_LABEL_KEY: &str = "dev.lantern.managed";
 pub const INSTANCE_ID_LABEL_KEY: &str = "dev.lantern.instance-id";
 pub const PROFILE_NAME_LABEL_KEY: &str = "dev.lantern.profile-name";
 pub const INSTANCE_NAME_PREFIX: &str = "lantern-browser";
+pub const PERSISTENT_INSTANCE_ID_PREFIX: &str = "lantern-profile-";
 const PROFILE_OPERATION_LOCK_FILE: &str = "operation.lock";
 
 static PROFILE_RESERVATION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -376,7 +378,7 @@ pub struct BrowserProfileOperationLock {
 
 impl Drop for BrowserProfileOperationLock {
     fn drop(&mut self) {
-        let _ = self.file.unlock();
+        let _ = FileExt::unlock(&self.file);
     }
 }
 
@@ -504,7 +506,7 @@ impl BrowserProfileRegistry {
         }
         validate_regular_file_in_directory(&lock_path, &profile_dir, "profile operation lock")?;
         let file = OpenOptions::new().read(true).write(true).open(&lock_path)?;
-        file.try_lock()?;
+        file.try_lock_exclusive()?;
         Ok(BrowserProfileOperationLock { file })
     }
 
@@ -680,7 +682,7 @@ impl Drop for ProfileRegistryLock {
 
 pub fn validate_profile_name(name: &str) -> io::Result<()> {
     let valid = !name.is_empty()
-        && name.len() <= 80
+        && name.len() <= 64
         && name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
@@ -692,6 +694,11 @@ pub fn validate_profile_name(name: &str) -> io::Result<()> {
             "invalid profile name",
         ))
     }
+}
+
+pub fn persistent_instance_id(profile_name: &str) -> io::Result<String> {
+    validate_profile_name(profile_name)?;
+    Ok(format!("{PERSISTENT_INSTANCE_ID_PREFIX}{profile_name}"))
 }
 
 pub fn validate_instance_id(id: &str) -> io::Result<()> {

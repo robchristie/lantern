@@ -216,11 +216,14 @@ lantern browser start --profile geometis-review
 lantern browser profile status geometis-review
 ```
 
+The persistent instance id is `lantern-profile-<NAME>`. If `--id` is supplied,
+it must match that reserved identity; disposable starts cannot use the prefix.
+
 The first start may require a manual login through the returned noVNC URL. Stop
 the browser after inspection and restart the same profile later:
 
 ```sh
-lantern browser stop geometis-review
+lantern browser stop lantern-profile-geometis-review
 lantern browser prune
 lantern browser start --profile geometis-review
 ```

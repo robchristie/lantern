@@ -153,8 +153,10 @@ Persistent-profile behaviour:
 
 - a profile must first be created explicitly with
   `browser profile create <NAME>`
-- `browser start --profile <NAME>` defaults the instance id to the profile name
-  unless `--id` is supplied
+- `browser start --profile <NAME>` defaults the instance id to the reserved
+  `lantern-profile-<NAME>` identity and rejects a different `--id`; disposable
+  starts cannot use that prefix, preventing profile/disposable locks from
+  claiming the same global instance/container identity
 - profile names are bounded identifiers containing only ASCII letters, numbers,
   hyphen and underscore; they are never interpreted as paths
 - state resolves from absolute `LANTERN_STATE_HOME`, then
@@ -162,9 +164,10 @@ Persistent-profile behaviour:
 - profile data and persistent instance records live below that state home, not
   below the current repository
 - one starting or running browser may own a profile; a second owner fails
-- start, stop, prune and delete hold one per-profile process-scoped operation
-  lock through every record, runtime and attachment side effect; a concurrent
-  lifecycle command fails closed, and an exited process releases the lock
+- status refresh, start, stop, prune and delete hold one per-profile
+  process-scoped operation lock through every record, runtime and attachment
+  side effect; a concurrent mutating command fails closed, and an exited
+  process releases the lock
 - each start receives a unique reservation token; cleanup and release must
   match that exact token rather than only the reusable instance name
 - stop atomically changes the exact reservation to `stopping` before Chromium
@@ -175,7 +178,9 @@ Persistent-profile behaviour:
   falls back to the container stop when required, and releases the attachment
   only after the runtime is positively stopped or absent
 - uncertain runtime state retains the reservation and fails closed
-- prune removes stopped instance/container records but never profile data
+- prune removes only positively stopped or proven-missing persistent
+  instance/container records and never profile data; an uncertain/unknown
+  runtime status remains attached and fails closed
 - prune removes the exact stopped instance record before releasing its exact
   attachment, while still holding the profile operation lock
 - delete requires `--yes`, rejects an active profile, removes stopped managed

@@ -53,6 +53,7 @@ case "$profile" in
   standard)
     run cargo fmt --all -- --check
     run cargo check --workspace --all-targets
+    run rustup run 1.85.0 cargo check --locked --workspace --all-targets
     run_tests
     run_docs_check
     ;;

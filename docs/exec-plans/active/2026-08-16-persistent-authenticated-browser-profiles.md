@@ -128,6 +128,16 @@ is included.
   ownership, prune removes stale instance state before releasing ownership, and
   delete holds the same lock through cleanup. This prevents suspended starts,
   stop/prune overlap and restart/delete races while preserving crash recovery.
+- 2026-08-16: Brought persistent status refreshes under the same lifecycle
+  fence, replaced the newer standard-library file-lock calls with an
+  MSRV-compatible advisory-lock dependency, and reserved
+  `lantern-profile-<NAME>` instance identities so profile and disposable
+  lifecycles cannot collide on one global record/container identity.
+  Persistent prune now retains uncertain runtime states rather than treating
+  them as stopped.
+- 2026-08-16: Restored a truthful Rust 1.85 lock by selecting compatible ICU4X
+  transitive revisions and added the declared MSRV workspace check to the
+  canonical standard validation profile.
 
 ## Observations
 

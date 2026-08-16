@@ -60,7 +60,11 @@
 ## Validation Loop
 
 1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting, `cargo check`, optional focused tests from `FAST_TEST_ARGS`, and docs hygiene.
-2. Use `scripts/validate.sh` before landing Rust code. It runs formatting, `cargo check`, the workspace test suite using `cargo nextest` when available or `cargo test` otherwise, and docs hygiene.
+2. Use `scripts/validate.sh` before landing Rust code. It runs formatting,
+   current-toolchain and declared Rust 1.85 workspace checks, the workspace test
+   suite using `cargo nextest` when available or `cargo test` otherwise, and
+   docs hygiene. Install the `1.85.0` rustup toolchain before running the
+   standard profile.
 3. Use `scripts/quality-sweep.sh` periodically for slower checks: clippy, dependency advisory posture, typo scanning, TOML formatting, dependency cleanup, and optional coverage evidence.
 4. Prefer `cargo check` over `cargo build` when you only need compile feedback.
 5. Run `smoogle docs check` after changing scorecards, ExecPlan links, prompt templates, or core docs structure. In Codex child runs, use the injected `smoogle` shim or `"$SMOOGLE_BIN" docs check` fallback.

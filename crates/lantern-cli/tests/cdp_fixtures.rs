@@ -3018,9 +3018,47 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
 
     let profile_registry =
         lantern_storage::BrowserProfileRegistry::new(state_home.join("browser-profiles"));
+    let persistent_registry =
+        lantern_storage::BrowserRegistry::new(state_home.join("browser-instances"));
+    let profile_data = profile_registry
+        .data_dir("geometis-review")
+        .expect("profile data should resolve");
+    let layout = persistent_registry
+        .create_persistent_instance_layout("lantern-profile-geometis-review", profile_data)
+        .expect("persistent instance layout should be created");
+    let status_record = lantern_storage::BrowserInstanceRecord::pending(
+        "lantern-profile-geometis-review".to_owned(),
+        "lantern-profile-geometis-review".to_owned(),
+        lantern_storage::RuntimeKind::Podman,
+        lantern_storage::DEFAULT_BROWSER_IMAGE.to_owned(),
+        layout.profile_dir,
+        lantern_storage::BrowserProfileKind::Persistent,
+        Some("geometis-review".to_owned()),
+        Some("reservation-status-fixture".to_owned()),
+    );
+    persistent_registry
+        .write_record_atomic(&status_record)
+        .expect("persistent status fixture should be retained");
     let operation_lock = profile_registry
         .try_operation_lock("geometis-review")
         .expect("profile lifecycle should be lockable");
+    let concurrent_status = lantern_with_state(
+        [
+            "browser",
+            "status",
+            "lantern-profile-geometis-review",
+            "--json",
+        ],
+        &state_home,
+    );
+    assert!(!concurrent_status.status.success());
+    let concurrent_status_json: serde_json::Value =
+        serde_json::from_str(&stderr(&concurrent_status))
+            .expect("concurrent status error should be JSON");
+    assert_eq!(
+        concurrent_status_json["error"]["code"],
+        "browser_profile_in_use"
+    );
     let concurrent_delete = lantern_with_state(
         [
             "browser",
@@ -3040,6 +3078,9 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
         concurrent_delete_json["error"]["code"],
         "browser_profile_in_use"
     );
+    persistent_registry
+        .remove_instance_dir("lantern-profile-geometis-review")
+        .expect("status fixture should be removed");
     drop(operation_lock);
 
     let deleted = lantern_with_state(

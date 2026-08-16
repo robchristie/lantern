@@ -38,11 +38,12 @@ use lantern_core::{
 use lantern_storage::{
     BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment,
     BrowserProfileAttachmentState, BrowserProfileKind, BrowserProfileRecord,
-    BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec, DEFAULT_BROWSER_IMAGE, RuntimeCommand,
-    RuntimeKind, browser_inspect_status_command, browser_port_command, browser_ps_all_command,
-    browser_ps_managed_command, browser_rm_command, browser_run_command, browser_stop_command,
-    generate_instance_id, generate_profile_reservation_id, instance_name, parse_published_port,
-    parse_runtime_status, validate_profile_name,
+    BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec, DEFAULT_BROWSER_IMAGE,
+    PERSISTENT_INSTANCE_ID_PREFIX, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
+    browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
+    browser_run_command, browser_stop_command, generate_instance_id,
+    generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
+    persistent_instance_id, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -802,6 +803,7 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             browser_status(
                 &disposable_registry,
                 persistent_registry,
+                profile_registry,
                 &id,
                 invocation.json,
             )
@@ -903,6 +905,29 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
     if command == BrowserCommand::Start {
         if let Some(name) = invocation.browser_profile_name.as_deref() {
             validate_browser_profile_name(name, invocation.json)?;
+            let expected_id =
+                persistent_instance_id(name).map_err(|_| browser_state_error(invocation.json))?;
+            if invocation
+                .browser_id
+                .as_deref()
+                .is_some_and(|browser_id| browser_id != expected_id)
+            {
+                return Err(CliError::usage(
+                    invocation.json,
+                    "A persistent browser id must use its reserved profile identity.",
+                    "Omit --id or use the lantern-profile-<NAME> id returned by start.",
+                ));
+            }
+        } else if invocation
+            .browser_id
+            .as_deref()
+            .is_some_and(|browser_id| browser_id.starts_with(PERSISTENT_INSTANCE_ID_PREFIX))
+        {
+            return Err(CliError::usage(
+                invocation.json,
+                "Disposable browser ids cannot use the persistent profile namespace.",
+                "Choose an id that does not start with lantern-profile-.",
+            ));
         }
         if invocation.browser_profile_command.is_some() || invocation.browser_confirm {
             return Err(CliError::usage(
@@ -982,8 +1007,14 @@ fn browser_start(
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
-    let id =
-        requested_id.unwrap_or_else(|| profile_name.clone().unwrap_or_else(generate_instance_id));
+    let id = if let Some(profile_name) = profile_name.as_deref() {
+        requested_id.unwrap_or_else(|| {
+            persistent_instance_id(profile_name)
+                .expect("validated profile name has a persistent instance id")
+        })
+    } else {
+        requested_id.unwrap_or_else(generate_instance_id)
+    };
     validate_browser_id(&id, json)?;
     let name = instance_name(&id);
     let mut profile_reservation_id = None;
@@ -1291,13 +1322,32 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
 fn browser_status(
     disposable_registry: &BrowserRegistry,
     persistent_registry: Option<&BrowserRegistry>,
+    profile_registry: Option<&BrowserProfileRegistry>,
     id: &str,
     json: bool,
 ) -> Result<(), CliError> {
     let (registry, mut record) =
         find_browser_instance(disposable_registry, persistent_registry, id, json)?;
+    let mut _profile_operation_lock = None;
 
     if record.profile_kind == BrowserProfileKind::Persistent {
+        let profile_name = record
+            .profile_name
+            .as_deref()
+            .expect("persistent record identity validated by storage")
+            .to_owned();
+        let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
+        _profile_operation_lock = Some(
+            profile_registry
+                .try_operation_lock(&profile_name)
+                .map_err(|error| browser_profile_store_error(error, json))?,
+        );
+        record = registry
+            .read_record(id)
+            .map_err(|_| browser_state_error(json))?;
+        if record.profile_name.as_deref() != Some(profile_name.as_str()) {
+            return Err(browser_state_error(json));
+        }
         record.status = managed_runtime_status(record.runtime, &record.name, json)?;
     } else if let Ok(status) = run_runtime_command(
         browser_inspect_status_command(record.runtime, &record.name),
@@ -1565,12 +1615,8 @@ fn prune_browser_registry(
             .unwrap_or(BrowserInstanceStatus::Missing)
         };
 
-        if matches!(
-            status,
-            BrowserInstanceStatus::Stopped
-                | BrowserInstanceStatus::Missing
-                | BrowserInstanceStatus::Error
-        ) {
+        let pruneable = profile_status_allows_prune(record.profile_kind, status);
+        if pruneable {
             let remove_result =
                 run_runtime_command(browser_rm_command(record.runtime, &record.name), json);
             if record.profile_kind == BrowserProfileKind::Persistent
@@ -2101,6 +2147,21 @@ fn profile_status_allows_release(status: BrowserInstanceStatus) -> bool {
     matches!(
         status,
         BrowserInstanceStatus::Stopped | BrowserInstanceStatus::Missing
+    )
+}
+
+fn profile_status_allows_prune(
+    profile_kind: BrowserProfileKind,
+    status: BrowserInstanceStatus,
+) -> bool {
+    if profile_kind == BrowserProfileKind::Persistent {
+        return profile_status_allows_release(status);
+    }
+    matches!(
+        status,
+        BrowserInstanceStatus::Stopped
+            | BrowserInstanceStatus::Missing
+            | BrowserInstanceStatus::Error
     )
 }
 
@@ -2985,7 +3046,7 @@ Screenshot flags:
 Browser lifecycle flags:
   --runtime <NAME>  Container runtime for browser start: podman or docker
   --image <IMAGE>   Container image for browser start
-  --id <ID>         Optional browser instance id for start, or selected instance
+  --id <ID>         Optional browser id; persistent ids use lantern-profile-NAME
   --wait-ms <MS>    Browser start readiness timeout
   --profile <NAME>  Existing persistent profile selected only for browser start
   --yes             Confirm explicit browser profile deletion
@@ -4284,7 +4345,7 @@ mod tests {
             "--profile".to_string(),
             "geometis-review".to_string(),
             "--id".to_string(),
-            "geometis-review".to_string(),
+            "lantern-profile-geometis-review".to_string(),
         ])
         .expect("persistent browser start should parse");
 
@@ -4293,8 +4354,46 @@ mod tests {
             invocation.browser_profile_name.as_deref(),
             Some("geometis-review")
         );
-        assert_eq!(invocation.browser_id.as_deref(), Some("geometis-review"));
+        assert_eq!(
+            invocation.browser_id.as_deref(),
+            Some("lantern-profile-geometis-review")
+        );
         validate_browser_invocation(&invocation).expect("persistent start should validate");
+    }
+
+    #[test]
+    fn persistent_browser_id_must_match_its_profile_name() {
+        let invocation = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--profile".to_string(),
+            "geometis-review".to_string(),
+            "--id".to_string(),
+            "other-browser".to_string(),
+        ])
+        .expect("persistent browser start should parse");
+
+        let error = validate_browser_invocation(&invocation)
+            .expect_err("cross-profile instance identity must fail");
+        assert_eq!(error.exit_code, 2);
+        assert_eq!(
+            error.message,
+            "A persistent browser id must use its reserved profile identity."
+        );
+
+        let disposable = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--id".to_string(),
+            "lantern-profile-geometis-review".to_string(),
+        ])
+        .expect("disposable browser start should parse");
+        let error = validate_browser_invocation(&disposable)
+            .expect_err("disposable start must not claim the persistent namespace");
+        assert_eq!(
+            error.message,
+            "Disposable browser ids cannot use the persistent profile namespace."
+        );
     }
 
     #[test]
@@ -4427,6 +4526,14 @@ mod tests {
             BrowserInstanceStatus::Running
         ));
         assert!(!profile_status_allows_release(BrowserInstanceStatus::Error));
+        assert!(!profile_status_allows_prune(
+            BrowserProfileKind::Persistent,
+            BrowserInstanceStatus::Error
+        ));
+        assert!(profile_status_allows_prune(
+            BrowserProfileKind::Disposable,
+            BrowserInstanceStatus::Error
+        ));
     }
 
     #[test]
