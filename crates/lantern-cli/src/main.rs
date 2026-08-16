@@ -987,11 +987,17 @@ fn browser_start(
     validate_browser_id(&id, json)?;
     let name = instance_name(&id);
     let mut profile_reservation_id = None;
+    let mut _profile_operation_lock = None;
     let (registry, layout, profile_kind) = if let Some(profile_name) = profile_name.as_deref() {
         let persistent_registry =
             persistent_registry.expect("persistent state resolved for named profile start");
         let profile_registry =
             profile_registry.expect("profile state resolved for named profile start");
+        _profile_operation_lock = Some(
+            profile_registry
+                .try_operation_lock(profile_name)
+                .map_err(|error| browser_profile_store_error(error, json))?,
+        );
         let profile = profile_registry
             .read(profile_name)
             .map_err(|error| browser_profile_store_error(error, json))?;
@@ -1093,6 +1099,7 @@ fn browser_start(
             if let Err(error) =
                 run_runtime_command(browser_rm_command(stale_runtime, &stale_name), json)
             {
+                let _ = profile_registry.release_if_owner(profile_name, &attachment);
                 return Err(error);
             }
         }
@@ -1167,7 +1174,14 @@ fn browser_start(
             };
             if safe_to_release {
                 if let Some(reservation_id) = profile_reservation_id.as_deref() {
-                    let _ = profile_registry.release_if_owner(profile_name, &id, reservation_id);
+                    let owner = BrowserProfileAttachment {
+                        instance_id: id.clone(),
+                        container_name: name.clone(),
+                        runtime,
+                        reservation_id: reservation_id.to_owned(),
+                        state: BrowserProfileAttachmentState::Active,
+                    };
+                    let _ = profile_registry.release_if_owner(profile_name, &owner);
                 }
             }
         }
@@ -1325,16 +1339,29 @@ fn browser_stop(
 ) -> Result<(), CliError> {
     let (registry, mut record) =
         find_browser_instance(disposable_registry, persistent_registry, id, json)?;
+    let mut _profile_operation_lock = None;
 
     let persistent_owner = if record.profile_kind == BrowserProfileKind::Persistent {
         let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
-        let expected_active = profile_attachment_from_record(&record, json)?;
         let profile_name = record
             .profile_name
             .as_deref()
-            .expect("persistent record identity validated by storage");
+            .expect("persistent record identity validated by storage")
+            .to_owned();
+        _profile_operation_lock = Some(
+            profile_registry
+                .try_operation_lock(&profile_name)
+                .map_err(|error| browser_profile_store_error(error, json))?,
+        );
+        record = registry
+            .read_record(id)
+            .map_err(|_| browser_state_error(json))?;
+        if record.profile_name.as_deref() != Some(profile_name.as_str()) {
+            return Err(browser_state_error(json));
+        }
+        let expected_active = profile_attachment_from_record(&record, json)?;
         let profile = profile_registry
-            .read(profile_name)
+            .read(&profile_name)
             .map_err(|error| browser_profile_store_error(error, json))?;
         let stopping_owner = match profile.attachment.as_ref() {
             Some(current) if current == &expected_active => {
@@ -1342,7 +1369,7 @@ fn browser_stop(
                 stopping.state = BrowserProfileAttachmentState::Stopping;
                 profile_registry
                     .compare_and_swap_attachment(
-                        profile_name,
+                        &profile_name,
                         Some(current),
                         Some(stopping.clone()),
                     )
@@ -1416,9 +1443,12 @@ fn browser_stop(
         (record.profile_name.as_deref(), persistent_owner.as_ref())
     {
         let profile_registry = profile_registry.expect("persistent owner requires profile state");
-        profile_registry
-            .release_if_owner(profile_name, &owner.instance_id, &owner.reservation_id)
+        let released = profile_registry
+            .release_if_owner(profile_name, owner)
             .map_err(|error| browser_profile_store_error(error, json))?;
+        if !released {
+            return Err(browser_state_error(json));
+        }
     }
 
     write_browser_output("browser_stop", record, json)
@@ -1474,10 +1504,30 @@ fn prune_browser_registry(
     })?;
     let mut pruned = Vec::new();
 
-    for record in records {
+    for mut record in records {
+        let mut _profile_operation_lock = None;
         let mut persistent_owner = None;
         if record.profile_kind == BrowserProfileKind::Persistent {
             let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
+            let profile_name = record
+                .profile_name
+                .as_deref()
+                .expect("persistent record identity validated by storage")
+                .to_owned();
+            _profile_operation_lock = match profile_registry.try_operation_lock(&profile_name) {
+                Ok(operation_lock) => Some(operation_lock),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => continue,
+                Err(error) => return Err(browser_profile_store_error(error, json)),
+            };
+            let current = match registry.read_record(&record.id) {
+                Ok(current) => current,
+                Err(error) if error.kind() == ErrorKind::NotFound => continue,
+                Err(_) => return Err(browser_state_error(json)),
+            };
+            if current != record {
+                continue;
+            }
+            record = current;
             if profile_record_has_fresh_starting_reservation(
                 &record,
                 lantern_storage::now_unix_ms(),
@@ -1485,12 +1535,8 @@ fn prune_browser_registry(
                 continue;
             }
             let expected = profile_attachment_from_record(&record, json)?;
-            let profile_name = record
-                .profile_name
-                .as_deref()
-                .expect("persistent record identity validated by storage");
             let profile = profile_registry
-                .read(profile_name)
+                .read(&profile_name)
                 .map_err(|error| browser_profile_store_error(error, json))?;
             if profile.attachment.as_ref().is_some_and(|attachment| {
                 attachment.state == BrowserProfileAttachmentState::Stopping
@@ -1504,7 +1550,9 @@ fn prune_browser_registry(
             {
                 continue;
             }
-            persistent_owner = Some(expected);
+            if profile.attachment.as_ref() == Some(&expected) {
+                persistent_owner = Some(expected);
+            }
         }
         let status = if record.profile_kind == BrowserProfileKind::Persistent {
             managed_runtime_status(record.runtime, &record.name, json)?
@@ -1530,24 +1578,6 @@ fn prune_browser_registry(
             {
                 remove_result?;
             }
-            if let (Some(profile_name), Some(owner)) =
-                (record.profile_name.as_deref(), persistent_owner.as_ref())
-            {
-                let profile_registry =
-                    profile_registry.expect("persistent record requires profile state");
-                let released = profile_registry
-                    .release_if_owner(profile_name, &owner.instance_id, &owner.reservation_id)
-                    .map_err(|error| browser_profile_store_error(error, json))?;
-                if !released
-                    && profile_registry
-                        .read(profile_name)
-                        .map_err(|error| browser_profile_store_error(error, json))?
-                        .attachment
-                        .is_some()
-                {
-                    continue;
-                }
-            }
             registry.remove_instance_dir(&record.id).map_err(|_| {
                 CliError::runtime(
                     json,
@@ -1556,6 +1586,18 @@ fn prune_browser_registry(
                     BROWSER_STATE_FAILED_HINT,
                 )
             })?;
+            if let (Some(profile_name), Some(owner)) =
+                (record.profile_name.as_deref(), persistent_owner.as_ref())
+            {
+                let profile_registry =
+                    profile_registry.expect("persistent record requires profile state");
+                let released = profile_registry
+                    .release_if_owner(profile_name, owner)
+                    .map_err(|error| browser_profile_store_error(error, json))?;
+                if !released {
+                    return Err(browser_state_error(json));
+                }
+            }
             pruned.push(record.id);
         }
     }
@@ -1649,6 +1691,9 @@ fn run_browser_profile_invocation(
                     BROWSER_PROFILE_DELETE_CONFIRM_HINT,
                 ));
             }
+            let _operation_lock = registry
+                .try_operation_lock(&name)
+                .map_err(|error| browser_profile_store_error(error, json))?;
             if registry
                 .read(&name)
                 .map_err(|error| browser_profile_store_error(error, json))?

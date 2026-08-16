@@ -3016,6 +3016,32 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
         .expect("unconfirmed delete error should be JSON");
     assert_eq!(unconfirmed_json["error"]["code"], "usage");
 
+    let profile_registry =
+        lantern_storage::BrowserProfileRegistry::new(state_home.join("browser-profiles"));
+    let operation_lock = profile_registry
+        .try_operation_lock("geometis-review")
+        .expect("profile lifecycle should be lockable");
+    let concurrent_delete = lantern_with_state(
+        [
+            "browser",
+            "profile",
+            "delete",
+            "geometis-review",
+            "--yes",
+            "--json",
+        ],
+        &state_home,
+    );
+    assert!(!concurrent_delete.status.success());
+    let concurrent_delete_json: serde_json::Value =
+        serde_json::from_str(&stderr(&concurrent_delete))
+            .expect("concurrent delete error should be JSON");
+    assert_eq!(
+        concurrent_delete_json["error"]["code"],
+        "browser_profile_in_use"
+    );
+    drop(operation_lock);
+
     let deleted = lantern_with_state(
         [
             "browser",

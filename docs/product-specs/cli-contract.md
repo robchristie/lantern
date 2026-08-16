@@ -162,6 +162,9 @@ Persistent-profile behaviour:
 - profile data and persistent instance records live below that state home, not
   below the current repository
 - one starting or running browser may own a profile; a second owner fails
+- start, stop, prune and delete hold one per-profile process-scoped operation
+  lock through every record, runtime and attachment side effect; a concurrent
+  lifecycle command fails closed, and an exited process releases the lock
 - each start receives a unique reservation token; cleanup and release must
   match that exact token rather than only the reusable instance name
 - stop atomically changes the exact reservation to `stopping` before Chromium
@@ -173,6 +176,8 @@ Persistent-profile behaviour:
   only after the runtime is positively stopped or absent
 - uncertain runtime state retains the reservation and fails closed
 - prune removes stopped instance/container records but never profile data
+- prune removes the exact stopped instance record before releasing its exact
+  attachment, while still holding the profile operation lock
 - delete requires `--yes`, rejects an active profile, removes stopped managed
   instances for that profile, and recursively removes only the selected,
   root-contained persistent profile

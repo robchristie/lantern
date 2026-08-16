@@ -47,10 +47,12 @@ is included.
 5. Profile metadata contains only name, timestamps and a bounded attachment
    reservation. Lantern never reads browser databases to determine login state.
 6. Attachment reservation is compare-and-swap under the profile registry lock.
-   A second active owner fails; a stopped owner can be replaced, while a
+   Start, stop, prune and delete additionally hold a process-scoped advisory
+   lock for the complete profile transition. A second lifecycle command fails;
+   a stopped owner can be replaced after the prior process exits, while a
    missing owner remains reserved for a bounded starting grace period before
-   stale recovery. This prevents another process from claiming the profile in
-   the interval between reservation and container creation.
+   stale recovery. This fences both suspended processes and record/runtime
+   side effects without making a crashed process permanently own the profile.
 7. Stop releases the attachment but preserves the profile. Prune removes only
    stopped instance/container records. Profile deletion requires `--yes` and
    no attachment.
@@ -121,6 +123,11 @@ is included.
   container stop. The repeated rootless-Podman canary positively matched the
   non-secret marker after stop, prune and restart; Chromium also restored the
   prior page, so the second inspection selected that exact page target.
+- 2026-08-16: Serialised each persistent profile's complete lifecycle with a
+  process-scoped advisory lock. Exact attachment state is now part of release
+  ownership, prune removes stale instance state before releasing ownership, and
+  delete holds the same lock through cleanup. This prevents suspended starts,
+  stop/prune overlap and restart/delete races while preserving crash recovery.
 
 ## Observations
 

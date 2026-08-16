@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -15,6 +15,7 @@ pub const MANAGED_LABEL_KEY: &str = "dev.lantern.managed";
 pub const INSTANCE_ID_LABEL_KEY: &str = "dev.lantern.instance-id";
 pub const PROFILE_NAME_LABEL_KEY: &str = "dev.lantern.profile-name";
 pub const INSTANCE_NAME_PREFIX: &str = "lantern-browser";
+const PROFILE_OPERATION_LOCK_FILE: &str = "operation.lock";
 
 static PROFILE_RESERVATION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -368,6 +369,17 @@ pub struct BrowserProfileRegistry {
     root: PathBuf,
 }
 
+#[derive(Debug)]
+pub struct BrowserProfileOperationLock {
+    file: File,
+}
+
+impl Drop for BrowserProfileOperationLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
 impl BrowserProfileRegistry {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
@@ -398,6 +410,7 @@ impl BrowserProfileRegistry {
             let data_dir = profile_dir.join("data");
             fs::create_dir(&data_dir)?;
             set_private_directory_permissions(&data_dir)?;
+            write_private_file(&profile_dir.join(PROFILE_OPERATION_LOCK_FILE), b"")?;
             let record = BrowserProfileRecord::new(name.to_owned());
             self.write_record_atomic_unlocked(&record)?;
             Ok(record)
@@ -470,6 +483,31 @@ impl BrowserProfileRegistry {
         Ok(data_dir)
     }
 
+    pub fn try_operation_lock(&self, name: &str) -> io::Result<BrowserProfileOperationLock> {
+        validate_profile_name(name)?;
+        ensure_private_directory(&self.root)?;
+        let _registry_lock = ProfileRegistryLock::acquire(&self.root)?;
+        let profile_dir = self.validate_profile_directory(name)?;
+        let lock_path = profile_dir.join(PROFILE_OPERATION_LOCK_FILE);
+        match fs::symlink_metadata(&lock_path) {
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                write_private_file(&lock_path, b"")?;
+            }
+            Err(source) => return Err(source),
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "profile operation lock is not a regular file",
+                ));
+            }
+            Ok(_) => {}
+        }
+        validate_regular_file_in_directory(&lock_path, &profile_dir, "profile operation lock")?;
+        let file = OpenOptions::new().read(true).write(true).open(&lock_path)?;
+        file.try_lock()?;
+        Ok(BrowserProfileOperationLock { file })
+    }
+
     pub fn compare_and_swap_attachment(
         &self,
         name: &str,
@@ -499,19 +537,15 @@ impl BrowserProfileRegistry {
     pub fn release_if_owner(
         &self,
         name: &str,
-        instance_id: &str,
-        reservation_id: &str,
+        expected: &BrowserProfileAttachment,
     ) -> io::Result<bool> {
         validate_profile_name(name)?;
-        validate_instance_id(instance_id)?;
-        validate_reservation_id(reservation_id)?;
+        validate_profile_attachment(expected, io::ErrorKind::InvalidInput)?;
         ensure_private_directory(&self.root)?;
         let _lock = ProfileRegistryLock::acquire(&self.root)?;
         self.validate_profile_directory(name)?;
         let mut record = self.read_record_unlocked(name)?;
-        if record.attachment.as_ref().is_none_or(|attachment| {
-            attachment.instance_id != instance_id || attachment.reservation_id != reservation_id
-        }) {
+        if record.attachment.as_ref() != Some(expected) {
             return Ok(false);
         }
         record.attachment = None;
@@ -1400,9 +1434,54 @@ mod tests {
                     & 0o777,
                 0o600
             );
+            assert_eq!(
+                fs::metadata(root.join("geometis-review/operation.lock"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
         }
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn persistent_profile_operation_lock_fences_concurrent_lifecycle_commands() {
+        use std::sync::{Arc, Barrier};
+
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-operation-lock-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserProfileRegistry::new(&root);
+        registry.create("review").unwrap();
+        let first = registry.try_operation_lock("review").unwrap();
+        let attempted = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let worker = {
+            let registry = registry.clone();
+            let attempted = Arc::clone(&attempted);
+            let release = Arc::clone(&release);
+            std::thread::spawn(move || {
+                let blocked = registry.try_operation_lock("review");
+                attempted.wait();
+                release.wait();
+                let acquired = registry.try_operation_lock("review");
+                (blocked, acquired)
+            })
+        };
+        attempted.wait();
+        drop(first);
+        release.wait();
+        let (blocked, acquired) = worker.join().unwrap();
+        assert_eq!(blocked.unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert!(acquired.is_ok());
+
+        registry.delete("review").unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1477,7 +1556,7 @@ mod tests {
             .expect("first attachment should reserve");
         assert_eq!(
             registry
-                .compare_and_swap_attachment("review", None, Some(second))
+                .compare_and_swap_attachment("review", None, Some(second.clone()))
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::WouldBlock
@@ -1488,12 +1567,12 @@ mod tests {
         );
         assert!(
             !registry
-                .release_if_owner("review", "other-browser", "reservation-second")
+                .release_if_owner("review", &second)
                 .expect("non-owner release should be a no-op")
         );
         assert!(
             registry
-                .release_if_owner("review", "review-browser", "reservation-first")
+                .release_if_owner("review", &first)
                 .expect("owner should release")
         );
         registry
@@ -1556,17 +1635,9 @@ mod tests {
                 .count(),
             1
         );
-        assert!(
-            !registry
-                .release_if_owner("review", &initial.instance_id, &initial.reservation_id)
-                .unwrap()
-        );
+        assert!(!registry.release_if_owner("review", &initial).unwrap());
         let winner = registry.read("review").unwrap().attachment.unwrap();
-        assert!(
-            registry
-                .release_if_owner("review", &winner.instance_id, &winner.reservation_id)
-                .unwrap()
-        );
+        assert!(registry.release_if_owner("review", &winner).unwrap());
 
         registry.delete("review").unwrap();
         fs::remove_dir_all(root).unwrap();
@@ -1610,13 +1681,13 @@ mod tests {
                 .kind(),
             io::ErrorKind::WouldBlock
         );
-        assert_eq!(registry.read("review").unwrap().attachment, Some(stopping));
-
-        assert!(
-            registry
-                .release_if_owner("review", &active.instance_id, &active.reservation_id)
-                .unwrap()
+        assert_eq!(
+            registry.read("review").unwrap().attachment,
+            Some(stopping.clone())
         );
+
+        assert!(!registry.release_if_owner("review", &active).unwrap());
+        assert!(registry.release_if_owner("review", &stopping).unwrap());
         registry.delete("review").unwrap();
         fs::remove_dir_all(root).unwrap();
     }
@@ -1733,6 +1804,37 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "unchanged");
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn persistent_profile_registry_rejects_symlink_operation_lock() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-operation-symlink-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-operation-symlink-outside-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserProfileRegistry::new(&root);
+        registry.create("review").unwrap();
+        fs::write(&outside, "unchanged").unwrap();
+        fs::remove_file(root.join("review/operation.lock")).unwrap();
+        symlink(&outside, root.join("review/operation.lock")).unwrap();
+
+        assert_eq!(
+            registry.try_operation_lock("review").unwrap_err().kind(),
+            io::ErrorKind::InvalidData
         );
         assert_eq!(fs::read_to_string(&outside).unwrap(), "unchanged");
 

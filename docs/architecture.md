@@ -38,6 +38,10 @@
   session state; Lantern metadata stores only the name, timestamps and bounded
   current attachment, including an opaque per-start reservation token, never
   extracted cookies, credentials or storage values
+- every persistent-profile lifecycle command holds an owner-private advisory
+  operation lock for its complete start, stop, prune or delete transition;
+  process exit releases the lock, while suspended and concurrent commands fail
+  closed rather than sharing or deleting the profile
 - instance identifiers and records are bound to direct, non-symlink children
   of their registry roots before any recursive cleanup
 - product data should stay local-first by default
