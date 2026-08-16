@@ -40,8 +40,9 @@ use lantern_storage::{
     BrowserProfileRecord, BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec,
     DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
     browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
-    browser_run_command, browser_stop_command, generate_instance_id, instance_name,
-    parse_published_port, parse_runtime_status, validate_profile_name,
+    browser_run_command, browser_stop_command, generate_instance_id,
+    generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
+    validate_profile_name,
 };
 use serde::Serialize;
 
@@ -763,16 +764,19 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
         )
     })?;
     let disposable_registry = BrowserRegistry::under_repo(repo_root);
-    let persistent_state =
-        if command == BrowserCommand::Start && invocation.browser_profile_name.is_none() {
-            None
-        } else {
-            let state_home = lantern_state_home(invocation.json)?;
-            Some((
-                BrowserRegistry::new(state_home.join("browser-instances")),
-                BrowserProfileRegistry::new(state_home.join("browser-profiles")),
-            ))
-        };
+    let persistence_required = command == BrowserCommand::Profile
+        || (command == BrowserCommand::Start && invocation.browser_profile_name.is_some());
+    let state_home = if persistence_required {
+        Some(lantern_state_home(invocation.json)?)
+    } else {
+        optional_lantern_state_home(invocation.json)?
+    };
+    let persistent_state = state_home.map(|state_home| {
+        (
+            BrowserRegistry::new(state_home.join("browser-instances")),
+            BrowserProfileRegistry::new(state_home.join("browser-profiles")),
+        )
+    });
     let persistent_registry = persistent_state.as_ref().map(|state| &state.0);
     let profile_registry = persistent_state.as_ref().map(|state| &state.1);
 
@@ -790,16 +794,14 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             invocation.browser_profile_name,
             invocation.json,
         ),
-        BrowserCommand::List => browser_list(
-            &disposable_registry,
-            persistent_registry.expect("persistent state resolved for browser list"),
-            invocation.json,
-        ),
+        BrowserCommand::List => {
+            browser_list(&disposable_registry, persistent_registry, invocation.json)
+        }
         BrowserCommand::Status => {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
             browser_status(
                 &disposable_registry,
-                persistent_registry.expect("persistent state resolved for browser status"),
+                persistent_registry,
                 &id,
                 invocation.json,
             )
@@ -808,7 +810,7 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
             browser_endpoint(
                 &disposable_registry,
-                persistent_registry.expect("persistent state resolved for browser endpoint"),
+                persistent_registry,
                 &id,
                 invocation.json,
             )
@@ -817,16 +819,16 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             let id = required_browser_id(invocation.browser_id, invocation.json)?;
             browser_stop(
                 &disposable_registry,
-                persistent_registry.expect("persistent state resolved for browser stop"),
-                profile_registry.expect("profile state resolved for browser stop"),
+                persistent_registry,
+                profile_registry,
                 &id,
                 invocation.json,
             )
         }
         BrowserCommand::Prune => browser_prune(
             &disposable_registry,
-            persistent_registry.expect("persistent state resolved for browser prune"),
-            profile_registry.expect("profile state resolved for browser prune"),
+            persistent_registry,
+            profile_registry,
             invocation.json,
         ),
         BrowserCommand::Profile => run_browser_profile_invocation(
@@ -984,6 +986,7 @@ fn browser_start(
         requested_id.unwrap_or_else(|| profile_name.clone().unwrap_or_else(generate_instance_id));
     validate_browser_id(&id, json)?;
     let name = instance_name(&id);
+    let mut profile_reservation_id = None;
     let (registry, layout, profile_kind) = if let Some(profile_name) = profile_name.as_deref() {
         let persistent_registry =
             persistent_registry.expect("persistent state resolved for named profile start");
@@ -999,7 +1002,9 @@ fn browser_start(
                 managed_runtime_status(attachment.runtime, &attachment.container_name, json)?;
             if matches!(
                 status,
-                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+                BrowserInstanceStatus::Starting
+                    | BrowserInstanceStatus::Running
+                    | BrowserInstanceStatus::Error
             ) {
                 return Err(CliError::runtime(
                     json,
@@ -1038,7 +1043,9 @@ fn browser_start(
             let status = managed_runtime_status(existing.runtime, &existing.name, json)?;
             if matches!(
                 status,
-                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+                BrowserInstanceStatus::Starting
+                    | BrowserInstanceStatus::Running
+                    | BrowserInstanceStatus::Error
             ) {
                 return Err(CliError::runtime(
                     json,
@@ -1062,19 +1069,21 @@ fn browser_start(
         let layout = persistent_registry
             .create_persistent_instance_layout(&id, profile_dir)
             .map_err(|_| browser_state_error(json))?;
+        let reservation_id = generate_profile_reservation_id();
         let attachment = BrowserProfileAttachment {
             instance_id: id.clone(),
             container_name: name.clone(),
             runtime,
+            reservation_id: reservation_id.clone(),
         };
         profile_registry
-            .compare_and_swap_attachment(profile_name, expected.as_ref(), Some(attachment))
+            .compare_and_swap_attachment(profile_name, expected.as_ref(), Some(attachment.clone()))
             .map_err(|error| browser_profile_store_error(error, json))?;
+        profile_reservation_id = Some(reservation_id);
         for (stale_runtime, stale_name) in stale_containers {
             if let Err(error) =
                 run_runtime_command(browser_rm_command(stale_runtime, &stale_name), json)
             {
-                let _ = profile_registry.release_if_owner(profile_name, &id);
                 return Err(error);
             }
         }
@@ -1094,8 +1103,9 @@ fn browser_start(
         layout.profile_dir.clone(),
         profile_kind,
         profile_name.clone(),
+        profile_reservation_id.clone(),
     );
-    let mut runtime_started = false;
+    let mut runtime_attempted = false;
     let start_result = (|| {
         registry
             .write_record_atomic(&record)
@@ -1107,8 +1117,8 @@ fn browser_start(
             profile_dir: layout.profile_dir,
             profile_name: profile_name.clone(),
         };
+        runtime_attempted = true;
         let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
-        runtime_started = true;
         let cdp_port = runtime_port(runtime, &name, 9222, json)?;
         let vnc_port = runtime_port(runtime, &name, 5900, json).ok();
         let novnc_port = runtime_port(runtime, &name, 6080, json).ok();
@@ -1136,23 +1146,20 @@ fn browser_start(
         if let Some(profile_name) = profile_name.as_deref() {
             let profile_registry =
                 profile_registry.expect("profile state resolved for named profile cleanup");
-            let safe_to_release = if runtime_started {
+            let safe_to_release = if runtime_attempted {
                 let removed =
                     run_runtime_command(browser_rm_command(runtime, &name), false).is_ok();
                 removed
                     || managed_runtime_status(runtime, &name, false)
-                        .map(|status| {
-                            !matches!(
-                                status,
-                                BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
-                            )
-                        })
+                        .map(profile_status_allows_release)
                         .unwrap_or(false)
             } else {
                 true
             };
             if safe_to_release {
-                let _ = profile_registry.release_if_owner(profile_name, &id);
+                if let Some(reservation_id) = profile_reservation_id.as_deref() {
+                    let _ = profile_registry.release_if_owner(profile_name, &id, reservation_id);
+                }
             }
         }
     }
@@ -1161,17 +1168,19 @@ fn browser_start(
 
 fn browser_list(
     disposable_registry: &BrowserRegistry,
-    persistent_registry: &BrowserRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
     json: bool,
 ) -> Result<(), CliError> {
     let mut records = disposable_registry
         .list_records()
         .map_err(|_| browser_state_error(json))?;
-    records.extend(
-        persistent_registry
-            .list_records()
-            .map_err(|_| browser_state_error(json))?,
-    );
+    if let Some(persistent_registry) = persistent_registry {
+        records.extend(
+            persistent_registry
+                .list_records()
+                .map_err(|_| browser_state_error(json))?,
+        );
+    }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     if records
         .windows(2)
@@ -1245,6 +1254,7 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
                 profile_dir: PathBuf::new(),
                 profile_kind: BrowserProfileKind::Disposable,
                 profile_name: None,
+                profile_reservation_id: None,
                 created_at_unix_ms: now,
                 updated_at_unix_ms: now,
             });
@@ -1257,7 +1267,7 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
 
 fn browser_status(
     disposable_registry: &BrowserRegistry,
-    persistent_registry: &BrowserRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
     id: &str,
     json: bool,
 ) -> Result<(), CliError> {
@@ -1289,7 +1299,7 @@ fn browser_status(
 
 fn browser_endpoint(
     disposable_registry: &BrowserRegistry,
-    persistent_registry: &BrowserRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
     id: &str,
     json: bool,
 ) -> Result<(), CliError> {
@@ -1299,22 +1309,66 @@ fn browser_endpoint(
 
 fn browser_stop(
     disposable_registry: &BrowserRegistry,
-    persistent_registry: &BrowserRegistry,
-    profile_registry: &BrowserProfileRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
+    profile_registry: Option<&BrowserProfileRegistry>,
     id: &str,
     json: bool,
 ) -> Result<(), CliError> {
     let (registry, mut record) =
         find_browser_instance(disposable_registry, persistent_registry, id, json)?;
 
-    let stop_result = run_runtime_command(browser_stop_command(record.runtime, &record.name), json);
+    let persistent_owner = if record.profile_kind == BrowserProfileKind::Persistent {
+        let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
+        let expected = profile_attachment_from_record(&record, json)?;
+        let profile_name = record
+            .profile_name
+            .as_deref()
+            .expect("persistent record identity validated by storage");
+        let profile = profile_registry
+            .read(profile_name)
+            .map_err(|error| browser_profile_store_error(error, json))?;
+        if profile.attachment.as_ref() != Some(&expected) {
+            return Err(CliError::runtime(
+                json,
+                "browser_profile_in_use",
+                BROWSER_PROFILE_IN_USE_MESSAGE,
+                BROWSER_PROFILE_IN_USE_HINT,
+            ));
+        }
+        Some(expected)
+    } else {
+        None
+    };
+
+    let initial_persistent_status = if record.profile_kind == BrowserProfileKind::Persistent {
+        Some(managed_runtime_status(
+            record.runtime,
+            &record.name,
+            json,
+        )?)
+    } else {
+        None
+    };
+    let gracefully_stopped = if initial_persistent_status == Some(BrowserInstanceStatus::Running) {
+        record.endpoint.as_deref().is_some_and(|endpoint| {
+            let _ = request_browser_close(endpoint);
+            wait_for_managed_runtime_inactive(record.runtime, &record.name, Duration::from_secs(5))
+                .unwrap_or(false)
+        })
+    } else {
+        false
+    };
+    let stop_result = if gracefully_stopped
+        || initial_persistent_status.is_some_and(profile_status_allows_release)
+    {
+        Ok(String::new())
+    } else {
+        run_runtime_command(browser_stop_command(record.runtime, &record.name), json)
+    };
     if record.profile_kind == BrowserProfileKind::Persistent {
         stop_result?;
         let status = managed_runtime_status(record.runtime, &record.name, json)?;
-        if matches!(
-            status,
-            BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
-        ) {
+        if !profile_status_allows_release(status) {
             return Err(CliError::runtime(
                 json,
                 "browser_profile_in_use",
@@ -1333,9 +1387,12 @@ fn browser_stop(
             BROWSER_STATE_FAILED_HINT,
         )
     })?;
-    if let Some(profile_name) = record.profile_name.as_deref() {
+    if let (Some(profile_name), Some(owner)) =
+        (record.profile_name.as_deref(), persistent_owner.as_ref())
+    {
+        let profile_registry = profile_registry.expect("persistent owner requires profile state");
         profile_registry
-            .release_if_owner(profile_name, id)
+            .release_if_owner(profile_name, &owner.instance_id, &owner.reservation_id)
             .map_err(|error| browser_profile_store_error(error, json))?;
     }
 
@@ -1344,16 +1401,20 @@ fn browser_stop(
 
 fn browser_prune(
     disposable_registry: &BrowserRegistry,
-    persistent_registry: &BrowserRegistry,
-    profile_registry: &BrowserProfileRegistry,
+    persistent_registry: Option<&BrowserRegistry>,
+    profile_registry: Option<&BrowserProfileRegistry>,
     json: bool,
 ) -> Result<(), CliError> {
     let mut pruned = prune_browser_registry(disposable_registry, profile_registry, json)?;
-    pruned.extend(prune_browser_registry(
-        persistent_registry,
-        profile_registry,
-        json,
-    )?);
+    if let (Some(persistent_registry), Some(profile_registry)) =
+        (persistent_registry, profile_registry)
+    {
+        pruned.extend(prune_browser_registry(
+            persistent_registry,
+            Some(profile_registry),
+            json,
+        )?);
+    }
     pruned.sort();
 
     if json {
@@ -1375,7 +1436,7 @@ fn browser_prune(
 
 fn prune_browser_registry(
     registry: &BrowserRegistry,
-    profile_registry: &BrowserProfileRegistry,
+    profile_registry: Option<&BrowserProfileRegistry>,
     json: bool,
 ) -> Result<Vec<String>, CliError> {
     let records = registry.list_records().map_err(|_| {
@@ -1389,6 +1450,32 @@ fn prune_browser_registry(
     let mut pruned = Vec::new();
 
     for record in records {
+        let mut persistent_owner = None;
+        if record.profile_kind == BrowserProfileKind::Persistent {
+            let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
+            if profile_record_has_fresh_starting_reservation(
+                &record,
+                lantern_storage::now_unix_ms(),
+            ) {
+                continue;
+            }
+            let expected = profile_attachment_from_record(&record, json)?;
+            let profile_name = record
+                .profile_name
+                .as_deref()
+                .expect("persistent record identity validated by storage");
+            let profile = profile_registry
+                .read(profile_name)
+                .map_err(|error| browser_profile_store_error(error, json))?;
+            if profile
+                .attachment
+                .as_ref()
+                .is_some_and(|attachment| attachment != &expected)
+            {
+                continue;
+            }
+            persistent_owner = Some(expected);
+        }
         let status = if record.profile_kind == BrowserProfileKind::Persistent {
             managed_runtime_status(record.runtime, &record.name, json)?
         } else {
@@ -1413,10 +1500,23 @@ fn prune_browser_registry(
             {
                 remove_result?;
             }
-            if let Some(profile_name) = record.profile_name.as_deref() {
-                profile_registry
-                    .release_if_owner(profile_name, &record.id)
+            if let (Some(profile_name), Some(owner)) =
+                (record.profile_name.as_deref(), persistent_owner.as_ref())
+            {
+                let profile_registry =
+                    profile_registry.expect("persistent record requires profile state");
+                let released = profile_registry
+                    .release_if_owner(profile_name, &owner.instance_id, &owner.reservation_id)
                     .map_err(|error| browser_profile_store_error(error, json))?;
+                if !released
+                    && profile_registry
+                        .read(profile_name)
+                        .map_err(|error| browser_profile_store_error(error, json))?
+                        .attachment
+                        .is_some()
+                {
+                    continue;
+                }
             }
             registry.remove_instance_dir(&record.id).map_err(|_| {
                 CliError::runtime(
@@ -1435,20 +1535,23 @@ fn prune_browser_registry(
 
 fn find_browser_instance<'a>(
     disposable_registry: &'a BrowserRegistry,
-    persistent_registry: &'a BrowserRegistry,
+    persistent_registry: Option<&'a BrowserRegistry>,
     id: &str,
     json: bool,
 ) -> Result<(&'a BrowserRegistry, BrowserInstanceRecord), CliError> {
     let disposable = disposable_registry.read_record(id);
-    let persistent = persistent_registry.read_record(id);
+    let persistent = persistent_registry
+        .map(|registry| registry.read_record(id))
+        .unwrap_or_else(|| Err(std::io::Error::from(ErrorKind::NotFound)));
     match (disposable, persistent) {
         (Ok(_), Ok(_)) => Err(browser_state_error(json)),
         (Ok(record), Err(error)) if error.kind() == ErrorKind::NotFound => {
             Ok((disposable_registry, record))
         }
-        (Err(error), Ok(record)) if error.kind() == ErrorKind::NotFound => {
-            Ok((persistent_registry, record))
-        }
+        (Err(error), Ok(record)) if error.kind() == ErrorKind::NotFound => Ok((
+            persistent_registry.expect("successful persistent read requires registry"),
+            record,
+        )),
         (Err(left), Err(right))
             if left.kind() == ErrorKind::NotFound && right.kind() == ErrorKind::NotFound =>
         {
@@ -1714,6 +1817,29 @@ fn wait_for_browser_ready(endpoint: &str, timeout: Duration, json: bool) -> Resu
     ))
 }
 
+fn request_browser_close(endpoint: &str) -> Result<(), CdpError> {
+    let endpoint = ResolvedEndpoint {
+        source: lantern_core::endpoint::EndpointSource::Flag,
+        display: endpoint.to_owned(),
+    };
+    CdpClient::new(endpoint).close_browser()
+}
+
+fn wait_for_managed_runtime_inactive(
+    runtime: RuntimeKind,
+    name: &str,
+    timeout: Duration,
+) -> Result<bool, CliError> {
+    let started = Instant::now();
+    while started.elapsed() <= timeout {
+        if profile_status_allows_release(managed_runtime_status(runtime, name, false)?) {
+            return Ok(true);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(false)
+}
+
 fn select_runtime(requested: Option<RuntimeKind>, json: bool) -> Result<RuntimeKind, CliError> {
     if let Some(runtime) = requested {
         if runtime_available(runtime) {
@@ -1834,15 +1960,7 @@ fn repo_root() -> std::io::Result<PathBuf> {
 }
 
 fn lantern_state_home(json: bool) -> Result<PathBuf, CliError> {
-    let lantern_home = env::var("LANTERN_STATE_HOME").ok();
-    let xdg_home = env::var("XDG_STATE_HOME").ok();
-    let home = env::var("HOME").ok();
-    resolve_lantern_state_home(
-        lantern_home.as_deref(),
-        xdg_home.as_deref(),
-        home.as_deref(),
-    )
-    .ok_or_else(|| {
+    optional_lantern_state_home(json)?.ok_or_else(|| {
         CliError::runtime(
             json,
             "browser_state_home_invalid",
@@ -1850,6 +1968,33 @@ fn lantern_state_home(json: bool) -> Result<PathBuf, CliError> {
             BROWSER_STATE_HOME_INVALID_HINT,
         )
     })
+}
+
+fn optional_lantern_state_home(json: bool) -> Result<Option<PathBuf>, CliError> {
+    let lantern_home = env::var("LANTERN_STATE_HOME").ok();
+    let xdg_home = env::var("XDG_STATE_HOME").ok();
+    let home = env::var("HOME").ok();
+    let configured = [
+        lantern_home.as_deref(),
+        xdg_home.as_deref(),
+        home.as_deref(),
+    ]
+    .into_iter()
+    .any(|value| value.is_some_and(|value| !value.is_empty()));
+    let resolved = resolve_lantern_state_home(
+        lantern_home.as_deref(),
+        xdg_home.as_deref(),
+        home.as_deref(),
+    );
+    if configured && resolved.is_none() {
+        return Err(CliError::runtime(
+            json,
+            "browser_state_home_invalid",
+            BROWSER_STATE_HOME_INVALID_MESSAGE,
+            BROWSER_STATE_HOME_INVALID_HINT,
+        ));
+    }
+    Ok(resolved)
 }
 
 fn resolve_lantern_state_home(
@@ -1875,6 +2020,42 @@ fn profile_attachment_is_within_starting_grace(
     now_unix_ms: u128,
 ) -> bool {
     now_unix_ms.saturating_sub(updated_at_unix_ms) < BROWSER_PROFILE_STARTING_GRACE_MS
+}
+
+fn profile_status_allows_release(status: BrowserInstanceStatus) -> bool {
+    matches!(
+        status,
+        BrowserInstanceStatus::Stopped | BrowserInstanceStatus::Missing
+    )
+}
+
+fn profile_record_has_fresh_starting_reservation(
+    record: &BrowserInstanceRecord,
+    now_unix_ms: u128,
+) -> bool {
+    record.profile_kind == BrowserProfileKind::Persistent
+        && record.status == BrowserInstanceStatus::Starting
+        && profile_attachment_is_within_starting_grace(record.updated_at_unix_ms, now_unix_ms)
+}
+
+fn profile_attachment_from_record(
+    record: &BrowserInstanceRecord,
+    json: bool,
+) -> Result<BrowserProfileAttachment, CliError> {
+    let reservation_id = record.profile_reservation_id.clone().ok_or_else(|| {
+        CliError::runtime(
+            json,
+            "browser_state_failed",
+            BROWSER_STATE_FAILED_MESSAGE,
+            BROWSER_STATE_FAILED_HINT,
+        )
+    })?;
+    Ok(BrowserProfileAttachment {
+        instance_id: record.id.clone(),
+        container_name: record.name.clone(),
+        runtime: record.runtime,
+        reservation_id,
+    })
 }
 
 fn browser_state_error(json: bool) -> CliError {
@@ -4128,6 +4309,7 @@ mod tests {
             resolve_lantern_state_home(Some("relative"), None, Some("/home/test")),
             None
         );
+        assert_eq!(resolve_lantern_state_home(None, None, None), None);
     }
 
     #[test]
@@ -4142,6 +4324,51 @@ mod tests {
             1_000 + BROWSER_PROFILE_STARTING_GRACE_MS
         ));
         assert!(profile_attachment_is_within_starting_grace(2_000, 1_000));
+    }
+
+    #[test]
+    fn only_confirmed_inactive_runtime_states_allow_profile_release() {
+        assert!(profile_status_allows_release(
+            BrowserInstanceStatus::Stopped
+        ));
+        assert!(profile_status_allows_release(
+            BrowserInstanceStatus::Missing
+        ));
+        assert!(!profile_status_allows_release(
+            BrowserInstanceStatus::Starting
+        ));
+        assert!(!profile_status_allows_release(
+            BrowserInstanceStatus::Running
+        ));
+        assert!(!profile_status_allows_release(BrowserInstanceStatus::Error));
+    }
+
+    #[test]
+    fn prune_preserves_a_fresh_persistent_starting_reservation() {
+        let mut record = BrowserInstanceRecord::pending(
+            "review-browser".to_owned(),
+            "review-browser".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            PathBuf::from("/tmp/review-profile"),
+            BrowserProfileKind::Persistent,
+            Some("review".to_owned()),
+            Some("reservation-starting".to_owned()),
+        );
+        record.updated_at_unix_ms = 1_000;
+
+        assert!(profile_record_has_fresh_starting_reservation(
+            &record,
+            1_000 + BROWSER_PROFILE_STARTING_GRACE_MS - 1
+        ));
+        assert!(!profile_record_has_fresh_starting_reservation(
+            &record,
+            1_000 + BROWSER_PROFILE_STARTING_GRACE_MS
+        ));
+        record.status = BrowserInstanceStatus::Stopped;
+        assert!(!profile_record_has_fresh_starting_reservation(
+            &record, 1_001
+        ));
     }
 
     #[test]

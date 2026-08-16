@@ -3,6 +3,7 @@ use std::{
     fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -14,6 +15,8 @@ pub const MANAGED_LABEL_KEY: &str = "dev.lantern.managed";
 pub const INSTANCE_ID_LABEL_KEY: &str = "dev.lantern.instance-id";
 pub const PROFILE_NAME_LABEL_KEY: &str = "dev.lantern.profile-name";
 pub const INSTANCE_NAME_PREFIX: &str = "lantern-browser";
+
+static PROFILE_RESERVATION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn storage_backend() -> &'static str {
     "json-files"
@@ -38,10 +41,12 @@ impl BrowserRegistry {
     }
 
     pub fn create_instance_layout(&self, id: &str) -> io::Result<BrowserInstanceLayout> {
+        validate_instance_id(id)?;
         ensure_private_directory(&self.root)?;
         let instance_dir = self.root.join(id);
         fs::create_dir(&instance_dir)?;
         set_private_directory_permissions(&instance_dir)?;
+        self.validate_instance_directory(id)?;
         let profile_dir = instance_dir.join("profile");
         fs::create_dir(&profile_dir)?;
         set_private_directory_permissions(&profile_dir)?;
@@ -56,9 +61,11 @@ impl BrowserRegistry {
         id: &str,
         profile_dir: PathBuf,
     ) -> io::Result<BrowserInstanceLayout> {
+        validate_instance_id(id)?;
         ensure_private_directory(&self.root)?;
         let instance_dir = self.root.join(id);
         ensure_private_directory(&instance_dir)?;
+        self.validate_instance_directory(id)?;
         Ok(BrowserInstanceLayout {
             instance_dir,
             profile_dir,
@@ -66,7 +73,8 @@ impl BrowserRegistry {
     }
 
     pub fn write_record_atomic(&self, record: &BrowserInstanceRecord) -> io::Result<()> {
-        fs::create_dir_all(&self.root)?;
+        validate_instance_record(record, &record.id)?;
+        ensure_private_directory(&self.root)?;
         let _lock = self.lock()?;
         self.write_record_atomic_unlocked(record)
     }
@@ -75,6 +83,7 @@ impl BrowserRegistry {
     where
         F: FnOnce(&mut BrowserInstanceRecord),
     {
+        validate_instance_id(id)?;
         let _lock = self.lock()?;
         let mut record = self.read_record_unlocked(id)?;
         update(&mut record);
@@ -84,24 +93,40 @@ impl BrowserRegistry {
     }
 
     pub fn read_record(&self, id: &str) -> io::Result<BrowserInstanceRecord> {
+        validate_instance_id(id)?;
         self.read_record_unlocked(id)
     }
 
     pub fn list_records(&self) -> io::Result<Vec<BrowserInstanceRecord>> {
         let mut records: Vec<BrowserInstanceRecord> = Vec::new();
+        match fs::symlink_metadata(&self.root) {
+            Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(records),
+            Err(source) => return Err(source),
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "browser instance root is not a directory",
+                ));
+            }
+            Ok(_) => {}
+        }
         match fs::read_dir(&self.root) {
             Ok(entries) => {
                 for entry in entries {
                     let entry = entry?;
-                    if !entry.file_type()?.is_dir() {
+                    let name = entry.file_name();
+                    let Some(id) = name.to_str() else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "browser instance id is not UTF-8",
+                        ));
+                    };
+                    if id == ".lock" {
                         continue;
                     }
-                    let path = entry.path().join("record.json");
-                    if !path.exists() {
-                        continue;
-                    }
-                    let body = fs::read_to_string(path)?;
-                    records.push(serde_json::from_str(&body).map_err(invalid_data)?);
+                    validate_instance_id(id)?;
+                    self.validate_instance_directory(id)?;
+                    records.push(self.read_record_unlocked(id)?);
                 }
             }
             Err(source) if source.kind() == io::ErrorKind::NotFound => {}
@@ -113,8 +138,14 @@ impl BrowserRegistry {
     }
 
     pub fn remove_instance_dir(&self, id: &str) -> io::Result<()> {
-        let path = self.root.join(id);
-        match fs::remove_dir_all(path) {
+        validate_instance_id(id)?;
+        let _lock = self.lock()?;
+        let path = match self.validate_instance_directory(id) {
+            Ok(path) => path,
+            Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => return Err(source),
+        };
+        match fs::remove_dir_all(&path) {
             Ok(()) => Ok(()),
             Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(source) => Err(source),
@@ -122,22 +153,59 @@ impl BrowserRegistry {
     }
 
     fn read_record_unlocked(&self, id: &str) -> io::Result<BrowserInstanceRecord> {
-        let body = fs::read_to_string(self.root.join(id).join("record.json"))?;
-        serde_json::from_str(&body).map_err(invalid_data)
+        validate_instance_id(id)?;
+        let instance_dir = self.validate_instance_directory(id)?;
+        let record_path = instance_dir.join("record.json");
+        validate_regular_file_in_directory(&record_path, &instance_dir, "browser instance record")?;
+        let body = fs::read_to_string(record_path)?;
+        let record: BrowserInstanceRecord = serde_json::from_str(&body).map_err(invalid_data)?;
+        validate_instance_record(&record, id)?;
+        Ok(record)
     }
 
     fn write_record_atomic_unlocked(&self, record: &BrowserInstanceRecord) -> io::Result<()> {
+        validate_instance_record(record, &record.id)?;
         let instance_dir = self.root.join(&record.id);
         ensure_private_directory(&instance_dir)?;
+        self.validate_instance_directory(&record.id)?;
         let final_path = instance_dir.join("record.json");
         let tmp_path = instance_dir.join("record.json.tmp");
+        reject_symlink_or_non_file_if_present(&final_path, "browser instance record")?;
         let body = serde_json::to_vec_pretty(record).map_err(invalid_data)?;
         write_private_file(&tmp_path, &body)?;
         fs::rename(tmp_path, final_path)
     }
 
+    fn validate_instance_directory(&self, id: &str) -> io::Result<PathBuf> {
+        validate_instance_id(id)?;
+        let root_metadata = fs::symlink_metadata(&self.root)?;
+        if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "browser instance root is not a directory",
+            ));
+        }
+        let instance_dir = self.root.join(id);
+        let metadata = fs::symlink_metadata(&instance_dir)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "browser instance path is not a directory",
+            ));
+        }
+        let root = fs::canonicalize(&self.root)?;
+        let canonical = fs::canonicalize(&instance_dir)?;
+        if canonical.parent() != Some(root.as_path()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "browser instance path escapes its root",
+            ));
+        }
+        Ok(instance_dir)
+    }
+
     fn lock(&self) -> io::Result<RegistryLock> {
-        fs::create_dir_all(&self.root)?;
+        ensure_private_directory(&self.root)?;
         let lock_dir = self.root.join(".lock");
         let started = SystemTime::now();
 
@@ -196,6 +264,8 @@ pub struct BrowserInstanceRecord {
     pub profile_kind: BrowserProfileKind,
     #[serde(default)]
     pub profile_name: Option<String>,
+    #[serde(default)]
+    pub profile_reservation_id: Option<String>,
     pub created_at_unix_ms: u128,
     pub updated_at_unix_ms: u128,
 }
@@ -209,6 +279,7 @@ impl BrowserInstanceRecord {
         profile_dir: PathBuf,
         profile_kind: BrowserProfileKind,
         profile_name: Option<String>,
+        profile_reservation_id: Option<String>,
     ) -> Self {
         let now = now_unix_ms();
         Self {
@@ -227,6 +298,7 @@ impl BrowserInstanceRecord {
             profile_dir,
             profile_kind,
             profile_name,
+            profile_reservation_id,
             created_at_unix_ms: now,
             updated_at_unix_ms: now,
         }
@@ -255,6 +327,8 @@ pub struct BrowserProfileAttachment {
     pub instance_id: String,
     pub container_name: String,
     pub runtime: RuntimeKind,
+    #[serde(default)]
+    pub reservation_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -394,13 +468,7 @@ impl BrowserProfileRegistry {
     ) -> io::Result<BrowserProfileRecord> {
         validate_profile_name(name)?;
         if let Some(attachment) = replacement.as_ref() {
-            validate_profile_name(&attachment.instance_id)?;
-            if attachment.container_name != attachment.instance_id {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "profile attachment identity is invalid",
-                ));
-            }
+            validate_profile_attachment(attachment, io::ErrorKind::InvalidInput)?;
         }
         ensure_private_directory(&self.root)?;
         let _lock = ProfileRegistryLock::acquire(&self.root)?;
@@ -418,17 +486,22 @@ impl BrowserProfileRegistry {
         Ok(record)
     }
 
-    pub fn release_if_owner(&self, name: &str, instance_id: &str) -> io::Result<bool> {
+    pub fn release_if_owner(
+        &self,
+        name: &str,
+        instance_id: &str,
+        reservation_id: &str,
+    ) -> io::Result<bool> {
         validate_profile_name(name)?;
+        validate_instance_id(instance_id)?;
+        validate_reservation_id(reservation_id)?;
         ensure_private_directory(&self.root)?;
         let _lock = ProfileRegistryLock::acquire(&self.root)?;
         self.validate_profile_directory(name)?;
         let mut record = self.read_record_unlocked(name)?;
-        if record
-            .attachment
-            .as_ref()
-            .is_none_or(|attachment| attachment.instance_id != instance_id)
-        {
+        if record.attachment.as_ref().is_none_or(|attachment| {
+            attachment.instance_id != instance_id || attachment.reservation_id != reservation_id
+        }) {
             return Ok(false);
         }
         record.attachment = None;
@@ -510,13 +583,7 @@ impl BrowserProfileRegistry {
             ));
         }
         if let Some(attachment) = record.attachment.as_ref() {
-            validate_profile_name(&attachment.instance_id)?;
-            if attachment.container_name != attachment.instance_id {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "profile attachment identity is invalid",
-                ));
-            }
+            validate_profile_attachment(attachment, io::ErrorKind::InvalidData)?;
         }
         Ok(record)
     }
@@ -525,6 +592,7 @@ impl BrowserProfileRegistry {
         let profile_dir = self.profile_dir(&record.name);
         let final_path = profile_dir.join("profile.json");
         let tmp_path = profile_dir.join("profile.json.tmp");
+        reject_symlink_or_non_file_if_present(&final_path, "profile record")?;
         let body = serde_json::to_vec_pretty(record).map_err(invalid_data)?;
         write_private_file(&tmp_path, &body)?;
         fs::rename(tmp_path, final_path)
@@ -580,6 +648,101 @@ pub fn validate_profile_name(name: &str) -> io::Result<()> {
             "invalid profile name",
         ))
     }
+}
+
+pub fn validate_instance_id(id: &str) -> io::Result<()> {
+    validate_bounded_identifier(id, "invalid browser instance id")
+}
+
+pub fn generate_profile_reservation_id() -> String {
+    format!(
+        "reservation-{}-{}-{}",
+        now_unix_ms(),
+        std::process::id(),
+        PROFILE_RESERVATION_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+fn validate_reservation_id(id: &str) -> io::Result<()> {
+    validate_bounded_identifier(id, "invalid browser profile reservation id")
+}
+
+fn validate_bounded_identifier(value: &str, message: &'static str) -> io::Result<()> {
+    let valid = !value.is_empty()
+        && value.len() <= 80
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::InvalidInput, message))
+    }
+}
+
+fn validate_profile_attachment(
+    attachment: &BrowserProfileAttachment,
+    error_kind: io::ErrorKind,
+) -> io::Result<()> {
+    validate_instance_id(&attachment.instance_id)
+        .map_err(|_| io::Error::new(error_kind, "profile attachment identity is invalid"))?;
+    validate_reservation_id(&attachment.reservation_id)
+        .map_err(|_| io::Error::new(error_kind, "profile attachment identity is invalid"))?;
+    if attachment.container_name != attachment.instance_id {
+        return Err(io::Error::new(
+            error_kind,
+            "profile attachment identity is invalid",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_instance_record(record: &BrowserInstanceRecord, expected_id: &str) -> io::Result<()> {
+    validate_instance_id(expected_id)?;
+    validate_instance_id(&record.id)?;
+    if record.schema_version != 1 || record.id != expected_id || record.name != expected_id {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "browser instance record identity does not match its directory",
+        ));
+    }
+    match record.profile_kind {
+        BrowserProfileKind::Disposable => {
+            if record.profile_name.is_some() || record.profile_reservation_id.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "disposable browser record has persistent profile identity",
+                ));
+            }
+        }
+        BrowserProfileKind::Persistent => {
+            let profile_name = record.profile_name.as_deref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "persistent browser profile is missing",
+                )
+            })?;
+            validate_profile_name(profile_name).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "persistent browser profile is invalid",
+                )
+            })?;
+            let reservation_id = record.profile_reservation_id.as_deref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "persistent browser reservation is missing",
+                )
+            })?;
+            validate_reservation_id(reservation_id).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "persistent browser reservation is invalid",
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -872,8 +1035,18 @@ fn set_private_directory_permissions(path: &Path) -> io::Result<()> {
 }
 
 fn write_private_file(path: &Path, body: &[u8]) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => return Err(source),
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "private temporary file already exists",
+            ));
+        }
+    }
     let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -888,6 +1061,42 @@ fn write_private_file(path: &Path, body: &[u8]) -> io::Result<()> {
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
     }
     file.sync_all()
+}
+
+fn reject_symlink_or_non_file_if_present(path: &Path, description: &str) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(source),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{description} is not a regular file"),
+            ))
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
+fn validate_regular_file_in_directory(
+    path: &Path,
+    directory: &Path,
+    description: &str,
+) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{description} is not a regular file"),
+        ));
+    }
+    let canonical = fs::canonicalize(path)?;
+    if canonical.parent() != Some(fs::canonicalize(directory)?.as_path()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{description} escapes its directory"),
+        ));
+    }
+    Ok(())
 }
 
 pub fn ensure_file_exists(path: &Path) -> io::Result<()> {
@@ -1002,6 +1211,7 @@ mod tests {
             layout.profile_dir,
             BrowserProfileKind::Disposable,
             None,
+            None,
         );
 
         registry
@@ -1012,6 +1222,124 @@ mod tests {
         assert_eq!(records, vec![record]);
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn browser_registry_rejects_record_identity_drift_and_traversal_removal() {
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-registry-identity-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "lantern-browser-registry-victim-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserRegistry::new(&root);
+        let layout = registry
+            .create_instance_layout("safe-instance")
+            .expect("layout should be created");
+        let record = BrowserInstanceRecord::pending(
+            "../../victim".to_owned(),
+            "../../victim".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            layout.profile_dir,
+            BrowserProfileKind::Disposable,
+            None,
+            None,
+        );
+        fs::write(
+            root.join("safe-instance/record.json"),
+            serde_json::to_vec_pretty(&record).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), "keep").unwrap();
+
+        assert_eq!(
+            registry.list_records().unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            registry
+                .remove_instance_dir("../../victim")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(fs::read_to_string(outside.join("keep")).unwrap(), "keep");
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn browser_registry_rejects_symlink_paths_and_temporary_files() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-registry-symlink-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "lantern-browser-registry-symlink-outside-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, root.join("linked-instance")).unwrap();
+        let registry = BrowserRegistry::new(&root);
+        assert_eq!(
+            registry.list_records().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            registry
+                .remove_instance_dir("linked-instance")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        fs::remove_file(root.join("linked-instance")).unwrap();
+        let layout = registry
+            .create_instance_layout("safe-instance")
+            .expect("layout should be created");
+        let record = BrowserInstanceRecord::pending(
+            "safe-instance".to_owned(),
+            "safe-instance".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            layout.profile_dir,
+            BrowserProfileKind::Disposable,
+            None,
+            None,
+        );
+        let outside_file = outside.join("outside-record");
+        fs::write(&outside_file, "unchanged").unwrap();
+        symlink(&outside_file, root.join("safe-instance/record.json.tmp")).unwrap();
+        assert_eq!(
+            registry.write_record_atomic(&record).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read_to_string(&outside_file).unwrap(), "unchanged");
+        fs::remove_file(root.join("safe-instance/record.json.tmp")).unwrap();
+        registry.write_record_atomic(&record).unwrap();
+        let outside_record = outside.join("outside-valid-record");
+        fs::rename(root.join("safe-instance/record.json"), &outside_record).unwrap();
+        symlink(&outside_record, root.join("safe-instance/record.json")).unwrap();
+        assert_eq!(
+            registry.list_records().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
     }
 
     #[test]
@@ -1108,16 +1436,19 @@ mod tests {
             instance_id: "review-browser".to_owned(),
             container_name: "review-browser".to_owned(),
             runtime: RuntimeKind::Podman,
+            reservation_id: "reservation-first".to_owned(),
         };
         let second = BrowserProfileAttachment {
             instance_id: "other-browser".to_owned(),
             container_name: "other-browser".to_owned(),
             runtime: RuntimeKind::Docker,
+            reservation_id: "reservation-second".to_owned(),
         };
         let invalid = BrowserProfileAttachment {
             instance_id: "invalid-browser".to_owned(),
             container_name: "different-container".to_owned(),
             runtime: RuntimeKind::Podman,
+            reservation_id: "reservation-invalid".to_owned(),
         };
 
         assert_eq!(
@@ -1144,12 +1475,12 @@ mod tests {
         );
         assert!(
             !registry
-                .release_if_owner("review", "other-browser")
+                .release_if_owner("review", "other-browser", "reservation-second")
                 .expect("non-owner release should be a no-op")
         );
         assert!(
             registry
-                .release_if_owner("review", "review-browser")
+                .release_if_owner("review", "review-browser", "reservation-first")
                 .expect("owner should release")
         );
         registry
@@ -1158,6 +1489,73 @@ mod tests {
         assert!(!root.join("review").exists());
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn persistent_profile_reservation_token_prevents_same_identity_aba_release() {
+        use std::sync::{Arc, Barrier};
+
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-aba-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserProfileRegistry::new(&root);
+        registry.create("review").unwrap();
+        let initial = BrowserProfileAttachment {
+            instance_id: "review-browser".to_owned(),
+            container_name: "review-browser".to_owned(),
+            runtime: RuntimeKind::Podman,
+            reservation_id: "reservation-initial".to_owned(),
+        };
+        registry
+            .compare_and_swap_attachment("review", None, Some(initial.clone()))
+            .unwrap();
+
+        let barrier = Arc::new(Barrier::new(3));
+        let mut workers = Vec::new();
+        for suffix in ["one", "two"] {
+            let registry = registry.clone();
+            let barrier = Arc::clone(&barrier);
+            let initial = initial.clone();
+            workers.push(std::thread::spawn(move || {
+                let replacement = BrowserProfileAttachment {
+                    reservation_id: format!("reservation-{suffix}"),
+                    ..initial.clone()
+                };
+                barrier.wait();
+                registry.compare_and_swap_attachment("review", Some(&initial), Some(replacement))
+            }));
+        }
+        barrier.wait();
+        let results: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| result
+                    .as_ref()
+                    .is_err_and(|error| error.kind() == io::ErrorKind::WouldBlock))
+                .count(),
+            1
+        );
+        assert!(
+            !registry
+                .release_if_owner("review", &initial.instance_id, &initial.reservation_id)
+                .unwrap()
+        );
+        let winner = registry.read("review").unwrap().attachment.unwrap();
+        assert!(
+            registry
+                .release_if_owner("review", &winner.instance_id, &winner.reservation_id)
+                .unwrap()
+        );
+
+        registry.delete("review").unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
@@ -1229,6 +1627,7 @@ mod tests {
                 instance_id: "review-browser".to_owned(),
                 container_name: "different-container".to_owned(),
                 runtime: RuntimeKind::Podman,
+                reservation_id: "reservation-invalid".to_owned(),
             }),
             created_at_unix_ms: now_unix_ms(),
             updated_at_unix_ms: now_unix_ms(),
@@ -1242,6 +1641,39 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn persistent_profile_registry_does_not_follow_temporary_record_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-temp-symlink-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-temp-symlink-outside-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserProfileRegistry::new(&root);
+        let record = registry.create("review").unwrap();
+        fs::write(&outside, "unchanged").unwrap();
+        symlink(&outside, root.join("review/profile.json.tmp")).unwrap();
+
+        assert_eq!(
+            registry
+                .write_record_atomic_unlocked(&record)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "unchanged");
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_file(outside).unwrap();
     }
 
     #[test]

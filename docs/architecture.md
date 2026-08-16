@@ -36,7 +36,10 @@
   `$HOME/.local/state/lantern`
 - persistent profile directories are owner-private and contain Chromium-owned
   session state; Lantern metadata stores only the name, timestamps and bounded
-  current attachment, never extracted cookies, credentials or storage values
+  current attachment, including an opaque per-start reservation token, never
+  extracted cookies, credentials or storage values
+- instance identifiers and records are bound to direct, non-symlink children
+  of their registry roots before any recursive cleanup
 - product data should stay local-first by default
 - first-milestone commands should avoid durable product storage unless required
   for explicit operator configuration

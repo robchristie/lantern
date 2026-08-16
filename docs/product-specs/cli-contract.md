@@ -162,9 +162,14 @@ Persistent-profile behaviour:
 - profile data and persistent instance records live below that state home, not
   below the current repository
 - one starting or running browser may own a profile; a second owner fails
+- each start receives a unique reservation token; cleanup and release must
+  match that exact token rather than only the reusable instance name
 - a stopped owner may be recovered by a later start; a missing owner remains
   reserved for a bounded starting grace period before it is considered stale
-- stop releases the attachment while preserving Chromium data
+- stop first requests a graceful Chromium close over its loopback CDP channel,
+  falls back to the container stop when required, and releases the attachment
+  only after the runtime is positively stopped or absent
+- uncertain runtime state retains the reservation and fails closed
 - prune removes stopped instance/container records but never profile data
 - delete requires `--yes`, rejects an active profile, removes stopped managed
   instances for that profile, and recursively removes only the selected,

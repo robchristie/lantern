@@ -3051,6 +3051,27 @@ fn non_browser_commands_reject_persistent_profile_flag() {
     );
 }
 
+#[test]
+fn disposable_browser_list_does_not_require_a_persistent_state_home() {
+    let workdir = unique_temp_state_home("disposable-without-state-home");
+    fs::create_dir_all(&workdir).expect("temporary browser workdir should be created");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lantern"));
+    command.args(["browser", "list", "--json"]);
+    command.current_dir(&workdir);
+    command.env_remove("LANTERN_CDP_ENDPOINT");
+    command.env_remove("LANTERN_STATE_HOME");
+    command.env_remove("XDG_STATE_HOME");
+    command.env_remove("HOME");
+
+    let output = command.output().expect("lantern should run");
+
+    assert_success(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&output)).expect("browser list should return JSON");
+    assert_eq!(json["command"], "browser_list");
+    fs::remove_dir_all(workdir).expect("temporary browser workdir should be removed");
+}
+
 fn dom_document_response() -> &'static str {
     r##"{"id":1,"result":{"root":{"nodeId":1,"nodeType":9,"nodeName":"#document","localName":"","childNodeCount":1,"children":[{"nodeId":2,"nodeType":1,"nodeName":"HTML","localName":"html","attributes":["class","root shell"],"childNodeCount":1,"children":[{"nodeId":3,"nodeType":1,"nodeName":"BODY","localName":"body","attributes":["id","app","role","document","onclick","steal()","data-token","secret"],"childNodeCount":1,"children":[{"nodeId":5,"nodeType":1,"nodeName":"MAIN","localName":"main","attributes":["data-testid","dashboard","aria-label","Main panel","name","search","href","https://example.test/reset/abcdabcdabcdabcdabcdabcd?token=secret#frag","src","https://cdn.example.test/assets/app.js?version=123","title","Main title","password","hunter2","name","session"],"childNodeCount":2,"children":[{"nodeId":6,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"Dashboard"},{"nodeId":7,"nodeType":1,"nodeName":"SCRIPT","localName":"script","childNodeCount":1,"children":[{"nodeId":70,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"secretScript()"}]},{"nodeId":8,"nodeType":1,"nodeName":"SECTION","localName":"section","attributes":["data-cy","primary-section"],"childNodeCount":1,"children":[{"nodeId":9,"nodeType":1,"nodeName":"BUTTON","localName":"button","attributes":["data-test","save-button"],"childNodeCount":0}]}]}]}]}]}}}"##
 }

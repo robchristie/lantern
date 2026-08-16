@@ -107,6 +107,16 @@ is included.
   is not itself proof of absence. Persistent ownership is released or recovered
   only after a successful all-container listing proves the managed name is
   absent, or after explicit removal succeeds.
+- 2026-08-16: Repaired exact-head review findings by binding every instance
+  record and recursive removal to a validated direct registry child, adding a
+  unique per-start reservation token, preserving fresh starting reservations
+  during prune, retaining ownership on uncertain runtime state, rejecting
+  symlinked records and temporary files, and keeping disposable commands usable
+  without a configured persistent state home.
+- 2026-08-16: Added graceful `Browser.close` handling before persistent
+  container stop. The repeated rootless-Podman canary positively matched the
+  non-secret marker after stop, prune and restart; Chromium also restored the
+  prior page, so the second inspection selected that exact page target.
 
 ## Observations
 

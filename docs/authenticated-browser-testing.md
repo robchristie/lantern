@@ -44,7 +44,8 @@ lantern doctor --endpoint "$ENDPOINT"
 ```
 
 Stop and prune instance metadata after the check. Both commands preserve the
-profile:
+profile. Persistent stop asks Chromium to close cleanly before releasing the
+profile so session databases are flushed to the owner-private data directory:
 
 ```sh
 lantern browser stop geometis-review
