@@ -103,6 +103,10 @@ is included.
 - 2026-08-16: Forced a post-container-start readiness failure with a one
   millisecond timeout. Lantern removed the failed container before releasing
   the attachment, left the profile unattached and permitted explicit deletion.
+- 2026-08-16: Hardened missing-container resolution so a failed runtime inspect
+  is not itself proof of absence. Persistent ownership is released or recovered
+  only after a successful all-container listing proves the managed name is
+  absent, or after explicit removal succeeds.
 
 ## Observations
 

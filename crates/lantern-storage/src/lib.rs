@@ -782,6 +782,18 @@ pub fn browser_ps_managed_command(runtime: RuntimeKind) -> RuntimeCommand {
     )
 }
 
+pub fn browser_ps_all_command(runtime: RuntimeKind) -> RuntimeCommand {
+    RuntimeCommand::new(
+        runtime,
+        vec![
+            "ps".to_owned(),
+            "-a".to_owned(),
+            "--format".to_owned(),
+            "{{.Names}}".to_owned(),
+        ],
+    )
+}
+
 pub fn parse_runtime_status(value: &str) -> BrowserInstanceStatus {
     match value.trim() {
         "created" | "initialized" | "configured" => BrowserInstanceStatus::Starting,
@@ -1252,5 +1264,14 @@ mod tests {
         assert!(command.args.contains(&"127.0.0.1::9222".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::5900".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::6080".to_owned()));
+    }
+
+    #[test]
+    fn all_container_listing_is_unfiltered_for_missing_status_proof() {
+        let command = browser_ps_all_command(RuntimeKind::Podman);
+
+        assert_eq!(command.program, "podman");
+        assert_eq!(command.args, ["ps", "-a", "--format", "{{.Names}}"]);
+        assert!(!command.args.iter().any(|argument| argument == "--filter"));
     }
 }

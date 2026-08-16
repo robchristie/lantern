@@ -39,9 +39,9 @@ use lantern_storage::{
     BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment, BrowserProfileKind,
     BrowserProfileRecord, BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec,
     DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
-    browser_port_command, browser_ps_managed_command, browser_rm_command, browser_run_command,
-    browser_stop_command, generate_instance_id, instance_name, parse_published_port,
-    parse_runtime_status, validate_profile_name,
+    browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
+    browser_run_command, browser_stop_command, generate_instance_id, instance_name,
+    parse_published_port, parse_runtime_status, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -995,12 +995,8 @@ fn browser_start(
         let expected = profile.attachment.clone();
         let mut stale_containers = Vec::new();
         if let Some(attachment) = expected.as_ref() {
-            let status = run_runtime_command(
-                browser_inspect_status_command(attachment.runtime, &attachment.container_name),
-                false,
-            )
-            .map(|status| parse_runtime_status(&status))
-            .unwrap_or(BrowserInstanceStatus::Missing);
+            let status =
+                managed_runtime_status(attachment.runtime, &attachment.container_name, json)?;
             if matches!(
                 status,
                 BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
@@ -1039,12 +1035,7 @@ fn browser_start(
                     BROWSER_STATE_FAILED_HINT,
                 ));
             }
-            let status = run_runtime_command(
-                browser_inspect_status_command(existing.runtime, &existing.name),
-                false,
-            )
-            .map(|status| parse_runtime_status(&status))
-            .unwrap_or(BrowserInstanceStatus::Missing);
+            let status = managed_runtime_status(existing.runtime, &existing.name, json)?;
             if matches!(
                 status,
                 BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
@@ -1149,10 +1140,10 @@ fn browser_start(
                 let removed =
                     run_runtime_command(browser_rm_command(runtime, &name), false).is_ok();
                 removed
-                    || run_runtime_command(browser_inspect_status_command(runtime, &name), false)
+                    || managed_runtime_status(runtime, &name, false)
                         .map(|status| {
                             !matches!(
-                                parse_runtime_status(&status),
+                                status,
                                 BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
                             )
                         })
@@ -1273,7 +1264,9 @@ fn browser_status(
     let (registry, mut record) =
         find_browser_instance(disposable_registry, persistent_registry, id, json)?;
 
-    if let Ok(status) = run_runtime_command(
+    if record.profile_kind == BrowserProfileKind::Persistent {
+        record.status = managed_runtime_status(record.runtime, &record.name, json)?;
+    } else if let Ok(status) = run_runtime_command(
         browser_inspect_status_command(record.runtime, &record.name),
         json,
     ) {
@@ -1317,12 +1310,7 @@ fn browser_stop(
     let stop_result = run_runtime_command(browser_stop_command(record.runtime, &record.name), json);
     if record.profile_kind == BrowserProfileKind::Persistent {
         stop_result?;
-        let status = run_runtime_command(
-            browser_inspect_status_command(record.runtime, &record.name),
-            json,
-        )
-        .map(|status| parse_runtime_status(&status))
-        .unwrap_or(BrowserInstanceStatus::Missing);
+        let status = managed_runtime_status(record.runtime, &record.name, json)?;
         if matches!(
             status,
             BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
@@ -1401,12 +1389,16 @@ fn prune_browser_registry(
     let mut pruned = Vec::new();
 
     for record in records {
-        let status = run_runtime_command(
-            browser_inspect_status_command(record.runtime, &record.name),
-            json,
-        )
-        .map(|status| parse_runtime_status(&status))
-        .unwrap_or(BrowserInstanceStatus::Missing);
+        let status = if record.profile_kind == BrowserProfileKind::Persistent {
+            managed_runtime_status(record.runtime, &record.name, json)?
+        } else {
+            run_runtime_command(
+                browser_inspect_status_command(record.runtime, &record.name),
+                json,
+            )
+            .map(|status| parse_runtime_status(&status))
+            .unwrap_or(BrowserInstanceStatus::Missing)
+        };
 
         if matches!(
             status,
@@ -1566,12 +1558,7 @@ fn remove_stopped_profile_instances(
         .into_iter()
         .filter(|record| record.profile_name.as_deref() == Some(profile_name))
     {
-        let status = run_runtime_command(
-            browser_inspect_status_command(record.runtime, &record.name),
-            false,
-        )
-        .map(|status| parse_runtime_status(&status))
-        .unwrap_or(BrowserInstanceStatus::Missing);
+        let status = managed_runtime_status(record.runtime, &record.name, json)?;
         if matches!(
             status,
             BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
@@ -1682,6 +1669,26 @@ fn runtime_port(
             BROWSER_PORT_MISSING_HINT,
         )
     })
+}
+
+fn managed_runtime_status(
+    runtime: RuntimeKind,
+    name: &str,
+    json: bool,
+) -> Result<BrowserInstanceStatus, CliError> {
+    if let Ok(status) = run_runtime_command(browser_inspect_status_command(runtime, name), json) {
+        return Ok(parse_runtime_status(&status));
+    }
+    let names = run_runtime_command(browser_ps_all_command(runtime), json)?;
+    if names
+        .lines()
+        .map(str::trim)
+        .any(|candidate| candidate == name)
+    {
+        Ok(BrowserInstanceStatus::Error)
+    } else {
+        Ok(BrowserInstanceStatus::Missing)
+    }
 }
 
 fn wait_for_browser_ready(endpoint: &str, timeout: Duration, json: bool) -> Result<(), CliError> {
