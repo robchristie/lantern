@@ -329,6 +329,16 @@ pub struct BrowserProfileAttachment {
     pub runtime: RuntimeKind,
     #[serde(default)]
     pub reservation_id: String,
+    #[serde(default)]
+    pub state: BrowserProfileAttachmentState,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserProfileAttachmentState {
+    #[default]
+    Active,
+    Stopping,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1437,18 +1447,21 @@ mod tests {
             container_name: "review-browser".to_owned(),
             runtime: RuntimeKind::Podman,
             reservation_id: "reservation-first".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
         };
         let second = BrowserProfileAttachment {
             instance_id: "other-browser".to_owned(),
             container_name: "other-browser".to_owned(),
             runtime: RuntimeKind::Docker,
             reservation_id: "reservation-second".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
         };
         let invalid = BrowserProfileAttachment {
             instance_id: "invalid-browser".to_owned(),
             container_name: "different-container".to_owned(),
             runtime: RuntimeKind::Podman,
             reservation_id: "reservation-invalid".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
         };
 
         assert_eq!(
@@ -1507,6 +1520,7 @@ mod tests {
             container_name: "review-browser".to_owned(),
             runtime: RuntimeKind::Podman,
             reservation_id: "reservation-initial".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
         };
         registry
             .compare_and_swap_attachment("review", None, Some(initial.clone()))
@@ -1554,6 +1568,55 @@ mod tests {
                 .unwrap()
         );
 
+        registry.delete("review").unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stopping_reservation_blocks_a_same_identity_restart() {
+        let root = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-stopping-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let registry = BrowserProfileRegistry::new(&root);
+        registry.create("review").unwrap();
+        let active = BrowserProfileAttachment {
+            instance_id: "review-browser".to_owned(),
+            container_name: "review-browser".to_owned(),
+            runtime: RuntimeKind::Podman,
+            reservation_id: "reservation-active".to_owned(),
+            state: BrowserProfileAttachmentState::Active,
+        };
+        registry
+            .compare_and_swap_attachment("review", None, Some(active.clone()))
+            .unwrap();
+        let stopping = BrowserProfileAttachment {
+            state: BrowserProfileAttachmentState::Stopping,
+            ..active.clone()
+        };
+        registry
+            .compare_and_swap_attachment("review", Some(&active), Some(stopping.clone()))
+            .unwrap();
+        let restart = BrowserProfileAttachment {
+            reservation_id: "reservation-restart".to_owned(),
+            ..active.clone()
+        };
+
+        assert_eq!(
+            registry
+                .compare_and_swap_attachment("review", Some(&active), Some(restart))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(registry.read("review").unwrap().attachment, Some(stopping));
+
+        assert!(
+            registry
+                .release_if_owner("review", &active.instance_id, &active.reservation_id)
+                .unwrap()
+        );
         registry.delete("review").unwrap();
         fs::remove_dir_all(root).unwrap();
     }
@@ -1628,6 +1691,7 @@ mod tests {
                 container_name: "different-container".to_owned(),
                 runtime: RuntimeKind::Podman,
                 reservation_id: "reservation-invalid".to_owned(),
+                state: BrowserProfileAttachmentState::Active,
             }),
             created_at_unix_ms: now_unix_ms(),
             updated_at_unix_ms: now_unix_ms(),

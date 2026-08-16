@@ -36,13 +36,13 @@ use lantern_core::{
     },
 };
 use lantern_storage::{
-    BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment, BrowserProfileKind,
-    BrowserProfileRecord, BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec,
-    DEFAULT_BROWSER_IMAGE, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
-    browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
-    browser_run_command, browser_stop_command, generate_instance_id,
-    generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
-    validate_profile_name,
+    BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment,
+    BrowserProfileAttachmentState, BrowserProfileKind, BrowserProfileRecord,
+    BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec, DEFAULT_BROWSER_IMAGE, RuntimeCommand,
+    RuntimeKind, browser_inspect_status_command, browser_port_command, browser_ps_all_command,
+    browser_ps_managed_command, browser_rm_command, browser_run_command, browser_stop_command,
+    generate_instance_id, generate_profile_reservation_id, instance_name, parse_published_port,
+    parse_runtime_status, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -998,6 +998,14 @@ fn browser_start(
         let expected = profile.attachment.clone();
         let mut stale_containers = Vec::new();
         if let Some(attachment) = expected.as_ref() {
+            if attachment.state == BrowserProfileAttachmentState::Stopping {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
             let status =
                 managed_runtime_status(attachment.runtime, &attachment.container_name, json)?;
             if matches!(
@@ -1075,6 +1083,7 @@ fn browser_start(
             container_name: name.clone(),
             runtime,
             reservation_id: reservation_id.clone(),
+            state: BrowserProfileAttachmentState::Active,
         };
         profile_registry
             .compare_and_swap_attachment(profile_name, expected.as_ref(), Some(attachment.clone()))
@@ -1319,7 +1328,7 @@ fn browser_stop(
 
     let persistent_owner = if record.profile_kind == BrowserProfileKind::Persistent {
         let profile_registry = profile_registry.ok_or_else(|| browser_state_error(json))?;
-        let expected = profile_attachment_from_record(&record, json)?;
+        let expected_active = profile_attachment_from_record(&record, json)?;
         let profile_name = record
             .profile_name
             .as_deref()
@@ -1327,25 +1336,41 @@ fn browser_stop(
         let profile = profile_registry
             .read(profile_name)
             .map_err(|error| browser_profile_store_error(error, json))?;
-        if profile.attachment.as_ref() != Some(&expected) {
-            return Err(CliError::runtime(
-                json,
-                "browser_profile_in_use",
-                BROWSER_PROFILE_IN_USE_MESSAGE,
-                BROWSER_PROFILE_IN_USE_HINT,
-            ));
-        }
-        Some(expected)
+        let stopping_owner = match profile.attachment.as_ref() {
+            Some(current) if current == &expected_active => {
+                let mut stopping = current.clone();
+                stopping.state = BrowserProfileAttachmentState::Stopping;
+                profile_registry
+                    .compare_and_swap_attachment(
+                        profile_name,
+                        Some(current),
+                        Some(stopping.clone()),
+                    )
+                    .map_err(|error| browser_profile_store_error(error, json))?;
+                stopping
+            }
+            Some(current)
+                if current.state == BrowserProfileAttachmentState::Stopping
+                    && same_profile_reservation(current, &expected_active) =>
+            {
+                current.clone()
+            }
+            _ => {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
+        };
+        Some(stopping_owner)
     } else {
         None
     };
 
     let initial_persistent_status = if record.profile_kind == BrowserProfileKind::Persistent {
-        Some(managed_runtime_status(
-            record.runtime,
-            &record.name,
-            json,
-        )?)
+        Some(managed_runtime_status(record.runtime, &record.name, json)?)
     } else {
         None
     };
@@ -1467,6 +1492,11 @@ fn prune_browser_registry(
             let profile = profile_registry
                 .read(profile_name)
                 .map_err(|error| browser_profile_store_error(error, json))?;
+            if profile.attachment.as_ref().is_some_and(|attachment| {
+                attachment.state == BrowserProfileAttachmentState::Stopping
+            }) {
+                continue;
+            }
             if profile
                 .attachment
                 .as_ref()
@@ -2055,7 +2085,18 @@ fn profile_attachment_from_record(
         container_name: record.name.clone(),
         runtime: record.runtime,
         reservation_id,
+        state: BrowserProfileAttachmentState::Active,
     })
+}
+
+fn same_profile_reservation(
+    left: &BrowserProfileAttachment,
+    right: &BrowserProfileAttachment,
+) -> bool {
+    left.instance_id == right.instance_id
+        && left.container_name == right.container_name
+        && left.runtime == right.runtime
+        && left.reservation_id == right.reservation_id
 }
 
 fn browser_state_error(json: bool) -> CliError {

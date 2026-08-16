@@ -113,6 +113,10 @@ is included.
   during prune, retaining ownership on uncertain runtime state, rejecting
   symlinked records and temporary files, and keeping disposable commands usable
   without a configured persistent state home.
+- 2026-08-16: Closed the stop/restart hand-off by atomically moving the exact
+  reservation to a `stopping` state before requesting browser shutdown. A
+  concurrent same-name recovery cannot acquire that reservation until stop has
+  positively completed and released it.
 - 2026-08-16: Added graceful `Browser.close` handling before persistent
   container stop. The repeated rootless-Podman canary positively matched the
   non-secret marker after stop, prune and restart; Chromium also restored the

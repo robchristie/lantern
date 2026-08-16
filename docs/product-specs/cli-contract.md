@@ -164,6 +164,8 @@ Persistent-profile behaviour:
 - one starting or running browser may own a profile; a second owner fails
 - each start receives a unique reservation token; cleanup and release must
   match that exact token rather than only the reusable instance name
+- stop atomically changes the exact reservation to `stopping` before Chromium
+  exits, so a same-name restart cannot acquire the profile during shutdown
 - a stopped owner may be recovered by a later start; a missing owner remains
   reserved for a bounded starting grace period before it is considered stale
 - stop first requests a graceful Chromium close over its loopback CDP channel,
