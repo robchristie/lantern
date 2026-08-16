@@ -166,8 +166,9 @@ Persistent-profile behaviour:
   reserved for a bounded starting grace period before it is considered stale
 - stop releases the attachment while preserving Chromium data
 - prune removes stopped instance/container records but never profile data
-- delete requires `--yes`, rejects an attached profile, and recursively removes
-  only the selected, root-contained persistent profile
+- delete requires `--yes`, rejects an active profile, removes stopped managed
+  instances for that profile, and recursively removes only the selected,
+  root-contained persistent profile
 
 Human output should include the id, status, runtime, endpoint, noVNC URL when
 available, and profile path. JSON output shape for single-instance commands:

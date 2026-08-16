@@ -831,6 +831,7 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
         ),
         BrowserCommand::Profile => run_browser_profile_invocation(
             profile_registry.expect("profile state resolved for profile command"),
+            persistent_registry.expect("persistent state resolved for profile command"),
             invocation
                 .browser_profile_command
                 .expect("profile subcommand checked before run"),
@@ -1467,6 +1468,7 @@ fn find_browser_instance<'a>(
 
 fn run_browser_profile_invocation(
     registry: &BrowserProfileRegistry,
+    persistent_registry: &BrowserRegistry,
     command: BrowserProfileCommand,
     profile_name: Option<String>,
     confirm: bool,
@@ -1522,6 +1524,20 @@ fn run_browser_profile_invocation(
                     BROWSER_PROFILE_DELETE_CONFIRM_HINT,
                 ));
             }
+            if registry
+                .read(&name)
+                .map_err(|error| browser_profile_store_error(error, json))?
+                .attachment
+                .is_some()
+            {
+                return Err(CliError::runtime(
+                    json,
+                    "browser_profile_in_use",
+                    BROWSER_PROFILE_IN_USE_MESSAGE,
+                    BROWSER_PROFILE_IN_USE_HINT,
+                ));
+            }
+            remove_stopped_profile_instances(persistent_registry, &name, json)?;
             registry
                 .delete(&name)
                 .map_err(|error| browser_profile_store_error(error, json))?;
@@ -1537,6 +1553,44 @@ fn run_browser_profile_invocation(
             Ok(())
         }
     }
+}
+
+fn remove_stopped_profile_instances(
+    persistent_registry: &BrowserRegistry,
+    profile_name: &str,
+    json: bool,
+) -> Result<(), CliError> {
+    for record in persistent_registry
+        .list_records()
+        .map_err(|_| browser_state_error(json))?
+        .into_iter()
+        .filter(|record| record.profile_name.as_deref() == Some(profile_name))
+    {
+        let status = run_runtime_command(
+            browser_inspect_status_command(record.runtime, &record.name),
+            false,
+        )
+        .map(|status| parse_runtime_status(&status))
+        .unwrap_or(BrowserInstanceStatus::Missing);
+        if matches!(
+            status,
+            BrowserInstanceStatus::Starting | BrowserInstanceStatus::Running
+        ) {
+            return Err(CliError::runtime(
+                json,
+                "browser_profile_in_use",
+                BROWSER_PROFILE_IN_USE_MESSAGE,
+                BROWSER_PROFILE_IN_USE_HINT,
+            ));
+        }
+        if status != BrowserInstanceStatus::Missing {
+            run_runtime_command(browser_rm_command(record.runtime, &record.name), json)?;
+        }
+        persistent_registry
+            .remove_instance_dir(&record.id)
+            .map_err(|_| browser_state_error(json))?;
+    }
+    Ok(())
 }
 
 fn write_browser_profile_output(
@@ -4029,6 +4083,7 @@ mod tests {
         validate_browser_invocation(&delete).expect("shape should validate before execution");
         let error = run_browser_profile_invocation(
             &BrowserProfileRegistry::new("/tmp/not-used"),
+            &BrowserRegistry::new("/tmp/not-used-instances"),
             BrowserProfileCommand::Delete,
             Some("geometis-review".to_owned()),
             false,

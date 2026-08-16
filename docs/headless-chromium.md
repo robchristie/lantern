@@ -230,8 +230,9 @@ container restarts therefore do not require another login while the service's
 own session remains valid. Lantern does not extend, refresh, inspect or bypass
 that service session.
 
-Retire the profile only after stopping it. Use the explicit confirmation flag;
-if server-side revocation matters, log out in the visible browser first:
+Retire the profile only after stopping it. The confirmed delete also removes
+stopped managed instance/container state for that profile. If server-side
+revocation matters, log out in the visible browser first:
 
 ```sh
 lantern browser profile delete geometis-review --yes
