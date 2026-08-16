@@ -9,6 +9,7 @@ use std::{
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub const DEFAULT_BROWSER_IMAGE: &str = "localhost/lantern-browser-cdp:stable";
 pub const INSTANCE_ROOT: &str = ".smoogle/lantern/browser-instances";
@@ -485,6 +486,10 @@ impl BrowserProfileRegistry {
         Ok(data_dir)
     }
 
+    pub fn persistent_instance_id(&self, name: &str) -> io::Result<String> {
+        persistent_instance_id(&self.root, name)
+    }
+
     pub fn try_operation_lock(&self, name: &str) -> io::Result<BrowserProfileOperationLock> {
         validate_profile_name(name)?;
         ensure_private_directory(&self.root)?;
@@ -682,7 +687,7 @@ impl Drop for ProfileRegistryLock {
 
 pub fn validate_profile_name(name: &str) -> io::Result<()> {
     let valid = !name.is_empty()
-        && name.len() <= 64
+        && name.len() <= 47
         && name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
@@ -696,9 +701,25 @@ pub fn validate_profile_name(name: &str) -> io::Result<()> {
     }
 }
 
-pub fn persistent_instance_id(profile_name: &str) -> io::Result<String> {
+pub fn persistent_instance_id(profile_root: &Path, profile_name: &str) -> io::Result<String> {
     validate_profile_name(profile_name)?;
-    Ok(format!("{PERSISTENT_INSTANCE_ID_PREFIX}{profile_name}"))
+    let canonical_root = fs::canonicalize(profile_root)?;
+    let mut hasher = Sha256::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        hasher.update(canonical_root.as_os_str().as_bytes());
+    }
+    #[cfg(not(unix))]
+    hasher.update(canonical_root.to_string_lossy().as_bytes());
+    let digest = hasher.finalize();
+    let namespace = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(format!(
+        "{PERSISTENT_INSTANCE_ID_PREFIX}{namespace}-{profile_name}"
+    ))
 }
 
 pub fn validate_instance_id(id: &str) -> io::Result<()> {
@@ -1500,7 +1521,14 @@ mod tests {
         ));
         let registry = BrowserProfileRegistry::new(&root);
 
-        for name in ["", "../escape", "daily profile", ".", "profile/name"] {
+        for name in [
+            "",
+            "../escape",
+            "daily profile",
+            ".",
+            "profile/name",
+            "a23456789012345678901234567890123456789012345678",
+        ] {
             assert_eq!(
                 registry.create(name).unwrap_err().kind(),
                 io::ErrorKind::InvalidInput
@@ -1515,6 +1543,30 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn persistent_instance_ids_are_stable_and_namespaced_by_state_root() {
+        let base = std::env::temp_dir().join(format!(
+            "lantern-browser-profile-instance-id-test-{}-{}",
+            now_unix_ms(),
+            std::process::id()
+        ));
+        let first = BrowserProfileRegistry::new(base.join("first/browser-profiles"));
+        let second = BrowserProfileRegistry::new(base.join("second/browser-profiles"));
+        first.create("review").unwrap();
+        second.create("review").unwrap();
+
+        let first_id = first.persistent_instance_id("review").unwrap();
+        let second_id = second.persistent_instance_id("review").unwrap();
+        assert_eq!(first_id, first.persistent_instance_id("review").unwrap());
+        assert_ne!(first_id, second_id);
+        assert!(first_id.starts_with(PERSISTENT_INSTANCE_ID_PREFIX));
+        assert!(second_id.starts_with(PERSISTENT_INSTANCE_ID_PREFIX));
+        assert!(first_id.len() <= 80);
+        assert!(second_id.len() <= 80);
+
+        fs::remove_dir_all(base).expect("test registries should be removed");
     }
 
     #[test]

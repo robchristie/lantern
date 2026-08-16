@@ -153,12 +153,17 @@ Persistent-profile behaviour:
 
 - a profile must first be created explicitly with
   `browser profile create <NAME>`
-- `browser start --profile <NAME>` defaults the instance id to the reserved
-  `lantern-profile-<NAME>` identity and rejects a different `--id`; disposable
-  starts cannot use that prefix, preventing profile/disposable locks from
-  claiming the same global instance/container identity
+- `browser start --profile <NAME>` derives the instance id as
+  `lantern-profile-<STATE-DIGEST>-<NAME>` from the canonical state root and
+  profile name; `--id` is not accepted with `--profile`, and disposable starts
+  cannot use the reserved prefix
+- the state-root digest keeps otherwise identical profile names in separate
+  supported state homes from claiming the same global container identity;
+  an unowned existing reserved record or runtime fails closed for upgrade
+  safety rather than being replaced
 - profile names are bounded identifiers containing only ASCII letters, numbers,
-  hyphen and underscore; they are never interpreted as paths
+  hyphen and underscore, with a maximum of 47 characters; they are never
+  interpreted as paths
 - state resolves from absolute `LANTERN_STATE_HOME`, then
   `XDG_STATE_HOME/lantern`, then `$HOME/.local/state/lantern`
 - profile data and persistent instance records live below that state home, not

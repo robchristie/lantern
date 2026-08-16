@@ -3020,15 +3020,18 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
         lantern_storage::BrowserProfileRegistry::new(state_home.join("browser-profiles"));
     let persistent_registry =
         lantern_storage::BrowserRegistry::new(state_home.join("browser-instances"));
+    let status_id = profile_registry
+        .persistent_instance_id("geometis-review")
+        .expect("persistent instance id should resolve");
     let profile_data = profile_registry
         .data_dir("geometis-review")
         .expect("profile data should resolve");
     let layout = persistent_registry
-        .create_persistent_instance_layout("lantern-profile-geometis-review", profile_data)
+        .create_persistent_instance_layout(&status_id, profile_data)
         .expect("persistent instance layout should be created");
     let status_record = lantern_storage::BrowserInstanceRecord::pending(
-        "lantern-profile-geometis-review".to_owned(),
-        "lantern-profile-geometis-review".to_owned(),
+        status_id.clone(),
+        status_id.clone(),
         lantern_storage::RuntimeKind::Podman,
         lantern_storage::DEFAULT_BROWSER_IMAGE.to_owned(),
         layout.profile_dir,
@@ -3043,12 +3046,7 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
         .try_operation_lock("geometis-review")
         .expect("profile lifecycle should be lockable");
     let concurrent_status = lantern_with_state(
-        [
-            "browser",
-            "status",
-            "lantern-profile-geometis-review",
-            "--json",
-        ],
+        ["browser", "status", status_id.as_str(), "--json"],
         &state_home,
     );
     assert!(!concurrent_status.status.success());
@@ -3079,7 +3077,7 @@ fn browser_profile_cli_lifecycle_is_explicit_and_private() {
         "browser_profile_in_use"
     );
     persistent_registry
-        .remove_instance_dir("lantern-profile-geometis-review")
+        .remove_instance_dir(&status_id)
         .expect("status fixture should be removed");
     drop(operation_lock);
 

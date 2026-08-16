@@ -43,7 +43,7 @@ use lantern_storage::{
     browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
     browser_run_command, browser_stop_command, generate_instance_id,
     generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
-    persistent_instance_id, validate_profile_name,
+    validate_profile_name,
 };
 use serde::Serialize;
 
@@ -905,17 +905,11 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
     if command == BrowserCommand::Start {
         if let Some(name) = invocation.browser_profile_name.as_deref() {
             validate_browser_profile_name(name, invocation.json)?;
-            let expected_id =
-                persistent_instance_id(name).map_err(|_| browser_state_error(invocation.json))?;
-            if invocation
-                .browser_id
-                .as_deref()
-                .is_some_and(|browser_id| browser_id != expected_id)
-            {
+            if invocation.browser_id.is_some() {
                 return Err(CliError::usage(
                     invocation.json,
-                    "A persistent browser id must use its reserved profile identity.",
-                    "Omit --id or use the lantern-profile-<NAME> id returned by start.",
+                    "Persistent browser ids are derived from the profile and state home.",
+                    "Omit --id when using --profile.",
                 ));
             }
         } else if invocation
@@ -1008,10 +1002,11 @@ fn browser_start(
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
     let id = if let Some(profile_name) = profile_name.as_deref() {
-        requested_id.unwrap_or_else(|| {
-            persistent_instance_id(profile_name)
-                .expect("validated profile name has a persistent instance id")
-        })
+        debug_assert!(requested_id.is_none());
+        profile_registry
+            .expect("profile state resolved for named profile start")
+            .persistent_instance_id(profile_name)
+            .map_err(|error| browser_profile_store_error(error, json))?
     } else {
         requested_id.unwrap_or_else(generate_instance_id)
     };
@@ -1076,35 +1071,63 @@ fn browser_start(
             }
         }
 
-        if let Ok(existing) = persistent_registry.read_record(&id) {
-            if existing.profile_name.as_deref() != Some(profile_name) {
-                return Err(CliError::runtime(
-                    json,
-                    "browser_state_failed",
-                    BROWSER_STATE_FAILED_MESSAGE,
-                    BROWSER_STATE_FAILED_HINT,
-                ));
+        let known_persistent_record = match persistent_registry.read_record(&id) {
+            Ok(existing) => {
+                if existing.profile_name.as_deref() != Some(profile_name) {
+                    return Err(CliError::runtime(
+                        json,
+                        "browser_state_failed",
+                        BROWSER_STATE_FAILED_MESSAGE,
+                        BROWSER_STATE_FAILED_HINT,
+                    ));
+                }
+                let status = managed_runtime_status(existing.runtime, &existing.name, json)?;
+                if matches!(
+                    status,
+                    BrowserInstanceStatus::Starting
+                        | BrowserInstanceStatus::Running
+                        | BrowserInstanceStatus::Error
+                ) {
+                    return Err(CliError::runtime(
+                        json,
+                        "browser_profile_in_use",
+                        BROWSER_PROFILE_IN_USE_MESSAGE,
+                        BROWSER_PROFILE_IN_USE_HINT,
+                    ));
+                }
+                if status != BrowserInstanceStatus::Missing
+                    && !stale_containers
+                        .iter()
+                        .any(|(_, name)| name == &existing.name)
+                {
+                    stale_containers.push((existing.runtime, existing.name));
+                }
+                true
             }
-            let status = managed_runtime_status(existing.runtime, &existing.name, json)?;
-            if matches!(
-                status,
-                BrowserInstanceStatus::Starting
-                    | BrowserInstanceStatus::Running
-                    | BrowserInstanceStatus::Error
-            ) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => return Err(browser_state_error(json)),
+        };
+
+        if expected.is_none() && !known_persistent_record {
+            match disposable_registry.read_record(&id) {
+                Ok(_) => {
+                    return Err(CliError::runtime(
+                        json,
+                        "browser_profile_in_use",
+                        BROWSER_PROFILE_IN_USE_MESSAGE,
+                        BROWSER_PROFILE_IN_USE_HINT,
+                    ));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(browser_state_error(json)),
+            }
+            if managed_runtime_status(runtime, &name, json)? != BrowserInstanceStatus::Missing {
                 return Err(CliError::runtime(
                     json,
                     "browser_profile_in_use",
                     BROWSER_PROFILE_IN_USE_MESSAGE,
                     BROWSER_PROFILE_IN_USE_HINT,
                 ));
-            }
-            if status != BrowserInstanceStatus::Missing
-                && !stale_containers
-                    .iter()
-                    .any(|(_, name)| name == &existing.name)
-            {
-                stale_containers.push((existing.runtime, existing.name));
             }
         }
 
@@ -3046,7 +3069,7 @@ Screenshot flags:
 Browser lifecycle flags:
   --runtime <NAME>  Container runtime for browser start: podman or docker
   --image <IMAGE>   Container image for browser start
-  --id <ID>         Optional browser id; persistent ids use lantern-profile-NAME
+  --id <ID>         Optional disposable browser id; persistent ids are derived
   --wait-ms <MS>    Browser start readiness timeout
   --profile <NAME>  Existing persistent profile selected only for browser start
   --yes             Confirm explicit browser profile deletion
@@ -4344,8 +4367,6 @@ mod tests {
             "start".to_string(),
             "--profile".to_string(),
             "geometis-review".to_string(),
-            "--id".to_string(),
-            "lantern-profile-geometis-review".to_string(),
         ])
         .expect("persistent browser start should parse");
 
@@ -4354,15 +4375,12 @@ mod tests {
             invocation.browser_profile_name.as_deref(),
             Some("geometis-review")
         );
-        assert_eq!(
-            invocation.browser_id.as_deref(),
-            Some("lantern-profile-geometis-review")
-        );
+        assert_eq!(invocation.browser_id, None);
         validate_browser_invocation(&invocation).expect("persistent start should validate");
     }
 
     #[test]
-    fn persistent_browser_id_must_match_its_profile_name() {
+    fn persistent_browser_id_cannot_be_overridden() {
         let invocation = Invocation::parse([
             "browser".to_string(),
             "start".to_string(),
@@ -4378,7 +4396,7 @@ mod tests {
         assert_eq!(error.exit_code, 2);
         assert_eq!(
             error.message,
-            "A persistent browser id must use its reserved profile identity."
+            "Persistent browser ids are derived from the profile and state home."
         );
 
         let disposable = Invocation::parse([

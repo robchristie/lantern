@@ -38,8 +38,8 @@ login state.
 For later checks:
 
 ```sh
-lantern browser start --profile geometis-review
-ENDPOINT="$(lantern browser endpoint lantern-profile-geometis-review --json | jq -r .instance.endpoint)"
+ID="$(lantern browser start --profile geometis-review --json | jq -r .instance.id)"
+ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT"
 ```
 
@@ -48,7 +48,7 @@ profile. Persistent stop asks Chromium to close cleanly before releasing the
 profile so session databases are flushed to the owner-private data directory:
 
 ```sh
-lantern browser stop lantern-profile-geometis-review
+lantern browser stop "$ID"
 lantern browser prune
 lantern browser profile status geometis-review
 ```
