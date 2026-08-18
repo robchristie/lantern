@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lantern persistent profile canary</title>
+  </head>
+  <body>
+    <main>
+      <h1>Persistent profile canary</h1>
+      <label for="marker">Marker</label>
+      <input id="marker" name="marker" />
+      <button id="save" type="button">Save marker</button>
+      <output id="retained-marker">unset</output>
+    </main>
+    <script>
+      const input = document.querySelector("#marker");
+      const output = document.querySelector("#retained-marker");
+      const render = () => {
+        output.textContent = localStorage.getItem("lantern-profile-canary") ?? "unset";
+      };
+      document.querySelector("#save").addEventListener("click", () => {
+        localStorage.setItem("lantern-profile-canary", input.value);
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>

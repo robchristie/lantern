@@ -19,6 +19,42 @@ Use this workflow for smoke testing against a dedicated browser profile, such as
 
 ## Dedicated Profile Setup
 
+### Lantern-managed persistent profile
+
+For repeated managed-browser journeys, prefer Lantern's explicit named profile
+instead of a temporary profile under a source checkout:
+
+```sh
+lantern browser profile create geometis-review
+lantern browser start --profile geometis-review
+```
+
+Open the returned noVNC URL and log into the dedicated test account manually.
+This is the only expected interactive login until the service expires or
+revokes the session. Lantern stores the Chromium profile privately outside the
+source checkout; it does not store the password, extract cookies, or determine
+login state.
+
+For later checks:
+
+```sh
+ID="$(lantern browser start --profile geometis-review --json | jq -r .instance.id)"
+ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
+lantern doctor --endpoint "$ENDPOINT"
+```
+
+Stop and prune instance metadata after the check. Both commands preserve the
+profile. Persistent stop asks Chromium to close cleanly before releasing the
+profile so session databases are flushed to the owner-private data directory:
+
+```sh
+lantern browser stop "$ID"
+lantern browser prune
+lantern browser profile status geometis-review
+```
+
+### Operator-managed profile
+
 Create a profile directory that is not your normal browser profile:
 
 ```sh
@@ -118,10 +154,18 @@ Default output is safer for transcripts than `--no-redact`, but it is not a guar
 
 ## Cleanup
 
-After the smoke test:
+For an operator-managed temporary profile, after the smoke test:
 
 ```sh
 rm -rf /tmp/lantern-auth-profile
 ```
 
 Only delete the dedicated profile after confirming it is not a daily browser profile. If the profile contains a real account session, log out manually before deleting it when the service requires server-side session revocation.
+
+For a Lantern-managed persistent profile, ordinary cleanup is only stop plus
+prune. To retire it permanently, log out manually when required, stop its
+browser, then use:
+
+```sh
+lantern browser profile delete geometis-review --yes
+```

@@ -38,6 +38,20 @@ impl CdpClient {
         self.get_json("json/list")
     }
 
+    pub fn close_browser(&self) -> Result<(), CdpError> {
+        let version = self.browser_version()?;
+        let web_socket_debugger_url =
+            version
+                .web_socket_debugger_url
+                .ok_or_else(|| CdpError::ResponseInvalid {
+                    context: "CDP browser version omitted its browser WebSocket URL",
+                    source: "webSocketDebuggerUrl is missing".to_owned(),
+                })?;
+        let mut socket = CdpWebSocket::connect(&web_socket_debugger_url)?;
+        socket.call("Browser.close", None)?;
+        Ok(())
+    }
+
     fn get_json<T>(&self, path: &str) -> Result<T, CdpError>
     where
         T: for<'de> Deserialize<'de>,
@@ -534,6 +548,53 @@ mod tests {
             .expect("command should complete");
 
         assert_eq!(result["targetInfo"]["targetId"], "ABC");
+        handle.join().expect("fixture should finish");
+    }
+
+    #[test]
+    fn cdp_client_requests_a_graceful_browser_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (mut http_stream, _) = listener.accept().expect("fixture should accept HTTP");
+            let mut buffer = [0_u8; 1024];
+            let bytes = http_stream
+                .read(&mut buffer)
+                .expect("fixture should read HTTP");
+            let request = String::from_utf8_lossy(&buffer[..bytes]);
+            assert!(request.starts_with("GET /json/version HTTP/1.1"));
+            let body = format!(
+                r#"{{"Browser":"Chrome/123.0.0.0","webSocketDebuggerUrl":"ws://{address}/devtools/browser/fixture"}}"#
+            );
+            write!(
+                http_stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("fixture should write HTTP");
+            drop(http_stream);
+
+            let (stream, _) = listener.accept().expect("fixture should accept WebSocket");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+            let message = socket
+                .read()
+                .expect("fixture should read close command")
+                .into_text()
+                .expect("command should be text");
+            assert!(message.contains(r#""method":"Browser.close""#));
+            socket
+                .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write close response");
+        });
+
+        let endpoint = ResolvedEndpoint {
+            source: EndpointSource::Flag,
+            display: format!("http://{address}"),
+        };
+        CdpClient::new(endpoint)
+            .close_browser()
+            .expect("browser close should complete");
         handle.join().expect("fixture should finish");
     }
 
