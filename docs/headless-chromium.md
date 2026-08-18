@@ -212,7 +212,9 @@ source checkout under the operator's private Lantern state home:
 
 ```sh
 lantern browser profile create geometis-review
-lantern browser start --profile geometis-review
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
 lantern browser profile status geometis-review
 ```
 
@@ -243,7 +245,9 @@ the browser after inspection and restart the same profile later:
 ID="$(lantern browser profile status geometis-review --json | jq -r .profile.attached_instance_id)"
 lantern browser stop "$ID"
 lantern browser prune
-lantern browser start --profile geometis-review
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
 ```
 
 `stop` and `prune` preserve persistent Chromium state. Ordinary application or

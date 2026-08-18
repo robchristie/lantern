@@ -39,11 +39,11 @@ use lantern_storage::{
     BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment,
     BrowserProfileAttachmentState, BrowserProfileKind, BrowserProfileRecord,
     BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec, DEFAULT_BROWSER_IMAGE,
-    PERSISTENT_INSTANCE_ID_PREFIX, RuntimeCommand, RuntimeKind, browser_inspect_status_command,
-    browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
-    browser_run_command, browser_stop_command, generate_instance_id,
-    generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
-    validate_host_gateway_hostname, validate_profile_name,
+    HostGatewayHostname, PERSISTENT_INSTANCE_ID_PREFIX, RuntimeCommand, RuntimeKind,
+    browser_inspect_status_command, browser_port_command, browser_ps_all_command,
+    browser_ps_managed_command, browser_rm_command, browser_run_command, browser_stop_command,
+    generate_instance_id, generate_profile_reservation_id, instance_name, parse_published_port,
+    parse_runtime_status, validate_host_gateway_hostname, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -1188,6 +1188,16 @@ fn browser_start(
         profile_reservation_id.clone(),
     );
     record.host_gateway = host_gateway.clone();
+    let runtime_host_gateway = host_gateway
+        .map(HostGatewayHostname::parse)
+        .transpose()
+        .map_err(|_| {
+            CliError::usage(
+                json,
+                BROWSER_HOST_GATEWAY_INVALID_MESSAGE,
+                BROWSER_HOST_GATEWAY_INVALID_HINT,
+            )
+        })?;
     let mut runtime_attempted = false;
     let start_result = (|| {
         registry
@@ -1199,7 +1209,7 @@ fn browser_start(
             image,
             profile_dir: layout.profile_dir,
             profile_name: profile_name.clone(),
-            host_gateway,
+            host_gateway: runtime_host_gateway,
         };
         runtime_attempted = true;
         let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;

@@ -57,13 +57,16 @@ PROFILE=geometis-review
 lantern browser profile status "$PROFILE" --json >/dev/null 2>&1 || \
   lantern browser profile create "$PROFILE" --json
 
-ID="$(lantern browser start --profile "$PROFILE" --json | jq -r .instance.id)"
+ID="$(lantern browser start \
+  --profile "$PROFILE" \
+  --host-gateway lv426.yutani.tech \
+  --json | jq -r .instance.id)"
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-When the inspected application uses a local public hostname that is not
-reachable through the rootless container's ordinary DNS route, add the exact
+For another inspected application whose local public hostname is not reachable
+through the rootless container's ordinary DNS route, replace that exact
 validated name on every start:
 
 ```bash

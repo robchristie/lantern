@@ -51,7 +51,10 @@ login state.
 For later checks:
 
 ```sh
-ID="$(lantern browser start --profile geometis-review --json | jq -r .instance.id)"
+ID="$(lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test \
+  --json | jq -r .instance.id)"
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT"
 ```

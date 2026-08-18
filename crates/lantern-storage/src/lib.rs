@@ -829,6 +829,7 @@ pub fn validate_host_gateway_hostname(hostname: &str) -> io::Result<()> {
         || hostname.len() > 253
         || !hostname.is_ascii()
         || hostname.parse::<IpAddr>().is_ok()
+        || looks_like_legacy_ipv4(hostname)
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -852,6 +853,34 @@ pub fn validate_host_gateway_hostname(hostname: &str) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn looks_like_legacy_ipv4(hostname: &str) -> bool {
+    hostname.split('.').all(|component| {
+        !component.is_empty()
+            && (component.bytes().all(|byte| byte.is_ascii_digit())
+                || component
+                    .strip_prefix("0x")
+                    .or_else(|| component.strip_prefix("0X"))
+                    .is_some_and(|digits| {
+                        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    }))
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostGatewayHostname(String);
+
+impl HostGatewayHostname {
+    pub fn parse(hostname: impl Into<String>) -> io::Result<Self> {
+        let hostname = hostname.into().to_ascii_lowercase();
+        validate_host_gateway_hostname(&hostname)?;
+        Ok(Self(hostname))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -935,7 +964,7 @@ pub struct BrowserRunSpec {
     pub image: String,
     pub profile_dir: PathBuf,
     pub profile_name: Option<String>,
-    pub host_gateway: Option<String>,
+    pub host_gateway: Option<HostGatewayHostname>,
 }
 
 pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> RuntimeCommand {
@@ -978,7 +1007,10 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
     if let Some(hostname) = &spec.host_gateway {
         args.splice(
             args.len() - 1..args.len() - 1,
-            ["--add-host".to_owned(), format!("{hostname}:host-gateway")],
+            [
+                "--add-host".to_owned(),
+                format!("{}:host-gateway", hostname.as_str()),
+            ],
         );
     }
 
@@ -1285,7 +1317,10 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: PathBuf::from("/tmp/lantern-profile"),
             profile_name: None,
-            host_gateway: Some("lv426.yutani.tech".to_owned()),
+            host_gateway: Some(
+                HostGatewayHostname::parse("lv426.yutani.tech")
+                    .expect("host gateway should validate"),
+            ),
         };
 
         for runtime in [RuntimeKind::Podman, RuntimeKind::Docker] {
@@ -1310,6 +1345,11 @@ mod tests {
         for invalid in [
             "",
             "127.0.0.1",
+            "127.1",
+            "127.0.1",
+            "2130706433",
+            "0177.0.0.1",
+            "0x7f000001",
             "http://app.example.test",
             "app_example.test",
             ".example.test",
@@ -1324,6 +1364,12 @@ mod tests {
         }
         assert!(validate_host_gateway_hostname(&format!("{}.test", "a".repeat(64))).is_err());
         assert!(validate_host_gateway_hostname(&format!("{}.test", "a".repeat(249))).is_err());
+        assert_eq!(
+            HostGatewayHostname::parse("LV426.YUTANI.TECH")
+                .expect("hostname should canonicalise")
+                .as_str(),
+            "lv426.yutani.tech"
+        );
     }
 
     #[test]
@@ -1390,6 +1436,31 @@ mod tests {
         assert_eq!(records, vec![record]);
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn legacy_instance_record_without_host_gateway_remains_readable() {
+        let record = BrowserInstanceRecord::pending(
+            "lantern-browser-test".to_owned(),
+            "lantern-browser-test".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            PathBuf::from("/tmp/lantern-profile"),
+            BrowserProfileKind::Disposable,
+            None,
+            None,
+        );
+        let mut value = serde_json::to_value(&record).expect("record should serialise");
+        value
+            .as_object_mut()
+            .expect("record should be an object")
+            .remove("host_gateway");
+
+        let parsed: BrowserInstanceRecord =
+            serde_json::from_value(value).expect("legacy record should parse");
+
+        assert_eq!(parsed.host_gateway, None);
+        assert_eq!(parsed.id, record.id);
     }
 
     #[test]
