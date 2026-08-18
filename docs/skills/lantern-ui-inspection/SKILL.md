@@ -62,6 +62,20 @@ ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
+When the inspected application uses a local public hostname that is not
+reachable through the rootless container's ordinary DNS route, add the exact
+validated name on every start:
+
+```bash
+ID="$(lantern browser start \
+  --profile "$PROFILE" \
+  --host-gateway app.example.test \
+  --json | jq -r .instance.id)"
+```
+
+Do not use the option as a general DNS override. It maps one hostname to the
+runtime's fixed host gateway and accepts neither an IP nor a URL.
+
 Stop the browser when inspection is complete; do not delete or recursively
 clean the profile:
 

@@ -53,6 +53,10 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Keep `.smoogle/` out of Git.
 - Managed browser lifecycle commands must be explicit; endpoint-based commands must not auto-start containers.
 - Publish managed CDP ports to host loopback only by default.
+- Treat `browser start --host-gateway` as an explicit per-host routing choice:
+  accept one bounded DNS hostname, map it only to the runtime's fixed
+  `host-gateway` target, and never accept a caller-selected address or raw
+  runtime argument.
 - Create a persistent profile only for a dedicated automation identity. Never
   point Lantern at a daily browser profile or import a browser profile into its
   state home.

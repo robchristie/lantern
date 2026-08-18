@@ -43,7 +43,7 @@ use lantern_storage::{
     browser_port_command, browser_ps_all_command, browser_ps_managed_command, browser_rm_command,
     browser_run_command, browser_stop_command, generate_instance_id,
     generate_profile_reservation_id, instance_name, parse_published_port, parse_runtime_status,
-    validate_profile_name,
+    validate_host_gateway_hostname, validate_profile_name,
 };
 use serde::Serialize;
 
@@ -103,6 +103,9 @@ const BROWSER_RUNTIME_UNAVAILABLE_HINT: &str =
 const BROWSER_RUNTIME_FAILED_MESSAGE: &str = "Container runtime command failed.";
 const BROWSER_RUNTIME_FAILED_HINT: &str =
     "Check that the browser image is built and that the selected runtime is available.";
+const BROWSER_HOST_GATEWAY_INVALID_MESSAGE: &str = "Invalid browser host-gateway hostname.";
+const BROWSER_HOST_GATEWAY_INVALID_HINT: &str =
+    "Pass one DNS hostname, such as app.example.test; IP addresses and URLs are not accepted.";
 const BROWSER_PORT_MISSING_MESSAGE: &str = "Managed browser CDP port was not published.";
 const BROWSER_PORT_MISSING_HINT: &str =
     "Inspect the container port mapping and confirm CDP was published to host loopback.";
@@ -793,6 +796,7 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             invocation.browser_id,
             invocation.browser_wait_ms.unwrap_or(15_000),
             invocation.browser_profile_name,
+            invocation.browser_host_gateway,
             invocation.json,
         ),
         BrowserCommand::List => {
@@ -877,12 +881,13 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
     if !matches!(command, BrowserCommand::Start)
         && (invocation.browser_runtime.is_some()
             || invocation.browser_image.is_some()
-            || invocation.browser_wait_ms.is_some())
+            || invocation.browser_wait_ms.is_some()
+            || invocation.browser_host_gateway.is_some())
     {
         return Err(CliError::usage(
             invocation.json,
             "Start-only browser flag was used with another browser subcommand.",
-            "Use --runtime, --image, and --wait-ms only with lantern browser start.",
+            "Use --runtime, --image, --wait-ms, and --host-gateway only with lantern browser start.",
         ));
     }
 
@@ -903,6 +908,9 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
     }
 
     if command == BrowserCommand::Start {
+        if let Some(hostname) = invocation.browser_host_gateway.as_deref() {
+            validate_browser_host_gateway(hostname, invocation.json)?;
+        }
         if let Some(name) = invocation.browser_profile_name.as_deref() {
             validate_browser_profile_name(name, invocation.json)?;
             if invocation.browser_id.is_some() {
@@ -998,6 +1006,7 @@ fn browser_start(
     requested_id: Option<String>,
     wait_ms: u64,
     profile_name: Option<String>,
+    host_gateway: Option<String>,
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
@@ -1178,6 +1187,7 @@ fn browser_start(
         profile_name.clone(),
         profile_reservation_id.clone(),
     );
+    record.host_gateway = host_gateway.clone();
     let mut runtime_attempted = false;
     let start_result = (|| {
         registry
@@ -1189,6 +1199,7 @@ fn browser_start(
             image,
             profile_dir: layout.profile_dir,
             profile_name: profile_name.clone(),
+            host_gateway,
         };
         runtime_attempted = true;
         let container_id = run_runtime_command(browser_run_command(runtime, &spec), json)?;
@@ -1285,13 +1296,14 @@ fn browser_list(
 
     for record in records {
         println!(
-            "{} status={} runtime={} endpoint={} profile_kind={} profile_name={} profile={}",
+            "{} status={} runtime={} endpoint={} profile_kind={} profile_name={} host_gateway={} profile={}",
             record.id,
             record.status.as_str(),
             record.runtime.as_str(),
             record.endpoint.as_deref().unwrap_or("null"),
             record.profile_kind.as_str(),
             record.profile_name.as_deref().unwrap_or("null"),
+            record.host_gateway.as_deref().unwrap_or("null"),
             record.profile_dir.display()
         );
     }
@@ -1335,6 +1347,7 @@ fn reconcile_labeled_runtime_instances(records: &mut Vec<BrowserInstanceRecord>)
                 profile_kind: BrowserProfileKind::Disposable,
                 profile_name: None,
                 profile_reservation_id: None,
+                host_gateway: None,
                 created_at_unix_ms: now,
                 updated_at_unix_ms: now,
             });
@@ -1890,7 +1903,7 @@ fn write_browser_output(
     }
 
     println!(
-        "{}: id={} status={} runtime={} endpoint={} novnc={} profile_kind={} profile_name={} profile={}",
+        "{}: id={} status={} runtime={} endpoint={} novnc={} profile_kind={} profile_name={} host_gateway={} profile={}",
         command,
         record.id,
         record.status.as_str(),
@@ -1899,6 +1912,7 @@ fn write_browser_output(
         record.novnc_url.as_deref().unwrap_or("null"),
         record.profile_kind.as_str(),
         record.profile_name.as_deref().unwrap_or("null"),
+        record.host_gateway.as_deref().unwrap_or("null"),
         record.profile_dir.display()
     );
     Ok(())
@@ -2072,6 +2086,16 @@ fn validate_browser_profile_name(name: &str, json: bool) -> Result<(), CliError>
             json,
             "Invalid browser profile name.",
             BROWSER_PROFILE_MISSING_HINT,
+        )
+    })
+}
+
+fn validate_browser_host_gateway(hostname: &str, json: bool) -> Result<(), CliError> {
+    validate_host_gateway_hostname(hostname).map_err(|_| {
+        CliError::usage(
+            json,
+            BROWSER_HOST_GATEWAY_INVALID_MESSAGE,
+            BROWSER_HOST_GATEWAY_INVALID_HINT,
         )
     })
 }
@@ -3092,6 +3116,8 @@ Browser lifecycle flags:
   --image <IMAGE>   Container image for browser start
   --id <ID>         Optional disposable browser id; persistent ids are derived
   --wait-ms <MS>    Browser start readiness timeout
+  --host-gateway <HOST>
+                     Map one DNS hostname to the runtime host gateway
   --profile <NAME>  Existing persistent profile selected only for browser start
   --yes             Confirm explicit browser profile deletion
 
@@ -3125,6 +3151,7 @@ struct Invocation {
     browser_runtime: Option<RuntimeKind>,
     browser_image: Option<String>,
     browser_wait_ms: Option<u64>,
+    browser_host_gateway: Option<String>,
     browser_profile_command: Option<BrowserProfileCommand>,
     browser_profile_name: Option<String>,
     browser_confirm: bool,
@@ -3263,6 +3290,7 @@ struct BrowserInstanceOutput {
     profile_dir: String,
     profile_kind: &'static str,
     profile_name: Option<String>,
+    host_gateway: Option<String>,
 }
 
 impl BrowserInstanceOutput {
@@ -3279,6 +3307,7 @@ impl BrowserInstanceOutput {
             profile_dir: record.profile_dir.display().to_string(),
             profile_kind: record.profile_kind.as_str(),
             profile_name: record.profile_name,
+            host_gateway: record.host_gateway,
         }
     }
 }
@@ -3304,6 +3333,7 @@ impl Invocation {
             || self.browser_runtime.is_some()
             || self.browser_image.is_some()
             || self.browser_wait_ms.is_some()
+            || self.browser_host_gateway.is_some()
             || self.browser_profile_command.is_some()
             || self.browser_profile_name.is_some()
             || self.browser_confirm
@@ -3334,6 +3364,7 @@ impl Invocation {
             browser_runtime: None,
             browser_image: None,
             browser_wait_ms: None,
+            browser_host_gateway: None,
             browser_profile_command: None,
             browser_profile_name: None,
             browser_confirm: false,
@@ -3526,6 +3557,16 @@ impl Invocation {
                     };
                     invocation.browser_wait_ms =
                         Some(parse_wait_millis(&wait_ms, invocation.json)?);
+                }
+                "--host-gateway" => {
+                    let Some(hostname) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --host-gateway.",
+                            BROWSER_HOST_GATEWAY_INVALID_HINT,
+                        ));
+                    };
+                    invocation.browser_host_gateway = Some(hostname.to_ascii_lowercase());
                 }
                 "--profile" => {
                     let Some(name) = args.next() else {
@@ -4351,6 +4392,8 @@ mod tests {
             "agent1".to_string(),
             "--wait-ms".to_string(),
             "1000".to_string(),
+            "--host-gateway".to_string(),
+            "LV426.YUTANI.TECH".to_string(),
             "--json".to_string(),
         ])
         .expect("browser start should parse");
@@ -4364,7 +4407,42 @@ mod tests {
         );
         assert_eq!(invocation.browser_id.as_deref(), Some("agent1"));
         assert_eq!(invocation.browser_wait_ms, Some(1000));
+        assert_eq!(
+            invocation.browser_host_gateway.as_deref(),
+            Some("lv426.yutani.tech")
+        );
         assert!(invocation.json);
+    }
+
+    #[test]
+    fn browser_host_gateway_is_start_only_and_rejects_non_hostnames() {
+        let status = Invocation::parse([
+            "browser".to_string(),
+            "status".to_string(),
+            "agent1".to_string(),
+            "--host-gateway".to_string(),
+            "lv426.yutani.tech".to_string(),
+        ])
+        .expect("status shape should parse before validation");
+        assert_eq!(
+            validate_browser_invocation(&status)
+                .expect_err("host gateway must be start-only")
+                .exit_code,
+            2
+        );
+
+        for invalid in ["127.0.0.1", "http://lv426.yutani.tech", "bad_host.test"] {
+            let start = Invocation::parse([
+                "browser".to_string(),
+                "start".to_string(),
+                "--host-gateway".to_string(),
+                invalid.to_string(),
+            ])
+            .expect("start shape should parse before validation");
+            let error = validate_browser_invocation(&start)
+                .expect_err("invalid gateway hostname should fail");
+            assert_eq!(error.message, BROWSER_HOST_GATEWAY_INVALID_MESSAGE);
+        }
     }
 
     #[test]
