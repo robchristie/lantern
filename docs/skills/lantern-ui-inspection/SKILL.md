@@ -57,10 +57,27 @@ PROFILE=geometis-review
 lantern browser profile status "$PROFILE" --json >/dev/null 2>&1 || \
   lantern browser profile create "$PROFILE" --json
 
-ID="$(lantern browser start --profile "$PROFILE" --json | jq -r .instance.id)"
+ID="$(lantern browser start \
+  --profile "$PROFILE" \
+  --host-gateway lv426.yutani.tech \
+  --json | jq -r .instance.id)"
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
+
+For another inspected application whose local public hostname is not reachable
+through the rootless container's ordinary DNS route, replace that exact
+validated name on every start:
+
+```bash
+ID="$(lantern browser start \
+  --profile "$PROFILE" \
+  --host-gateway app.example.test \
+  --json | jq -r .instance.id)"
+```
+
+Do not use the option as a general DNS override. It maps one hostname to the
+runtime's fixed host gateway and accepts neither an IP nor a URL.
 
 Stop the browser when inspection is complete; do not delete or recursively
 clean the profile:

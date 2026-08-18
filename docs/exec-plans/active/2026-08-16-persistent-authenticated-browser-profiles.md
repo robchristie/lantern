@@ -12,7 +12,7 @@ Lantern's command and metadata surfaces.
 
 The motivating canary is repeated managed-OIDC browser proof for Geometis. The
 immutable coordination plan is
-[`persistent-authenticated-browser.md`](https://github.com/robchristie/geometis-system/blob/f1ba8555211364853c879d832fe56d33a58f7f52/plans/persistent-authenticated-browser.md).
+[`persistent-authenticated-browser.md`](https://github.com/robchristie/geometis-system/blob/7114af606ca8185a403a5665758bf3018e00b6fb/plans/persistent-authenticated-browser.md).
 
 ## Scope
 
@@ -60,6 +60,9 @@ is included.
    `profile_kind` and nullable `profile_name`; existing fields remain present.
 9. Runtime ports stay random and loopback-only. Existing Podman/Docker mount,
    ownership and image behaviour remain unchanged.
+10. An optional host-gateway mapping accepts one validated DNS hostname and
+    always targets the runtime's fixed `host-gateway` sentinel. It cannot
+    inject an address, URL, hosts-file payload or arbitrary runtime argument.
 
 ## Implementation sequence
 
@@ -143,6 +146,16 @@ is included.
   an unowned reserved runtime or legacy record fail closed. Identically named
   profiles in distinct supported state homes can no longer replace one
   another's global container.
+- 2026-08-18: The first Geometis login canary isolated a rootless-container
+  hairpin failure: the public hostname resolved to the host LAN address while
+  the runtime gateway remained reachable. Added the narrow, retained
+  `--host-gateway HOST` routing control so the public redirect chain can reach
+  the same host without changing DNS, credentials or application topology.
+- 2026-08-18: The repaired rootless-Podman canary reached the Geometis public
+  route and its Keycloak redirect through `lv426.yutani.tech`, with the mapping
+  retained in instance output. Lantern then stopped and pruned the instance
+  while leaving the dedicated profile unattached and intact. No credentials
+  were entered or inspected during this pre-landing canary.
 
 ## Observations
 

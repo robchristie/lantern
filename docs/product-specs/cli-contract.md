@@ -125,7 +125,7 @@ ordinary browser stop/restart cycles.
 
 Supported forms:
 
-- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--profile NAME] [--wait-ms MS]`
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--profile NAME] [--wait-ms MS] [--host-gateway HOST]`
 - `lantern browser list`
 - `lantern browser status <ID>`
 - `lantern browser endpoint <ID>`
@@ -148,6 +148,9 @@ Default `start` behavior:
 - labels containers with `dev.lantern.managed=true` and `dev.lantern.instance-id=<ID>`
 - for Docker, runs the container as the host profile-directory owner, sets `HOME=/tmp`, and passes `CHROME_NO_SANDBOX=1` so the image adds Chromium `--no-sandbox`
 - waits for `/json/version` readiness before reporting success
+- when `--host-gateway HOST` is present, validates one DNS hostname and maps
+  exactly that name to the container runtime's `host-gateway` target; IP
+  addresses, URLs and caller-selected gateway addresses are rejected
 
 Persistent-profile behaviour:
 
@@ -211,7 +214,8 @@ available, and profile path. JSON output shape for single-instance commands:
     "novnc_url": "http://127.0.0.1:43124/vnc.html",
     "profile_dir": ".smoogle/lantern/browser-instances/lantern-browser-123/profile",
     "profile_kind": "disposable",
-    "profile_name": null
+    "profile_name": null,
+    "host_gateway": null
   }
 }
 ```

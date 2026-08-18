@@ -29,6 +29,19 @@ lantern browser profile create geometis-review
 lantern browser start --profile geometis-review
 ```
 
+For a local application whose public hostname must resolve back to the host
+from a rootless browser container, add the narrow mapping explicitly on every
+start:
+
+```sh
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
+```
+
+This maps only the validated hostname to the runtime's host-gateway target. It
+does not broaden CDP exposure or allow a caller-selected gateway address.
+
 Open the returned noVNC URL and log into the dedicated test account manually.
 This is the only expected interactive login until the service expires or
 revokes the session. Lantern stores the Chromium profile privately outside the
@@ -38,7 +51,10 @@ login state.
 For later checks:
 
 ```sh
-ID="$(lantern browser start --profile geometis-review --json | jq -r .instance.id)"
+ID="$(lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test \
+  --json | jq -r .instance.id)"
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT"
 ```

@@ -212,9 +212,25 @@ source checkout under the operator's private Lantern state home:
 
 ```sh
 lantern browser profile create geometis-review
-lantern browser start --profile geometis-review
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
 lantern browser profile status geometis-review
 ```
+
+If a locally hosted application redirects through a hostname that resolves to
+the host's LAN address but is not reachable from the rootless container, map
+that one validated DNS name to the runtime host gateway:
+
+```sh
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
+```
+
+The option always uses the runtime's `host-gateway` sentinel. It does not
+accept an IP address, URL, hosts-file payload or arbitrary runtime argument.
+CDP, VNC and noVNC remain published to random host-loopback ports.
 
 The persistent instance id is derived as
 `lantern-profile-<STATE-DIGEST>-<NAME>`. The digest binds it to the canonical
@@ -229,7 +245,9 @@ the browser after inspection and restart the same profile later:
 ID="$(lantern browser profile status geometis-review --json | jq -r .profile.attached_instance_id)"
 lantern browser stop "$ID"
 lantern browser prune
-lantern browser start --profile geometis-review
+lantern browser start \
+  --profile geometis-review \
+  --host-gateway app.example.test
 ```
 
 `stop` and `prune` preserve persistent Chromium state. Ordinary application or

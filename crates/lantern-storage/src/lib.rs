@@ -2,6 +2,7 @@ use std::{
     fmt,
     fs::{self, File, OpenOptions},
     io,
+    net::IpAddr,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -270,6 +271,8 @@ pub struct BrowserInstanceRecord {
     pub profile_name: Option<String>,
     #[serde(default)]
     pub profile_reservation_id: Option<String>,
+    #[serde(default)]
+    pub host_gateway: Option<String>,
     pub created_at_unix_ms: u128,
     pub updated_at_unix_ms: u128,
 }
@@ -303,6 +306,7 @@ impl BrowserInstanceRecord {
             profile_kind,
             profile_name,
             profile_reservation_id,
+            host_gateway: None,
             created_at_unix_ms: now,
             updated_at_unix_ms: now,
         }
@@ -778,6 +782,9 @@ fn validate_instance_record(record: &BrowserInstanceRecord, expected_id: &str) -
             "browser instance record identity does not match its directory",
         ));
     }
+    if let Some(hostname) = record.host_gateway.as_deref() {
+        validate_host_gateway_hostname(hostname)?;
+    }
     match record.profile_kind {
         BrowserProfileKind::Disposable => {
             if record.profile_name.is_some() || record.profile_reservation_id.is_some() {
@@ -815,6 +822,65 @@ fn validate_instance_record(record: &BrowserInstanceRecord, expected_id: &str) -
         }
     }
     Ok(())
+}
+
+pub fn validate_host_gateway_hostname(hostname: &str) -> io::Result<()> {
+    if hostname.is_empty()
+        || hostname.len() > 253
+        || !hostname.is_ascii()
+        || hostname.parse::<IpAddr>().is_ok()
+        || looks_like_legacy_ipv4(hostname)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "host gateway must be a bounded DNS hostname",
+        ));
+    }
+
+    for label in hostname.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host gateway must be a bounded DNS hostname",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn looks_like_legacy_ipv4(hostname: &str) -> bool {
+    hostname.split('.').all(|component| {
+        !component.is_empty()
+            && (component.bytes().all(|byte| byte.is_ascii_digit())
+                || component
+                    .strip_prefix("0x")
+                    .or_else(|| component.strip_prefix("0X"))
+                    .is_some_and(|digits| {
+                        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    }))
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostGatewayHostname(String);
+
+impl HostGatewayHostname {
+    pub fn parse(hostname: impl Into<String>) -> io::Result<Self> {
+        let hostname = hostname.into().to_ascii_lowercase();
+        validate_host_gateway_hostname(&hostname)?;
+        Ok(Self(hostname))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -898,6 +964,7 @@ pub struct BrowserRunSpec {
     pub image: String,
     pub profile_dir: PathBuf,
     pub profile_name: Option<String>,
+    pub host_gateway: Option<HostGatewayHostname>,
 }
 
 pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> RuntimeCommand {
@@ -933,6 +1000,16 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
             [
                 "--label".to_owned(),
                 format!("{PROFILE_NAME_LABEL_KEY}={profile_name}"),
+            ],
+        );
+    }
+
+    if let Some(hostname) = &spec.host_gateway {
+        args.splice(
+            args.len() - 1..args.len() - 1,
+            [
+                "--add-host".to_owned(),
+                format!("{}:host-gateway", hostname.as_str()),
             ],
         );
     }
@@ -1205,6 +1282,7 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: PathBuf::from("/tmp/lantern-profile"),
             profile_name: None,
+            host_gateway: None,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
@@ -1232,6 +1310,69 @@ mod tests {
     }
 
     #[test]
+    fn runtime_run_command_maps_only_the_validated_host_gateway_hostname() {
+        let spec = BrowserRunSpec {
+            id: "lantern-browser-test".to_owned(),
+            name: "lantern-browser-test".to_owned(),
+            image: DEFAULT_BROWSER_IMAGE.to_owned(),
+            profile_dir: PathBuf::from("/tmp/lantern-profile"),
+            profile_name: None,
+            host_gateway: Some(
+                HostGatewayHostname::parse("lv426.yutani.tech")
+                    .expect("host gateway should validate"),
+            ),
+        };
+
+        for runtime in [RuntimeKind::Podman, RuntimeKind::Docker] {
+            let command = browser_run_command(runtime, &spec);
+            let position = command
+                .args
+                .iter()
+                .position(|argument| argument == "--add-host")
+                .expect("host mapping flag should be present");
+            assert_eq!(
+                command.args.get(position + 1).map(String::as_str),
+                Some("lv426.yutani.tech:host-gateway")
+            );
+        }
+    }
+
+    #[test]
+    fn host_gateway_hostname_is_strictly_bounded() {
+        for valid in ["app.example.test", "lv426.yutani.tech", "host-1.test"] {
+            validate_host_gateway_hostname(valid).expect("hostname should be valid");
+        }
+        for invalid in [
+            "",
+            "127.0.0.1",
+            "127.1",
+            "127.0.1",
+            "2130706433",
+            "0177.0.0.1",
+            "0x7f000001",
+            "http://app.example.test",
+            "app_example.test",
+            ".example.test",
+            "example.test.",
+            "-app.example.test",
+            "app-.example.test",
+        ] {
+            assert!(
+                validate_host_gateway_hostname(invalid).is_err(),
+                "{invalid} should be rejected"
+            );
+        }
+        assert!(validate_host_gateway_hostname(&format!("{}.test", "a".repeat(64))).is_err());
+        assert!(validate_host_gateway_hostname(&format!("{}.test", "a".repeat(249))).is_err());
+        assert_eq!(
+            HostGatewayHostname::parse("LV426.YUTANI.TECH")
+                .expect("hostname should canonicalise")
+                .as_str(),
+            "lv426.yutani.tech"
+        );
+    }
+
+    #[test]
     fn docker_volume_command_omits_podman_selinux_suffix() {
         let root = std::env::temp_dir().join(format!(
             "lantern-browser-docker-command-test-{}",
@@ -1247,6 +1388,7 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: layout.profile_dir.clone(),
             profile_name: None,
+            host_gateway: None,
         };
 
         let command = browser_run_command(RuntimeKind::Docker, &spec);
@@ -1294,6 +1436,31 @@ mod tests {
         assert_eq!(records, vec![record]);
 
         fs::remove_dir_all(root).expect("test registry should be removed");
+    }
+
+    #[test]
+    fn legacy_instance_record_without_host_gateway_remains_readable() {
+        let record = BrowserInstanceRecord::pending(
+            "lantern-browser-test".to_owned(),
+            "lantern-browser-test".to_owned(),
+            RuntimeKind::Podman,
+            DEFAULT_BROWSER_IMAGE.to_owned(),
+            PathBuf::from("/tmp/lantern-profile"),
+            BrowserProfileKind::Disposable,
+            None,
+            None,
+        );
+        let mut value = serde_json::to_value(&record).expect("record should serialise");
+        value
+            .as_object_mut()
+            .expect("record should be an object")
+            .remove("host_gateway");
+
+        let parsed: BrowserInstanceRecord =
+            serde_json::from_value(value).expect("legacy record should parse");
+
+        assert_eq!(parsed.host_gateway, None);
+        assert_eq!(parsed.id, record.id);
     }
 
     #[test]
@@ -1909,6 +2076,7 @@ mod tests {
             image: DEFAULT_BROWSER_IMAGE.to_owned(),
             profile_dir: PathBuf::from("/tmp/geometis-review-profile"),
             profile_name: Some("geometis-review".to_owned()),
+            host_gateway: None,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
