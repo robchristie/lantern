@@ -83,11 +83,11 @@ const WAIT_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000;
 const INTERACTION_TIMEOUT_INVALID_MESSAGE: &str = "Invalid interaction timeout.";
 const INTERACTION_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000.";
 const TYPE_TEXT_FILE_MAX_BYTES: u64 = 64 * 1024;
-const TYPE_TEXT_FILE_INVALID_MESSAGE: &str = "Text file could not be used.";
-const TYPE_TEXT_FILE_INVALID_HINT: &str =
-    "Use an owner-private regular UTF-8 file no larger than 64 KiB.";
-const TYPE_TEXT_FILE_TOO_LARGE_MESSAGE: &str = "Text file is too large.";
-const TYPE_TEXT_FILE_TOO_LARGE_HINT: &str = "Use a text file no larger than 64 KiB.";
+const TYPE_INPUT_INVALID_MESSAGE: &str = "Interaction input could not be used.";
+const TYPE_INPUT_INVALID_HINT: &str =
+    "Check local input access, type, permissions, UTF-8 encoding, and the 64 KiB limit.";
+const TYPE_INPUT_TOO_LARGE_MESSAGE: &str = "Interaction input exceeds the size limit.";
+const TYPE_INPUT_TOO_LARGE_HINT: &str = "Use interaction input no larger than 64 KiB.";
 const SCREENSHOT_OUTPUT_EXISTS_MESSAGE: &str = "Screenshot output path already exists.";
 const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
     "Pass --overwrite to replace the file, or choose a different --output path.";
@@ -471,7 +471,7 @@ fn read_type_text_file(path: &Path, json: bool) -> Result<String, CliError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
     }
 
     let file = options
@@ -506,21 +506,17 @@ fn read_type_text_file(path: &Path, json: bool) -> Result<String, CliError> {
 }
 
 fn type_text_file_invalid(json: bool) -> CliError {
-    CliError::usage(
-        json,
-        TYPE_TEXT_FILE_INVALID_MESSAGE,
-        TYPE_TEXT_FILE_INVALID_HINT,
-    )
-    .with_code("text_file_invalid")
+    CliError::usage(json, TYPE_INPUT_INVALID_MESSAGE, TYPE_INPUT_INVALID_HINT)
+        .with_code("interaction_input_invalid")
 }
 
 fn type_text_file_too_large(json: bool) -> CliError {
     CliError::usage(
         json,
-        TYPE_TEXT_FILE_TOO_LARGE_MESSAGE,
-        TYPE_TEXT_FILE_TOO_LARGE_HINT,
+        TYPE_INPUT_TOO_LARGE_MESSAGE,
+        TYPE_INPUT_TOO_LARGE_HINT,
     )
-    .with_code("text_file_too_large")
+    .with_code("interaction_input_too_large")
 }
 
 fn validate_wait_flag_shape(invocation: &Invocation) -> Result<(), CliError> {

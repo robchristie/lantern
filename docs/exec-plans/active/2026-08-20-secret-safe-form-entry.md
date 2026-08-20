@@ -77,3 +77,7 @@ Lantern.
   authenticated-testing, output and security documentation.
 - 2026-08-20: Passed the standard canonical gate: current and Rust 1.85 locked
   all-target checks, 151 tests and the 28-path documentation check.
+- 2026-08-20: Independent exact-head review rejected `a05504a` because a FIFO
+  could block before regular-file validation and file-specific errors exposed
+  the input-source kind. Added non-blocking Unix open, source-neutral errors
+  and a bounded FIFO regression; re-review remains pending.

@@ -2746,6 +2746,8 @@ fn type_json_requires_selector_text_and_bounded_timeout_before_cdp() {
 #[cfg(unix)]
 #[test]
 fn type_text_file_rejects_unsafe_inputs_before_cdp_without_path_disclosure() {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
     use std::os::unix::fs::{PermissionsExt, symlink};
 
     let public = write_private_temp_file("public-path-secret-marker", b"public-secret");
@@ -2758,13 +2760,18 @@ fn type_text_file_rejects_unsafe_inputs_before_cdp_without_path_disclosure() {
     symlink(&target, &link).expect("secret symlink should be created");
     let directory = unique_temp_path("directory-path-secret-marker");
     fs::create_dir(&directory).expect("temporary directory should be created");
+    let fifo = unique_temp_path("fifo-path-secret-marker");
+    let fifo_path = CString::new(fifo.as_os_str().as_bytes()).expect("FIFO path has no NUL");
+    // SAFETY: fifo_path is a valid NUL-terminated path and mode has no unsupported bits.
+    assert_eq!(unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o600) }, 0);
 
     for (path, code) in [
-        (&public, "text_file_invalid"),
-        (&invalid_utf8, "text_file_invalid"),
-        (&oversized, "text_file_too_large"),
-        (&link, "text_file_invalid"),
-        (&directory, "text_file_invalid"),
+        (&public, "interaction_input_invalid"),
+        (&invalid_utf8, "interaction_input_invalid"),
+        (&oversized, "interaction_input_too_large"),
+        (&link, "interaction_input_invalid"),
+        (&directory, "interaction_input_invalid"),
+        (&fifo, "interaction_input_invalid"),
     ] {
         let output = lantern(
             [
@@ -2790,6 +2797,7 @@ fn type_text_file_rejects_unsafe_inputs_before_cdp_without_path_disclosure() {
         assert_eq!(error["error"]["code"], code);
         assert!(!stderr(&output).contains(path.to_string_lossy().as_ref()));
         assert!(!stderr(&output).contains("secret"));
+        assert!(!stderr(&output).to_ascii_lowercase().contains("file"));
     }
 
     fs::remove_file(public).expect("public file should be removed");
@@ -2797,6 +2805,7 @@ fn type_text_file_rejects_unsafe_inputs_before_cdp_without_path_disclosure() {
     fs::remove_file(oversized).expect("large file should be removed");
     fs::remove_file(link).expect("symlink should be removed");
     fs::remove_file(target).expect("symlink target should be removed");
+    fs::remove_file(fifo).expect("FIFO should be removed");
     fs::remove_dir(directory).expect("directory should be removed");
 }
 

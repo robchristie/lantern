@@ -904,8 +904,8 @@ Required JSON fields are the same as `lantern click`. For `type`, `interaction.o
 Command-specific error cases:
 
 - missing `--selector`, text source, or `--timeout-ms`, or supplying both text sources: exit code `2`, error code `usage`
-- invalid, non-private, non-regular, symlinked or non-UTF-8 `--text-file`: exit code `2`, error code `text_file_invalid`
-- `--text-file` larger than 64 KiB: exit code `2`, error code `text_file_too_large`
+- invalid, non-private, non-regular, symlinked or non-UTF-8 `--text-file`: exit code `2`, source-neutral error code `interaction_input_invalid`
+- `--text-file` larger than 64 KiB: exit code `2`, source-neutral error code `interaction_input_too_large`
 - invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
 - no page target: exit code `1`, error code `target_not_found`
 - explicit target id did not match a page target: exit code `1`, error code `target_not_found`
