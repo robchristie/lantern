@@ -21,6 +21,7 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 ## Current Active Plans
 
 - `docs/exec-plans/active/2026-08-16-persistent-authenticated-browser-profiles.md`
+- `docs/exec-plans/active/2026-08-20-secret-safe-form-entry.md`
 
 ## Recently Completed Plans
 

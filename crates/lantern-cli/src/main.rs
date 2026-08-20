@@ -1,7 +1,8 @@
 use std::{
     collections::HashSet,
     env, fs,
-    io::ErrorKind,
+    fs::OpenOptions,
+    io::{ErrorKind, Read},
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, ExitCode},
     time::{Duration, Instant},
@@ -81,6 +82,12 @@ const WAIT_TIMEOUT_INVALID_MESSAGE: &str = "Invalid wait timeout.";
 const WAIT_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000; for quiet waits, --quiet-ms must also be in range and no larger than --timeout-ms.";
 const INTERACTION_TIMEOUT_INVALID_MESSAGE: &str = "Invalid interaction timeout.";
 const INTERACTION_TIMEOUT_INVALID_HINT: &str = "Pass --timeout-ms from 1 through 30000.";
+const TYPE_TEXT_FILE_MAX_BYTES: u64 = 64 * 1024;
+const TYPE_TEXT_FILE_INVALID_MESSAGE: &str = "Text file could not be used.";
+const TYPE_TEXT_FILE_INVALID_HINT: &str =
+    "Use an owner-private regular UTF-8 file no larger than 64 KiB.";
+const TYPE_TEXT_FILE_TOO_LARGE_MESSAGE: &str = "Text file is too large.";
+const TYPE_TEXT_FILE_TOO_LARGE_HINT: &str = "Use a text file no larger than 64 KiB.";
 const SCREENSHOT_OUTPUT_EXISTS_MESSAGE: &str = "Screenshot output path already exists.";
 const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
     "Pass --overwrite to replace the file, or choose a different --output path.";
@@ -269,6 +276,14 @@ fn run(
         ));
     }
 
+    if command != Command::Type && invocation.type_text_file.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--text-file is only supported by type.",
+            "Run lantern type with exactly one of --text <TEXT> or --text-file <PATH>.",
+        ));
+    }
+
     if command != Command::Key && invocation.key.is_some() {
         return Err(CliError::usage(
             invocation.json,
@@ -356,11 +371,25 @@ fn run(
         ));
     }
 
-    if command == Command::Type && invocation.wait_text.is_none() {
+    if command == Command::Type
+        && invocation.wait_text.is_none()
+        && invocation.type_text_file.is_none()
+    {
         return Err(CliError::usage(
             invocation.json,
-            "Missing --text for type.",
-            "Run lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>.",
+            "Missing text source for type.",
+            "Run lantern type with exactly one of --text <TEXT> or --text-file <PATH>.",
+        ));
+    }
+
+    if command == Command::Type
+        && invocation.wait_text.is_some()
+        && invocation.type_text_file.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Multiple text sources for type.",
+            "Pass exactly one of --text <TEXT> or --text-file <PATH>.",
         ));
     }
 
@@ -405,6 +434,12 @@ fn run(
         )?;
     }
 
+    let interaction_text = if let Some(path) = invocation.type_text_file.as_deref() {
+        Some(read_type_text_file(path, invocation.json)?)
+    } else {
+        invocation.wait_text
+    };
+
     let endpoint = resolve_endpoint(invocation.endpoint.as_deref(), env_endpoint.as_deref())
         .map_err(|error| CliError::from_endpoint(error, invocation.json))?;
 
@@ -420,7 +455,7 @@ fn run(
         invocation.wait_state,
         invocation.wait_url_shape,
         invocation.wait_selector,
-        invocation.wait_text,
+        interaction_text,
         invocation.key,
         invocation.quiet_ms,
         invocation.screenshot_output,
@@ -428,6 +463,64 @@ fn run(
         invocation.dom_depth,
         invocation.dom_max_nodes,
     )
+}
+
+fn read_type_text_file(path: &Path, json: bool) -> Result<String, CliError> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+
+    let file = options
+        .open(path)
+        .map_err(|_| type_text_file_invalid(json))?;
+    let metadata = file.metadata().map_err(|_| type_text_file_invalid(json))?;
+    if !metadata.is_file() {
+        return Err(type_text_file_invalid(json));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(type_text_file_invalid(json));
+        }
+    }
+
+    if metadata.len() > TYPE_TEXT_FILE_MAX_BYTES {
+        return Err(type_text_file_too_large(json));
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(TYPE_TEXT_FILE_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| type_text_file_invalid(json))?;
+    if bytes.len() as u64 > TYPE_TEXT_FILE_MAX_BYTES {
+        return Err(type_text_file_too_large(json));
+    }
+
+    String::from_utf8(bytes).map_err(|_| type_text_file_invalid(json))
+}
+
+fn type_text_file_invalid(json: bool) -> CliError {
+    CliError::usage(
+        json,
+        TYPE_TEXT_FILE_INVALID_MESSAGE,
+        TYPE_TEXT_FILE_INVALID_HINT,
+    )
+    .with_code("text_file_invalid")
+}
+
+fn type_text_file_too_large(json: bool) -> CliError {
+    CliError::usage(
+        json,
+        TYPE_TEXT_FILE_TOO_LARGE_MESSAGE,
+        TYPE_TEXT_FILE_TOO_LARGE_HINT,
+    )
+    .with_code("text_file_too_large")
 }
 
 fn validate_wait_flag_shape(invocation: &Invocation) -> Result<(), CliError> {
@@ -3098,7 +3191,7 @@ fn print_help() {
        lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
        lantern screenshot --output <PATH> [--overwrite]
        lantern click --selector <CSS> --timeout-ms <MS>
-       lantern type --selector <CSS> --text <TEXT> --timeout-ms <MS>
+       lantern type --selector <CSS> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>
        lantern key --selector <CSS> --key <KEY> --timeout-ms <MS>
 
 Shared flags:
@@ -3114,6 +3207,8 @@ Navigation and wait flags:
   --url-shape <URL> Expected URL shape for wait url
   --selector <CSS>  CSS selector for wait selector/text, click, type, or key
   --text <TEXT>     Text substring for wait text, or inserted text for type
+  --text-file <PATH>
+                     Owner-private UTF-8 input for type; never reported
   --key <KEY>       Single key value for key
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
@@ -3150,6 +3245,7 @@ struct Invocation {
     wait_url_shape: Option<String>,
     wait_selector: Option<String>,
     wait_text: Option<String>,
+    type_text_file: Option<PathBuf>,
     key: Option<String>,
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
@@ -3363,6 +3459,7 @@ impl Invocation {
             wait_url_shape: None,
             wait_selector: None,
             wait_text: None,
+            type_text_file: None,
             key: None,
             quiet_ms: None,
             screenshot_output: None,
@@ -3458,6 +3555,16 @@ impl Invocation {
                         ));
                     };
                     invocation.wait_text = Some(text);
+                }
+                "--text-file" => {
+                    let Some(path) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --text-file.",
+                            "Pass the owner-private UTF-8 file path.",
+                        ));
+                    };
+                    invocation.type_text_file = Some(PathBuf::from(path));
                 }
                 "--key" => {
                     let Some(key) = args.next() else {

@@ -128,6 +128,11 @@ Nullable command-specific fields must be present as `null` instead of omitted. `
 
 Interaction output must not emit DOM text, post-interaction input values, cookies, local storage values, raw CDP payloads, request or response bodies, headers, screenshots, or full URLs by default.
 
+When `type` reads text from `--text-file`, its output remains exactly the same
+interaction schema as literal `--text`. The path, contents, hash and input
+source kind must never be emitted in human output, JSON output or errors. This
+prohibition also applies when `--no-redact` is selected.
+
 ## Redaction Modes
 
 Default mode is safe for routine agent transcripts. It returns shapes, summaries, counts, and bounded snippets.

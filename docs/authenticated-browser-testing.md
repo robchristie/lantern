@@ -141,6 +141,24 @@ lantern type --endpoint http://127.0.0.1:9222 --target-id <PAGE_TARGET_ID> --sel
 
 `lantern type` does not echo the typed text in its output, but the text is still sent to the selected browser page. A later click, Enter key behavior in the page, or site autosave may submit or persist it. Lantern does not provide ChatGPT-specific safeguards or automatic submit prevention.
 
+For a test-only password or another local secret, keep the value out of process
+arguments and use an owner-private file:
+
+```sh
+lantern type \
+  --endpoint http://127.0.0.1:9222 \
+  --target-id <PAGE_TARGET_ID> \
+  --selector '#password' \
+  --text-file /operator/private/test-password \
+  --timeout-ms 1000
+```
+
+The file must be a regular UTF-8 file no larger than 64 KiB. On Unix, its mode
+must grant no group or other access and the final path must not be a symlink.
+Lantern preserves the input exactly and reports only the inserted character
+count; it never prints the path or contents, including with `--no-redact`.
+Lantern does not create, rotate or delete this operator-owned secret.
+
 ## Screenshots
 
 Screenshots require an explicit path:
@@ -165,7 +183,7 @@ Default output is safer for transcripts than `--no-redact`, but it is not a guar
 - Console output: Lantern emits bounded error and exception summaries only. Default message text redacts URL-shaped values, sensitive-looking assignments, and bearer/JWT-like tokens. It does not serialize full object graphs, stack traces, cookies, local storage, or raw CDP payloads.
 - Network output: Lantern reports failed requests and HTTP error responses as bounded metadata. It does not collect request bodies, response bodies, headers, cookies, authorization values, redirect chains, or HAR data. URL output uses URL shapes by default.
 - Screenshot output: Lantern writes PNG bytes only to the explicit `--output` path. Screenshot pixels are not redacted.
-- Interaction output: `click` and `type` report metadata about dispatch and selected page state. They do not print DOM text, input values, headers, bodies, cookies, storage, or screenshots. `type` still sends the supplied text to the page.
+- Interaction output: `click` and `type` report metadata about dispatch and selected page state. They do not print DOM text, input values, headers, bodies, cookies, storage, screenshots, or a `--text-file` path/source. `type` still sends the supplied text to the page.
 - `--no-redact`: this may expose full URLs and untruncated text fields for the current invocation. It does not make Lantern collect cookies, storage, headers, bodies, full DOM HTML, screenshot bytes in JSON, or raw CDP payloads.
 
 ## Cleanup

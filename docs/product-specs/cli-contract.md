@@ -34,7 +34,7 @@ Implemented commands:
 - `lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]`
 - `lantern screenshot --output <PATH>`
 - `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
-- `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+- `lantern type --selector <CSS_SELECTOR> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>`
 - `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>`
 - `lantern browser start`
 - `lantern browser list`
@@ -821,15 +821,24 @@ Redaction behavior:
 - click output does not capture DOM text, input values, cookies, storage, headers, request bodies, response bodies, or screenshots.
 - `--no-redact` may expose the selected page's full URL metadata for this invocation only.
 
-### `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+### `lantern type --selector <CSS_SELECTOR> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>`
 
 Purpose: focus the selected element and insert operator-supplied text.
 
-`lantern type` is a bounded text-entry helper. It does not clear existing values, submit forms, synthesize complex keyboard shortcuts, infer selectors, evaluate operator-supplied JavaScript, or validate application state. The command requires an explicit selector, explicit text, and explicit timeout. If the selector is not found before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and `immediate_error="selector_not_found"`; endpoint, target, and CDP failures still use the normal non-zero error path.
+`lantern type` is a bounded text-entry helper. It does not clear existing values, submit forms, synthesize complex keyboard shortcuts, infer selectors, evaluate operator-supplied JavaScript, or validate application state. The command requires an explicit selector, exactly one text source, and an explicit timeout. If the selector is not found before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and `immediate_error="selector_not_found"`; endpoint, target, and CDP failures still use the normal non-zero error path.
 
 Supported form:
 
 - `lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>`
+- `lantern type --selector <CSS_SELECTOR> --text-file <PATH> --timeout-ms <MS>`
+
+`--text-file` is the secret-safe local alternative to a process argument. It is
+supported only by `type`, and exactly one of `--text` and `--text-file` must be
+present. Lantern opens the file once before endpoint or CDP access, accepts at
+most 64 KiB of UTF-8, preserves its contents exactly, and does not trim an
+ending newline. On Unix, the opened object must be a regular file, the final
+path must not be a symlink, and no group or other permission bit may be set.
+Lantern never reports the file path, contents, hash or source kind.
 
 Timeouts are explicit and bounded. `--timeout-ms` is required and must be from `1` through `30000`.
 
@@ -894,7 +903,9 @@ Required JSON fields are the same as `lantern click`. For `type`, `interaction.o
 
 Command-specific error cases:
 
-- missing `--selector`, `--text`, or `--timeout-ms`: exit code `2`, error code `usage`
+- missing `--selector`, text source, or `--timeout-ms`, or supplying both text sources: exit code `2`, error code `usage`
+- invalid, non-private, non-regular, symlinked or non-UTF-8 `--text-file`: exit code `2`, error code `text_file_invalid`
+- `--text-file` larger than 64 KiB: exit code `2`, error code `text_file_too_large`
 - invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
 - no page target: exit code `1`, error code `target_not_found`
 - explicit target id did not match a page target: exit code `1`, error code `target_not_found`
@@ -909,6 +920,7 @@ Redaction behavior:
 - page `url_shape` follows the URL shape policy by default.
 - selector strings are echoed because they are operator-supplied; callers should avoid passing secrets in selectors.
 - inserted text is sent to Chromium but not echoed back in stdout or stderr. Lantern reports only `inserted_text_length`.
+- file-backed text behaves identically. Its path, contents, hash and source kind remain omitted even with `--no-redact`.
 - `type` output does not capture post-entry input values, DOM text, cookies, storage, headers, request bodies, response bodies, or screenshots.
 - `--no-redact` may expose the selected page's full URL metadata for this invocation only.
 
