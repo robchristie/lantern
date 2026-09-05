@@ -11,16 +11,17 @@ pub const SCREENSHOT_SCHEMA_VERSION: u8 = 1;
 pub const SCREENSHOT_FORMAT: &str = "png";
 pub const SCREENSHOT_REDACTION_CAVEAT: &str = "screenshot_contains_visible_page_pixels";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CapturedScreenshot {
     pub page: ScreenshotPageSummary,
     pub format: &'static str,
     pub width: Option<u64>,
     pub height: Option<u64>,
+    pub region: Option<ScreenshotRegion>,
     pub bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ScreenshotCommandOutput {
     pub schema_version: u8,
     pub command: &'static str,
@@ -48,15 +49,24 @@ pub struct ScreenshotPageSummary {
     pub url_shape: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ScreenshotSummary {
     pub format: &'static str,
     pub width: Option<u64>,
     pub height: Option<u64>,
+    pub region: Option<ScreenshotRegion>,
     pub byte_count: usize,
     pub path: String,
     pub overwritten: bool,
     pub redaction_caveat: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct ScreenshotRegion {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +84,7 @@ impl From<CdpError> for ScreenshotError {
 pub fn capture_visible_viewport_screenshot(
     target: &TargetInfo,
     mode: RedactionMode,
+    region: Option<ScreenshotRegion>,
 ) -> Result<CapturedScreenshot, ScreenshotError> {
     let web_socket_debugger_url = target
         .web_socket_debugger_url
@@ -81,15 +92,29 @@ pub fn capture_visible_viewport_screenshot(
         .ok_or(ScreenshotError::TargetWebSocketMissing)?;
 
     let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let (width, height) = viewport_dimensions(&mut socket)?;
-    let result = socket.call(
-        "Page.captureScreenshot",
-        Some(json!({
-            "format": SCREENSHOT_FORMAT,
-            "fromSurface": true,
-            "captureBeyondViewport": false
-        })),
-    )?;
+    let viewport = viewport_metrics(&mut socket)?;
+    let width = viewport
+        .client_width
+        .and_then(non_negative_finite_dimension);
+    let height = viewport
+        .client_height
+        .and_then(non_negative_finite_dimension);
+    let mut params = json!({
+        "format": SCREENSHOT_FORMAT,
+        "fromSurface": true,
+        "captureBeyondViewport": false
+    });
+    if let Some(region) = region {
+        params["clip"] = json!({
+            "x": region.x + viewport.page_x.unwrap_or(0.0),
+            "y": region.y + viewport.page_y.unwrap_or(0.0),
+            "width": region.width,
+            "height": region.height,
+            "scale": 1.0
+        });
+    }
+
+    let result = socket.call("Page.captureScreenshot", Some(params))?;
     let response: CdpCaptureScreenshotResponse =
         serde_json::from_value(result).map_err(|source| CdpError::ResponseInvalid {
             context: "failed to parse CDP Page.captureScreenshot response",
@@ -114,13 +139,12 @@ pub fn capture_visible_viewport_screenshot(
         format: SCREENSHOT_FORMAT,
         width,
         height,
+        region,
         bytes,
     })
 }
 
-fn viewport_dimensions(
-    socket: &mut CdpWebSocket,
-) -> Result<(Option<u64>, Option<u64>), ScreenshotError> {
+fn viewport_metrics(socket: &mut CdpWebSocket) -> Result<CdpViewport, ScreenshotError> {
     let result = socket.call("Page.getLayoutMetrics", None)?;
     let response: CdpLayoutMetricsResponse =
         serde_json::from_value(result).map_err(|source| CdpError::ResponseInvalid {
@@ -128,22 +152,14 @@ fn viewport_dimensions(
             source: source.to_string(),
         })?;
 
+    // CDP clip origins are page-relative; public crop coordinates are relative
+    // to the visible viewport, including its scroll offset.
     Ok(response
         .css_visual_viewport
         .or(response.css_layout_viewport)
         .or(response.visual_viewport)
         .or(response.layout_viewport)
-        .map(|viewport| {
-            (
-                viewport
-                    .client_width
-                    .and_then(non_negative_finite_dimension),
-                viewport
-                    .client_height
-                    .and_then(non_negative_finite_dimension),
-            )
-        })
-        .unwrap_or((None, None)))
+        .unwrap_or_default())
 }
 
 fn non_negative_finite_dimension(value: f64) -> Option<u64> {
@@ -169,9 +185,11 @@ struct CdpLayoutMetricsResponse {
     css_visual_viewport: Option<CdpViewport>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CdpViewport {
+    page_x: Option<f64>,
+    page_y: Option<f64>,
     client_width: Option<f64>,
     client_height: Option<f64>,
 }

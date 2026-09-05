@@ -686,6 +686,46 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_screenshot_region_response(page_x: f64, page_y: f64) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"Page.getLayoutMetrics""#);
+            socket
+                .send(Message::Text(
+                    serde_json::json!({"id":1,"result":{"cssVisualViewport":{
+                        "clientWidth":1280,"clientHeight":720,"pageX":page_x,"pageY":page_y
+                    }}})
+                    .to_string()
+                    .into(),
+                ))
+                .expect("fixture should write layout metrics response");
+
+            let message = read_expect(&mut socket, r#""method":"Page.captureScreenshot""#);
+            let request: serde_json::Value = serde_json::from_str(&message).unwrap();
+            assert_eq!(
+                request["params"]["clip"],
+                serde_json::json!({
+                    "height":240.0,"scale":1.0,"width":320.0,
+                    "x":100.0 + page_x,"y":80.0 + page_y
+                })
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"data":"iVBORw0KGgo="}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write screenshot response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn one_network_response() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
@@ -1049,6 +1089,251 @@ impl WebSocketFixture {
                         format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
                     ))
                     .expect("fixture should write key response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_hover_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+
+            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            assert!(
+                message.contains(r#""selector":"[data-testid=viewer-canvas]""#),
+                "hover fixture should query the requested selector: {message:?}"
+            );
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+            assert!(
+                message.contains(r#""type":"mouseMoved""#)
+                    && message.contains(r#""x":60.0"#)
+                    && message.contains(r#""y":40.0"#),
+                "hover fixture should dispatch mouseMoved at computed center: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":5,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write hover response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_wheel_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+            assert!(
+                message.contains(r#""type":"mouseWheel""#)
+                    && message.contains(r#""deltaX":0.0"#)
+                    && message.contains(r#""deltaY":-400.0"#),
+                "wheel fixture should dispatch requested deltas: {message:?}"
+            );
+            socket
+                .send(Message::Text(r#"{"id":5,"result":{}}"#.to_owned().into()))
+                .expect("fixture should write wheel response");
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_drag_response() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            for (id, event_type) in [
+                (5, "mouseMoved"),
+                (6, "mousePressed"),
+                (7, "mouseMoved"),
+                (8, "mouseReleased"),
+            ] {
+                let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+                assert!(
+                    message.contains(&format!(r#""type":"{event_type}""#)),
+                    "drag fixture should dispatch {event_type}: {message:?}"
+                );
+                if id == 8 {
+                    assert!(
+                        message.contains(r#""x":220.0"#) && message.contains(r#""y":-40.0"#),
+                        "drag fixture should release at requested endpoint: {message:?}"
+                    );
+                }
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                    ))
+                    .expect("fixture should write drag response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
+    fn one_drag_move_failure_response(release_fails: bool) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            for (id, event_type) in [
+                (5, "mouseMoved"),
+                (6, "mousePressed"),
+                (7, "mouseMoved"),
+                (8, "mouseReleased"),
+            ] {
+                let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+                assert!(
+                    message.contains(&format!(r#""type":"{event_type}""#)),
+                    "drag fixture should dispatch {event_type}: {message:?}"
+                );
+                if id == 8 {
+                    assert!(
+                        message.contains(r#""x":60.0"#) && message.contains(r#""y":40.0"#),
+                        "failed drag should release at last accepted position: {message:?}"
+                    );
+                }
+                socket
+                    .send(Message::Text(
+                        if id == 7 || (id == 8 && release_fails) {
+                            format!(r#"{{"id":{id},"error":{{"code":-32000,"message":"rejected event {id}"}}}}"#)
+                        } else {
+                            format!(r#"{{"id":{id},"result":{{}}}}"#)
+                        }.into(),
+                    ))
+                    .expect("fixture should write drag response");
             }
         });
 
@@ -2245,6 +2530,7 @@ fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
     assert_eq!(json["screenshot"]["format"], "png");
     assert_eq!(json["screenshot"]["width"], 1280);
     assert_eq!(json["screenshot"]["height"], 720);
+    assert_eq!(json["screenshot"]["region"], serde_json::Value::Null);
     assert_eq!(json["screenshot"]["byte_count"], 8);
     assert_eq!(json["screenshot"]["path"], output_path_string);
     assert_eq!(json["screenshot"]["overwritten"], false);
@@ -2252,6 +2538,58 @@ fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
         json["screenshot"]["redaction_caveat"],
         "screenshot_contains_visible_page_pixels"
     );
+    assert_eq!(
+        fs::read(&output_path).expect("screenshot file should be written"),
+        b"\x89PNG\r\n\x1a\n"
+    );
+    fs::remove_file(&output_path).expect("screenshot file should clean up");
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn screenshot_json_captures_explicit_viewport_region() {
+    check_viewport_region(0.0, 0.0);
+}
+
+#[test]
+fn screenshot_json_translates_viewport_region_after_scroll() {
+    check_viewport_region(25.0, 500.0);
+}
+
+fn check_viewport_region(page_x: f64, page_y: f64) {
+    let websocket = WebSocketFixture::one_screenshot_region_response(page_x, page_y);
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+    let output_path = unique_temp_png_path("region");
+    let output_path_string = output_path.to_string_lossy().into_owned();
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "screenshot",
+            "--output",
+            &output_path_string,
+            "--region-x",
+            "100",
+            "--region-y",
+            "80",
+            "--region-width",
+            "320",
+            "--region-height",
+            "240",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["screenshot"]["region"]["x"], 100.0);
+    assert_eq!(json["screenshot"]["region"]["y"], 80.0);
+    assert_eq!(json["screenshot"]["region"]["width"], 320.0);
+    assert_eq!(json["screenshot"]["region"]["height"], 240.0);
     assert_eq!(
         fs::read(&output_path).expect("screenshot file should be written"),
         b"\x89PNG\r\n\x1a\n"
@@ -2284,7 +2622,7 @@ fn screenshot_human_reports_short_metadata_and_path() {
     assert_eq!(
         stdout(&output),
         format!(
-            "screenshot: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted dimensions=1280x720 bytes=8 path={} overwritten=false caveat=screenshot_contains_visible_page_pixels\n",
+            "screenshot: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted dimensions=1280x720 region=null bytes=8 path={} overwritten=false caveat=screenshot_contains_visible_page_pixels\n",
             output_path_string
         )
     );
@@ -2399,6 +2737,37 @@ fn screenshot_json_reports_missing_page_websocket_url() {
     );
     assert!(!output_path.exists());
     fixture.finish();
+}
+
+#[test]
+fn screenshot_json_requires_complete_valid_region_before_cdp() {
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "screenshot",
+            "--output",
+            "/tmp/lantern-region-invalid.png",
+            "--region-x",
+            "10",
+            "--region-y",
+            "10",
+            "--region-width",
+            "0",
+            "--region-height",
+            "100",
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        stderr(&output),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"screenshot_region_invalid","message":"Invalid screenshot region.","hint":"Pass all of --region-x, --region-y, --region-width, and --region-height with non-negative x/y and positive width/height."}}"#.to_owned()
+            + "\n"
+    );
 }
 
 #[test]
@@ -2596,6 +2965,127 @@ fn key_json_focuses_selected_element_and_dispatches_key_events() {
         "key output should not echo full URLs: {:?}",
         stdout(&output)
     );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn hover_json_dispatches_pointer_move_at_selected_element_center() {
+    let websocket = WebSocketFixture::one_hover_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "hover",
+            "--selector",
+            "[data-testid=viewer-canvas]",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["command"], "hover");
+    assert_eq!(json["interaction"]["action"], "hover");
+    assert_eq!(
+        json["interaction"]["selector"],
+        "[data-testid=viewer-canvas]"
+    );
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["observed"]["node_name"], "CANVAS");
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"]["x"],
+        60.0
+    );
+    assert_eq!(
+        json["interaction"]["observed"]["clickable_point"]["y"],
+        40.0
+    );
+    assert_eq!(json["interaction"]["observed"]["pointer_start"]["x"], 60.0);
+    assert_eq!(json["interaction"]["observed"]["input_event_count"], 1);
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn wheel_json_dispatches_mouse_wheel_with_requested_delta() {
+    let websocket = WebSocketFixture::one_wheel_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "wheel",
+            "--selector",
+            "[data-testid=viewer-canvas]",
+            "--delta-y",
+            "-400",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["command"], "wheel");
+    assert_eq!(json["interaction"]["action"], "wheel");
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["observed"]["delta_x"], 0.0);
+    assert_eq!(json["interaction"]["observed"]["delta_y"], -400.0);
+    assert_eq!(json["interaction"]["observed"]["input_event_count"], 1);
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn drag_json_dispatches_left_pointer_drag_and_accepts_pointer_drag_alias() {
+    let websocket = WebSocketFixture::one_drag_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "pointer-drag",
+            "--selector",
+            "[data-testid=viewer-canvas]",
+            "--dx",
+            "160",
+            "--dy",
+            "-80",
+            "--duration-ms",
+            "0",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let json = json_stdout(&output);
+    assert_eq!(json["command"], "drag");
+    assert_eq!(json["interaction"]["action"], "drag");
+    assert_eq!(json["interaction"]["dispatched"], true);
+    assert_eq!(json["interaction"]["observed"]["pointer_start"]["x"], 60.0);
+    assert_eq!(json["interaction"]["observed"]["pointer_start"]["y"], 40.0);
+    assert_eq!(json["interaction"]["observed"]["pointer_end"]["x"], 220.0);
+    assert_eq!(json["interaction"]["observed"]["pointer_end"]["y"], -40.0);
+    assert_eq!(json["interaction"]["observed"]["delta_x"], 160.0);
+    assert_eq!(json["interaction"]["observed"]["delta_y"], -80.0);
+    assert_eq!(json["interaction"]["observed"]["duration_ms"], 0);
+    assert_eq!(json["interaction"]["observed"]["input_event_count"], 4);
     fixture.finish();
     websocket.finish();
 }
@@ -2900,7 +3390,7 @@ fn key_json_requires_selector_key_and_bounded_timeout_before_cdp() {
     assert_eq!(missing_selector.status.code(), Some(2));
     assert_eq!(
         stderr(&missing_selector),
-        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --selector for interaction.","hint":"Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>, lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>, or lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>."}}"#.to_owned()
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --selector for interaction.","hint":"Run an interaction command with --selector <CSS_SELECTOR> and --timeout-ms <MS>."}}"#.to_owned()
             + "\n"
     );
 
@@ -2921,7 +3411,7 @@ fn key_json_requires_selector_key_and_bounded_timeout_before_cdp() {
     assert_eq!(missing_timeout.status.code(), Some(2));
     assert_eq!(
         stderr(&missing_timeout),
-        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --timeout-ms for interaction.","hint":"Run lantern click, lantern type, or lantern key with --timeout-ms <MS> from 1 through 30000."}}"#.to_owned()
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --timeout-ms for interaction.","hint":"Run an interaction command with --timeout-ms <MS> from 1 through 30000."}}"#.to_owned()
             + "\n"
     );
 
@@ -2970,6 +3460,82 @@ fn key_json_requires_selector_key_and_bounded_timeout_before_cdp() {
     assert_eq!(
         stderr(&unsupported_text),
         r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"--text is not supported by key.","hint":"Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>."}}"#.to_owned()
+            + "\n"
+    );
+}
+
+#[test]
+fn pointer_interactions_validate_required_flags_before_cdp() {
+    let missing_wheel_delta = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wheel",
+            "--selector",
+            "canvas",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!missing_wheel_delta.status.success());
+    assert_eq!(missing_wheel_delta.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_wheel_delta),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_delta_invalid","message":"Invalid interaction delta.","hint":"Pass finite --dx/--dy values, and for wheel at least one non-zero delta."}}"#.to_owned()
+            + "\n"
+    );
+
+    let missing_drag_duration = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "drag",
+            "--selector",
+            "canvas",
+            "--dx",
+            "160",
+            "--dy",
+            "-80",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!missing_drag_duration.status.success());
+    assert_eq!(missing_drag_duration.status.code(), Some(2));
+    assert_eq!(
+        stderr(&missing_drag_duration),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --duration-ms for drag.","hint":"Run lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>."}}"#.to_owned()
+            + "\n"
+    );
+
+    let invalid_drag_duration = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "drag",
+            "--selector",
+            "canvas",
+            "--dx",
+            "160",
+            "--dy",
+            "-80",
+            "--duration-ms",
+            "30001",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!invalid_drag_duration.status.success());
+    assert_eq!(invalid_drag_duration.status.code(), Some(2));
+    assert_eq!(
+        stderr(&invalid_drag_duration),
+        r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_duration_invalid","message":"Invalid interaction duration.","hint":"Pass --duration-ms from 0 through 30000."}}"#.to_owned()
             + "\n"
     );
 }
@@ -3452,4 +4018,55 @@ fn stderr(output: &Output) -> String {
 
 fn json_stdout(output: &Output) -> serde_json::Value {
     serde_json::from_str(&stdout(output)).expect("stdout should be JSON")
+}
+
+#[test]
+fn pointer_and_crop_flags_are_rejected_before_browser_lifecycle_dispatch() {
+    for subcommand in ["start", "list", "status", "endpoint", "stop", "prune"] {
+        for (flag, value) in [
+            ("--dx", "1"),
+            ("--dy", "1"),
+            ("--duration-ms", "100"),
+            ("--region-x", "1"),
+            ("--region-y", "1"),
+            ("--region-width", "1"),
+            ("--region-height", "1"),
+            ("--crop-x", "1"),
+            ("--crop-y", "1"),
+            ("--crop-width", "1"),
+            ("--crop-height", "1"),
+        ] {
+            let output = lantern(["--json", "browser", subcommand, flag, value], None);
+            assert_eq!(output.status.code(), Some(2), "{subcommand} {flag}");
+            assert!(
+                stderr(&output).contains("Unsupported flag for browser command."),
+                "{subcommand} {flag}: {}",
+                stderr(&output)
+            );
+            assert!(stdout(&output).is_empty());
+        }
+    }
+}
+
+#[test]
+fn drag_move_failure_releases_button_and_preserves_original_error() {
+    for release_fails in [false, true] {
+        let websocket = WebSocketFixture::one_drag_move_failure_response(release_fails);
+        let targets: Vec<lantern_core::cdp::TargetInfo> =
+            serde_json::from_str(&target_list_with_websocket(websocket.url())).unwrap();
+        let error = lantern_core::interaction::drag_element(
+            &targets[0],
+            "canvas",
+            160.0,
+            -80.0,
+            Duration::ZERO,
+            Duration::from_secs(1),
+            lantern_core::redaction::RedactionMode::Redacted,
+        )
+        .expect_err("failed movement must remain an error");
+        let error = format!("{error:?}");
+        assert!(error.contains("rejected event 7"), "{error}");
+        assert!(!error.contains("rejected event 8"));
+        websocket.finish();
+    }
 }

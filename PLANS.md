@@ -20,12 +20,15 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Current Active Plans
 
+- `docs/exec-plans/active/2026-09-05-recover-pointer-graphics.md`
+
 - `docs/exec-plans/active/2026-08-16-persistent-authenticated-browser-profiles.md`
 
 ## Recently Completed Plans
 
 - `docs/exec-plans/completed/2026-08-20-secret-safe-form-entry.md`
 - `docs/exec-plans/completed/2026-04-29-key-press-interaction.md`
+- `docs/exec-plans/completed/2026-05-28-pointer-wheel-screenshot-region.md`
 - `docs/exec-plans/completed/2026-04-23-managed-browser-cdp-containers.md`
 - `docs/exec-plans/completed/2026-04-15-session-observation-flow.md`
 - `docs/exec-plans/completed/2026-04-14-frontend-feedback-loop-v1.md`

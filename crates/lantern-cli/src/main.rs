@@ -18,8 +18,9 @@ use lantern_core::{
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
     flow::{FlowCommandOutput, FlowError, FlowOptions, run_observation_flow},
     interaction::{
-        INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput, InteractionError, click_element,
-        press_key, type_text,
+        INTERACTION_MAX_DURATION_MS, INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput,
+        InteractionError, click_element, drag_element, hover_element, press_key, type_text,
+        wheel_element,
     },
     layout::{LayoutCommandOutput, LayoutFinding, LayoutReadError, read_layout_audit},
     navigation::{
@@ -28,8 +29,8 @@ use lantern_core::{
     network::{NetworkCommandOutput, NetworkEntry, NetworkReadError, read_network_failures},
     redaction::{RedactionMode, sanitize_title, sanitize_url},
     screenshot::{
-        SCREENSHOT_REDACTION_CAVEAT, ScreenshotCommandOutput, ScreenshotError, ScreenshotSummary,
-        capture_visible_viewport_screenshot,
+        SCREENSHOT_REDACTION_CAVEAT, ScreenshotCommandOutput, ScreenshotError, ScreenshotRegion,
+        ScreenshotSummary, capture_visible_viewport_screenshot,
     },
     wait::{
         ReadyState, WAIT_MAX_TIMEOUT_MS, WaitCommandOutput, WaitCondition, WaitConditionName,
@@ -88,12 +89,19 @@ const TYPE_INPUT_INVALID_HINT: &str =
     "Check local input access, type, permissions, UTF-8 encoding, and the 64 KiB limit.";
 const TYPE_INPUT_TOO_LARGE_MESSAGE: &str = "Interaction input exceeds the size limit.";
 const TYPE_INPUT_TOO_LARGE_HINT: &str = "Use interaction input no larger than 64 KiB.";
+const INTERACTION_DURATION_INVALID_MESSAGE: &str = "Invalid interaction duration.";
+const INTERACTION_DURATION_INVALID_HINT: &str = "Pass --duration-ms from 0 through 30000.";
+const INTERACTION_DELTA_INVALID_MESSAGE: &str = "Invalid interaction delta.";
+const INTERACTION_DELTA_INVALID_HINT: &str =
+    "Pass finite --dx/--dy values, and for wheel at least one non-zero delta.";
 const SCREENSHOT_OUTPUT_EXISTS_MESSAGE: &str = "Screenshot output path already exists.";
 const SCREENSHOT_OUTPUT_EXISTS_HINT: &str =
     "Pass --overwrite to replace the file, or choose a different --output path.";
 const SCREENSHOT_WRITE_FAILED_MESSAGE: &str = "Screenshot could not be written.";
 const SCREENSHOT_WRITE_FAILED_HINT: &str =
     "Check that the parent directory exists and the output path is writable.";
+const SCREENSHOT_REGION_INVALID_MESSAGE: &str = "Invalid screenshot region.";
+const SCREENSHOT_REGION_INVALID_HINT: &str = "Pass all of --region-x, --region-y, --region-width, and --region-height with non-negative x/y and positive width/height.";
 const DOM_LIMIT_INVALID_MESSAGE: &str = "Invalid DOM summary limit.";
 const DOM_LIMIT_INVALID_HINT: &str =
     "Pass --depth from 1 through 12 and --max-nodes from 1 through 500.";
@@ -216,12 +224,15 @@ fn run(
                 | Command::Click
                 | Command::Type
                 | Command::Key
+                | Command::Hover
+                | Command::Wheel
+                | Command::Drag
                 | Command::Flow
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, and flow.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, and flow.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -250,24 +261,37 @@ fn run(
 
     if !matches!(
         command,
-        Command::Wait | Command::Click | Command::Type | Command::Key | Command::Flow
+        Command::Wait
+            | Command::Click
+            | Command::Type
+            | Command::Key
+            | Command::Hover
+            | Command::Wheel
+            | Command::Drag
+            | Command::Flow
     ) && invocation.timeout_ms.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, key, and flow.",
+            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, and flow.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
 
     if !matches!(
         command,
-        Command::Wait | Command::Click | Command::Type | Command::Key
+        Command::Wait
+            | Command::Click
+            | Command::Type
+            | Command::Key
+            | Command::Hover
+            | Command::Wheel
+            | Command::Drag
     ) && invocation.wait_selector.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--selector is only supported by wait, click, type, and key.",
+            "--selector is only supported by wait, click, type, key, hover, wheel, and drag.",
             "Run a selected-element command with --selector <CSS_SELECTOR>.",
         ));
     }
@@ -289,6 +313,24 @@ fn run(
             invocation.json,
             "--key is only supported by key.",
             "Run lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
+        ));
+    }
+
+    if !matches!(command, Command::Wheel | Command::Drag)
+        && (invocation.delta_x.is_some() || invocation.delta_y.is_some())
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--dx and --dy are only supported by wheel and drag.",
+            "Run lantern wheel with --dx/--dy, or lantern drag with --dx <PX> --dy <PX>.",
+        ));
+    }
+
+    if command != Command::Drag && invocation.duration_ms.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--duration-ms is only supported by drag.",
+            "Run lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>.",
         ));
     }
 
@@ -351,23 +393,47 @@ fn run(
         ));
     }
 
-    if matches!(command, Command::Click | Command::Type | Command::Key)
-        && invocation.wait_selector.is_none()
+    if command == Command::Screenshot {
+        build_screenshot_region(
+            invocation.region_x,
+            invocation.region_y,
+            invocation.region_width,
+            invocation.region_height,
+            invocation.json,
+        )?;
+    }
+
+    if matches!(
+        command,
+        Command::Click
+            | Command::Type
+            | Command::Key
+            | Command::Hover
+            | Command::Wheel
+            | Command::Drag
+    ) && invocation.wait_selector.is_none()
     {
         return Err(CliError::usage(
             invocation.json,
             "Missing --selector for interaction.",
-            "Run lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>, lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>, or lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>.",
+            "Run an interaction command with --selector <CSS_SELECTOR> and --timeout-ms <MS>.",
         ));
     }
 
-    if matches!(command, Command::Click | Command::Type | Command::Key)
-        && invocation.timeout_ms.is_none()
+    if matches!(
+        command,
+        Command::Click
+            | Command::Type
+            | Command::Key
+            | Command::Hover
+            | Command::Wheel
+            | Command::Drag
+    ) && invocation.timeout_ms.is_none()
     {
         return Err(CliError::usage(
             invocation.json,
             "Missing --timeout-ms for interaction.",
-            "Run lantern click, lantern type, or lantern key with --timeout-ms <MS> from 1 through 30000.",
+            "Run an interaction command with --timeout-ms <MS> from 1 through 30000.",
         ));
     }
 
@@ -417,7 +483,31 @@ fn run(
         ));
     }
 
-    if matches!(command, Command::Click | Command::Type | Command::Key) {
+    if command == Command::Wheel {
+        validate_wheel_delta(invocation.delta_x, invocation.delta_y, invocation.json)?;
+    }
+
+    if command == Command::Drag {
+        let duration_ms = invocation.duration_ms.ok_or_else(|| {
+            CliError::usage(
+                invocation.json,
+                "Missing --duration-ms for drag.",
+                "Run lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>.",
+            )
+        })?;
+        validate_drag_delta(invocation.delta_x, invocation.delta_y, invocation.json)?;
+        validate_interaction_duration(duration_ms, invocation.json)?;
+    }
+
+    if matches!(
+        command,
+        Command::Click
+            | Command::Type
+            | Command::Key
+            | Command::Hover
+            | Command::Wheel
+            | Command::Drag
+    ) {
         validate_interaction_timeout(
             invocation
                 .timeout_ms
@@ -460,8 +550,15 @@ fn run(
         invocation.quiet_ms,
         invocation.screenshot_output,
         invocation.screenshot_overwrite,
+        invocation.region_x,
+        invocation.region_y,
+        invocation.region_width,
+        invocation.region_height,
         invocation.dom_depth,
         invocation.dom_max_nodes,
+        invocation.delta_x,
+        invocation.delta_y,
+        invocation.duration_ms,
     )
 }
 
@@ -609,8 +706,15 @@ fn run_command(
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
+    region_x: Option<f64>,
+    region_y: Option<f64>,
+    region_width: Option<f64>,
+    region_height: Option<f64>,
     dom_depth: Option<usize>,
     dom_max_nodes: Option<usize>,
+    delta_x: Option<f64>,
+    delta_y: Option<f64>,
+    duration_ms: Option<u64>,
 ) -> Result<(), CliError> {
     let client = CdpClient::new(endpoint.clone());
 
@@ -745,6 +849,8 @@ fn run_command(
                 .as_deref()
                 .expect("screenshot output checked before endpoint");
             validate_screenshot_output_path(output_path, screenshot_overwrite, json)?;
+            let region =
+                build_screenshot_region(region_x, region_y, region_width, region_height, json)?;
             let targets = client
                 .targets()
                 .map_err(|error| CliError::from_cdp(error, json))?;
@@ -753,6 +859,7 @@ fn run_command(
             let capture = capture_visible_viewport_screenshot(
                 &page,
                 RedactionMode::from_no_redact(no_redact),
+                region,
             )
             .map_err(|error| CliError::from_screenshot(error, json))?;
             let overwritten =
@@ -763,6 +870,7 @@ fn run_command(
                     format: capture.format,
                     width: capture.width,
                     height: capture.height,
+                    region: capture.region,
                     byte_count: capture.bytes.len(),
                     path: output_path.to_owned(),
                     overwritten,
@@ -831,6 +939,75 @@ fn run_command(
                 &page,
                 selector,
                 key,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
+        Command::Hover => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = hover_element(
+                &page,
+                selector,
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
+        Command::Wheel => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            validate_wheel_delta(delta_x, delta_y, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = wheel_element(
+                &page,
+                selector,
+                delta_x.unwrap_or(0.0),
+                delta_y.unwrap_or(0.0),
+                Duration::from_millis(timeout_ms),
+                RedactionMode::from_no_redact(no_redact),
+            )
+            .map_err(|error| CliError::from_interaction(error, json))?;
+            write_interaction(output, json)?;
+        }
+        Command::Drag => {
+            let selector = wait_selector
+                .as_deref()
+                .expect("interaction selector checked before endpoint");
+            let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
+            let duration_ms = duration_ms.expect("drag duration checked before endpoint");
+            validate_interaction_timeout(timeout_ms, json)?;
+            validate_interaction_duration(duration_ms, json)?;
+            validate_drag_delta(delta_x, delta_y, json)?;
+            let targets = client
+                .targets()
+                .map_err(|error| CliError::from_cdp(error, json))?;
+            let page = select_page_target(targets, target_id.as_deref())
+                .map_err(|error| error.with_json(json))?;
+            let output = drag_element(
+                &page,
+                selector,
+                delta_x.unwrap_or(0.0),
+                delta_y.unwrap_or(0.0),
+                Duration::from_millis(duration_ms),
                 Duration::from_millis(timeout_ms),
                 RedactionMode::from_no_redact(no_redact),
             )
@@ -956,6 +1133,9 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         || invocation.wait_selector.is_some()
         || invocation.wait_text.is_some()
         || invocation.key.is_some()
+        || invocation.delta_x.is_some()
+        || invocation.delta_y.is_some()
+        || invocation.duration_ms.is_some()
         || invocation.timeout_ms.is_some()
         || invocation.has_screenshot_flags()
         || invocation.has_dom_flags()
@@ -2542,6 +2722,96 @@ fn validate_interaction_timeout(timeout_ms: u64, json: bool) -> Result<(), CliEr
     })
 }
 
+fn validate_interaction_duration(duration_ms: u64, json: bool) -> Result<(), CliError> {
+    if duration_ms <= INTERACTION_MAX_DURATION_MS {
+        return Ok(());
+    }
+
+    Err(CliError {
+        exit_code: 2,
+        json,
+        code: "interaction_duration_invalid",
+        message: INTERACTION_DURATION_INVALID_MESSAGE,
+        hint: INTERACTION_DURATION_INVALID_HINT,
+    })
+}
+
+fn validate_wheel_delta(
+    delta_x: Option<f64>,
+    delta_y: Option<f64>,
+    json: bool,
+) -> Result<(), CliError> {
+    let delta_x = delta_x.unwrap_or(0.0);
+    let delta_y = delta_y.unwrap_or(0.0);
+    if delta_x.is_finite() && delta_y.is_finite() && (delta_x != 0.0 || delta_y != 0.0) {
+        return Ok(());
+    }
+
+    Err(CliError {
+        exit_code: 2,
+        json,
+        code: "interaction_delta_invalid",
+        message: INTERACTION_DELTA_INVALID_MESSAGE,
+        hint: INTERACTION_DELTA_INVALID_HINT,
+    })
+}
+
+fn validate_drag_delta(
+    delta_x: Option<f64>,
+    delta_y: Option<f64>,
+    json: bool,
+) -> Result<(), CliError> {
+    let delta_x = delta_x.unwrap_or(0.0);
+    let delta_y = delta_y.unwrap_or(0.0);
+    if delta_x.is_finite() && delta_y.is_finite() {
+        return Ok(());
+    }
+
+    Err(CliError {
+        exit_code: 2,
+        json,
+        code: "interaction_delta_invalid",
+        message: INTERACTION_DELTA_INVALID_MESSAGE,
+        hint: INTERACTION_DELTA_INVALID_HINT,
+    })
+}
+
+fn build_screenshot_region(
+    x: Option<f64>,
+    y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+    json: bool,
+) -> Result<Option<ScreenshotRegion>, CliError> {
+    match (x, y, width, height) {
+        (None, None, None, None) => Ok(None),
+        (Some(x), Some(y), Some(width), Some(height))
+            if x.is_finite()
+                && y.is_finite()
+                && width.is_finite()
+                && height.is_finite()
+                && x >= 0.0
+                && y >= 0.0
+                && width > 0.0
+                && height > 0.0 =>
+        {
+            Ok(Some(ScreenshotRegion {
+                x,
+                y,
+                width,
+                height,
+            }))
+        }
+        _ => Err(CliError {
+            exit_code: 2,
+            json,
+            code: "screenshot_region_invalid",
+            message: SCREENSHOT_REGION_INVALID_MESSAGE,
+            hint: SCREENSHOT_REGION_INVALID_HINT,
+        }),
+    }
+}
+
 fn write_doctor(
     endpoint: ResolvedEndpoint,
     version: BrowserVersion,
@@ -2831,13 +3101,24 @@ fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), C
         (Some(width), Some(height)) => format!("{width}x{height}"),
         _ => "unknown".to_owned(),
     };
+    let region = output
+        .screenshot
+        .region
+        .map(|region| {
+            format!(
+                "{},{},{},{}",
+                region.x, region.y, region.width, region.height
+            )
+        })
+        .unwrap_or_else(|| "null".to_owned());
 
     println!(
-        "screenshot: {} title=\"{}\" url={} dimensions={} bytes={} path={} overwritten={} caveat={}",
+        "screenshot: {} title=\"{}\" url={} dimensions={} region={} bytes={} path={} overwritten={} caveat={}",
         short_target_id(&output.page.target_id),
         escape_human(output.page.title.as_deref().unwrap_or("null")),
         output.page.url_shape.as_deref().unwrap_or("null"),
         dimensions,
+        region,
         output.screenshot.byte_count,
         output.screenshot.path,
         output.screenshot.overwritten,
@@ -3053,13 +3334,43 @@ fn interaction_observed_human(
         .key_event_count
         .map(|count| count.to_string())
         .unwrap_or_else(|| "null".to_owned());
+    let pointer_start = observed
+        .pointer_start
+        .map(|point| format!("{},{}", point.x, point.y))
+        .unwrap_or_else(|| "null".to_owned());
+    let pointer_end = observed
+        .pointer_end
+        .map(|point| format!("{},{}", point.x, point.y))
+        .unwrap_or_else(|| "null".to_owned());
+    let delta_x = observed
+        .delta_x
+        .map(|delta| delta.to_string())
+        .unwrap_or_else(|| "null".to_owned());
+    let delta_y = observed
+        .delta_y
+        .map(|delta| delta.to_string())
+        .unwrap_or_else(|| "null".to_owned());
+    let duration = observed
+        .duration_ms
+        .map(|duration| duration.to_string())
+        .unwrap_or_else(|| "null".to_owned());
+    let input_events = observed
+        .input_event_count
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "null".to_owned());
     format!(
-        "node={} point={} inserted_text_length={} key={} key_event_count={}",
+        "node={} point={} inserted_text_length={} key={} key_event_count={} pointer_start={} pointer_end={} delta_x={} delta_y={} duration_ms={} input_event_count={}",
         observed.node_name.as_deref().unwrap_or("null"),
         point,
         inserted,
         escape_human(key),
-        key_events
+        key_events,
+        pointer_start,
+        pointer_end,
+        delta_x,
+        delta_y,
+        duration,
+        input_events
     )
 }
 
@@ -3179,7 +3490,7 @@ fn escape_human(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|hover|wheel|drag|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern browser profile <create|list|status|delete> [NAME] [--yes] [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
@@ -3189,6 +3500,9 @@ fn print_help() {
        lantern click --selector <CSS> --timeout-ms <MS>
        lantern type --selector <CSS> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>
        lantern key --selector <CSS> --key <KEY> --timeout-ms <MS>
+       lantern hover --selector <CSS> --timeout-ms <MS>
+       lantern wheel --selector <CSS> [--dx <PX>] [--dy <PX>] --timeout-ms <MS>
+       lantern drag --selector <CSS> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>
 
 Shared flags:
   --endpoint <URL>  Local Chromium CDP HTTP endpoint
@@ -3201,16 +3515,23 @@ Navigation and wait flags:
   --timeout-ms <MS> Explicit timeout from 1 through 30000
   --state <STATE>   ready state: loading, interactive, or complete
   --url-shape <URL> Expected URL shape for wait url
-  --selector <CSS>  CSS selector for wait selector/text, click, type, or key
+  --selector <CSS>  CSS selector for wait selector/text and interactions
   --text <TEXT>     Text substring for wait text, or inserted text for type
   --text-file <PATH>
                      Owner-private UTF-8 input for type; never reported
   --key <KEY>       Single key value for key
+  --dx <PX>         Horizontal wheel or drag delta
+  --dy <PX>         Vertical wheel or drag delta
+  --duration-ms <MS> Drag duration from 0 through 30000
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
 Screenshot flags:
   --output <PATH>   Required local PNG output path
   --overwrite       Replace an existing output file
+  --region-x <PX>   Screenshot crop x coordinate; --crop-x is an alias
+  --region-y <PX>   Screenshot crop y coordinate; --crop-y is an alias
+  --region-width <PX> Screenshot crop width; --crop-width is an alias
+  --region-height <PX> Screenshot crop height; --crop-height is an alias
 
 Browser lifecycle flags:
   --runtime <NAME>  Container runtime for browser start: podman or docker
@@ -3227,7 +3548,7 @@ Browser lifecycle flags:
     );
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Invocation {
     command: Option<Command>,
     endpoint: Option<String>,
@@ -3246,8 +3567,15 @@ struct Invocation {
     quiet_ms: Option<u64>,
     screenshot_output: Option<String>,
     screenshot_overwrite: bool,
+    region_x: Option<f64>,
+    region_y: Option<f64>,
+    region_width: Option<f64>,
+    region_height: Option<f64>,
     dom_depth: Option<usize>,
     dom_max_nodes: Option<usize>,
+    delta_x: Option<f64>,
+    delta_y: Option<f64>,
+    duration_ms: Option<u64>,
     browser_command: Option<BrowserCommand>,
     browser_id: Option<String>,
     browser_runtime: Option<RuntimeKind>,
@@ -3423,7 +3751,12 @@ impl Invocation {
     }
 
     fn has_screenshot_flags(&self) -> bool {
-        self.screenshot_output.is_some() || self.screenshot_overwrite
+        self.screenshot_output.is_some()
+            || self.screenshot_overwrite
+            || self.region_x.is_some()
+            || self.region_y.is_some()
+            || self.region_width.is_some()
+            || self.region_height.is_some()
     }
 
     fn has_dom_flags(&self) -> bool {
@@ -3460,8 +3793,15 @@ impl Invocation {
             quiet_ms: None,
             screenshot_output: None,
             screenshot_overwrite: false,
+            region_x: None,
+            region_y: None,
+            region_width: None,
+            region_height: None,
             dom_depth: None,
             dom_max_nodes: None,
+            delta_x: None,
+            delta_y: None,
+            duration_ms: None,
             browser_command: None,
             browser_id: None,
             browser_runtime: None,
@@ -3572,6 +3912,49 @@ impl Invocation {
                     };
                     invocation.key = Some(key);
                 }
+                "--dx" | "--delta-x" => {
+                    let Some(delta) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --dx.",
+                            INTERACTION_DELTA_INVALID_HINT,
+                        ));
+                    };
+                    invocation.delta_x = Some(parse_finite_number(
+                        &delta,
+                        invocation.json,
+                        "interaction_delta_invalid",
+                        INTERACTION_DELTA_INVALID_MESSAGE,
+                        INTERACTION_DELTA_INVALID_HINT,
+                    )?);
+                }
+                "--dy" | "--delta-y" => {
+                    let Some(delta) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --dy.",
+                            INTERACTION_DELTA_INVALID_HINT,
+                        ));
+                    };
+                    invocation.delta_y = Some(parse_finite_number(
+                        &delta,
+                        invocation.json,
+                        "interaction_delta_invalid",
+                        INTERACTION_DELTA_INVALID_MESSAGE,
+                        INTERACTION_DELTA_INVALID_HINT,
+                    )?);
+                }
+                "--duration-ms" => {
+                    let Some(duration_ms) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --duration-ms.",
+                            INTERACTION_DURATION_INVALID_HINT,
+                        ));
+                    };
+                    invocation.duration_ms =
+                        Some(parse_duration_millis(&duration_ms, invocation.json)?);
+                }
                 "--open" => {
                     let Some(url) = args.next() else {
                         return Err(CliError::usage(
@@ -3621,6 +4004,70 @@ impl Invocation {
                         ));
                     };
                     invocation.screenshot_output = Some(output);
+                }
+                "--region-x" | "--crop-x" => {
+                    let Some(value) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --region-x.",
+                            SCREENSHOT_REGION_INVALID_HINT,
+                        ));
+                    };
+                    invocation.region_x = Some(parse_finite_number(
+                        &value,
+                        invocation.json,
+                        "screenshot_region_invalid",
+                        SCREENSHOT_REGION_INVALID_MESSAGE,
+                        SCREENSHOT_REGION_INVALID_HINT,
+                    )?);
+                }
+                "--region-y" | "--crop-y" => {
+                    let Some(value) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --region-y.",
+                            SCREENSHOT_REGION_INVALID_HINT,
+                        ));
+                    };
+                    invocation.region_y = Some(parse_finite_number(
+                        &value,
+                        invocation.json,
+                        "screenshot_region_invalid",
+                        SCREENSHOT_REGION_INVALID_MESSAGE,
+                        SCREENSHOT_REGION_INVALID_HINT,
+                    )?);
+                }
+                "--region-width" | "--crop-width" => {
+                    let Some(value) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --region-width.",
+                            SCREENSHOT_REGION_INVALID_HINT,
+                        ));
+                    };
+                    invocation.region_width = Some(parse_finite_number(
+                        &value,
+                        invocation.json,
+                        "screenshot_region_invalid",
+                        SCREENSHOT_REGION_INVALID_MESSAGE,
+                        SCREENSHOT_REGION_INVALID_HINT,
+                    )?);
+                }
+                "--region-height" | "--crop-height" => {
+                    let Some(value) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --region-height.",
+                            SCREENSHOT_REGION_INVALID_HINT,
+                        ));
+                    };
+                    invocation.region_height = Some(parse_finite_number(
+                        &value,
+                        invocation.json,
+                        "screenshot_region_invalid",
+                        SCREENSHOT_REGION_INVALID_MESSAGE,
+                        SCREENSHOT_REGION_INVALID_HINT,
+                    )?);
                 }
                 "--overwrite" => invocation.screenshot_overwrite = true,
                 "--runtime" => {
@@ -3693,7 +4140,8 @@ impl Invocation {
                 }
                 "--yes" => invocation.browser_confirm = true,
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
-                | "screenshot" | "layout" | "click" | "type" | "key" | "flow" => {
+                | "screenshot" | "layout" | "click" | "type" | "key" | "hover" | "wheel"
+                | "drag" | "pointer-drag" | "flow" => {
                     if invocation.command.is_some() {
                         return Err(CliError::usage(
                             invocation.json,
@@ -3807,6 +4255,43 @@ fn parse_wait_millis(value: &str, json: bool) -> Result<u64, CliError> {
     })
 }
 
+fn parse_duration_millis(value: &str, json: bool) -> Result<u64, CliError> {
+    value.parse::<u64>().map_err(|_| CliError {
+        exit_code: 2,
+        json,
+        code: "interaction_duration_invalid",
+        message: INTERACTION_DURATION_INVALID_MESSAGE,
+        hint: INTERACTION_DURATION_INVALID_HINT,
+    })
+}
+
+fn parse_finite_number(
+    value: &str,
+    json: bool,
+    code: &'static str,
+    message: &'static str,
+    hint: &'static str,
+) -> Result<f64, CliError> {
+    let value = value.parse::<f64>().map_err(|_| CliError {
+        exit_code: 2,
+        json,
+        code,
+        message,
+        hint,
+    })?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(CliError {
+            exit_code: 2,
+            json,
+            code,
+            message,
+            hint,
+        })
+    }
+}
+
 fn parse_browser_command(value: &str, json: bool) -> Result<BrowserCommand, CliError> {
     match value {
         "start" => Ok(BrowserCommand::Start),
@@ -3871,6 +4356,9 @@ enum Command {
     Click,
     Type,
     Key,
+    Hover,
+    Wheel,
+    Drag,
     Flow,
     Browser,
 }
@@ -3891,6 +4379,9 @@ impl Command {
             "click" => Some(Self::Click),
             "type" => Some(Self::Type),
             "key" => Some(Self::Key),
+            "hover" => Some(Self::Hover),
+            "wheel" => Some(Self::Wheel),
+            "drag" | "pointer-drag" => Some(Self::Drag),
             "flow" => Some(Self::Flow),
             _ => None,
         }

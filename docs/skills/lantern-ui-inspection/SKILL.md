@@ -31,16 +31,23 @@ ENDPOINT=http://127.0.0.1:9222
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance and pass its endpoint explicitly:
+For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance, keep the instance id, install a shell cleanup trap, and pass its endpoint explicitly:
 
 ```bash
 ID="$(lantern browser start --json | jq -r .instance.id)"
+cleanup_lantern_browser() {
+  if [ -n "${ID:-}" ]; then
+    lantern browser stop "$ID" --json >/dev/null 2>&1 || true
+    lantern browser prune --json >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_lantern_browser EXIT
 lantern browser list --json
 ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-Stop disposable instances when finished:
+Before finishing any turn that started a managed browser, explicitly stop and prune it even if the trap should also run:
 
 ```bash
 lantern browser stop "$ID" --json
@@ -92,6 +99,8 @@ Only an operator-approved retirement uses
 `lantern browser profile delete "$PROFILE" --yes`. If server-side session
 revocation matters, log out in the visible browser before stopping and deleting
 the profile.
+
+`lantern browser prune` removes stopped, missing, or errored managed instances recorded under this repo's `.smoogle/` state. If exited containers still accumulate, run `lantern browser list --json` in the same repo to confirm Lantern can see them, then `lantern browser prune --json`; containers from stale or deleted registry state may need operator cleanup through the container runtime.
 
 ## Smoogle Dashboard Loop
 
@@ -146,6 +155,9 @@ Use interaction commands only for explicit, bounded UI checks. Keep them separat
 lantern click --endpoint "$ENDPOINT" --selector '[data-testid=save]' --timeout-ms 1000 --json
 lantern type --endpoint "$ENDPOINT" --selector 'input[name=q]' --text 'hello' --timeout-ms 1000 --json
 lantern key --endpoint "$ENDPOINT" --selector body --key ArrowUp --timeout-ms 1000 --json
+lantern hover --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --timeout-ms 1000 --json
+lantern wheel --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --delta-y -400 --timeout-ms 1000 --json
+lantern drag --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --dx 160 --dy -80 --duration-ms 250 --timeout-ms 1000 --json
 ```
 
 After an interaction, re-check the focused surface with `page`, `dom`, `layout`, `console`, `network`, or a screenshot as appropriate.
@@ -158,7 +170,7 @@ When UI inspection is awkward because Lantern lacks a narrow affordance, record 
 
 - Do not expose local dashboards broadly; use non-loopback binding only for trusted local/container setups.
 - Do not use `eval`-style browser operations unless the task explicitly requires it and the code is small, local, and inspectable.
-- Do not add web mutation routes just because Lantern can click/type. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
+- Do not add web mutation routes just because Lantern can dispatch click, type, key, or pointer interactions. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
 - Treat named profile data as sensitive local credential material. Never inspect
   or export its cookie/storage databases, include it in Git or support bundles,
   or reuse a daily personal browser profile.

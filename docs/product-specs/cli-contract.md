@@ -7,9 +7,9 @@ The shared human-output, JSON ordering, redaction, truncation, DOM, console, net
 ## Scope
 
 The command surface is bounded browser inspection, selected-page navigation,
-selected-page console feedback, selected-page network failure feedback, one
+selected-page console feedback, selected-page network failure feedback, selected-page layout auditing, one
 bounded session-observation flow, explicit selected-page screenshot capture,
-selected-element click/text-entry/key interactions against an explicit Chromium
+selected-element click/text-entry/key/pointer interactions against an explicit Chromium
 DevTools Protocol endpoint, and opt-in managed browser lifecycles for disposable
 containers and explicitly named persistent profiles. Endpoint-based commands do
 not launch Chromium, manage browser lifetime, create browser tabs, evaluate
@@ -31,11 +31,15 @@ Implemented commands:
 - `lantern wait <ready|url|selector|text|quiet>`
 - `lantern console`
 - `lantern network`
+- `lantern layout`
 - `lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]`
 - `lantern screenshot --output <PATH>`
 - `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
 - `lantern type --selector <CSS_SELECTOR> (--text <TEXT> | --text-file <PATH>) --timeout-ms <MS>`
 - `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>`
+- `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
+- `lantern wheel --selector <CSS_SELECTOR> [--dx <PX>] [--dy <PX>] --timeout-ms <MS>`
+- `lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
 - `lantern browser start`
 - `lantern browser list`
 - `lantern browser status <ID>`
@@ -99,11 +103,15 @@ Supported commands:
 - `lantern wait`
 - `lantern console`
 - `lantern network`
+- `lantern layout`
 - `lantern flow`
 - `lantern screenshot`
 - `lantern click`
 - `lantern type`
 - `lantern key`
+- `lantern hover`
+- `lantern wheel`
+- `lantern drag`
 
 The value must match the complete `targets[].id` value from `lantern targets`; short id prefixes are not accepted. Supplying `--target-id` to commands that do not operate on one page target, such as `doctor` or `targets`, is an unsupported combination and fails with exit code `2`.
 
@@ -771,7 +779,13 @@ JSON output shape:
       },
       "inserted_text_length": null,
       "key": null,
-      "key_event_count": null
+      "key_event_count": null,
+      "pointer_start": null,
+      "pointer_end": null,
+      "delta_x": null,
+      "delta_y": null,
+      "duration_ms": null,
+      "input_event_count": null
     },
     "immediate_error": null
   }
@@ -797,9 +811,15 @@ Required JSON fields:
 - `interaction.observed.inserted_text_length`
 - `interaction.observed.key`
 - `interaction.observed.key_event_count`
+- `interaction.observed.pointer_start`
+- `interaction.observed.pointer_end`
+- `interaction.observed.delta_x`
+- `interaction.observed.delta_y`
+- `interaction.observed.duration_ms`
+- `interaction.observed.input_event_count`
 - `interaction.immediate_error`
 
-`page.title`, `page.url_shape`, `interaction.observed.node_name`, and `interaction.observed.clickable_point` may be `null` when unavailable. For `click`, `interaction.observed.inserted_text_length`, `interaction.observed.key`, and `interaction.observed.key_event_count` are always `null`.
+`page.title`, `page.url_shape`, `interaction.observed.node_name`, `interaction.observed.clickable_point`, and the pointer-specific fields may be `null` when unavailable or irrelevant. For `click`, `interaction.observed.inserted_text_length`, `interaction.observed.key`, `interaction.observed.key_event_count`, `interaction.observed.pointer_end`, `interaction.observed.delta_x`, `interaction.observed.delta_y`, `interaction.observed.duration_ms`, and `interaction.observed.input_event_count` are always `null`.
 
 Command-specific error cases:
 
@@ -892,7 +912,13 @@ JSON output shape:
       "clickable_point": null,
       "inserted_text_length": 12,
       "key": null,
-      "key_event_count": null
+      "key_event_count": null,
+      "pointer_start": null,
+      "pointer_end": null,
+      "delta_x": null,
+      "delta_y": null,
+      "duration_ms": null,
+      "input_event_count": null
     },
     "immediate_error": null
   }
@@ -986,7 +1012,13 @@ JSON output shape:
       "clickable_point": null,
       "inserted_text_length": null,
       "key": "ArrowUp",
-      "key_event_count": 2
+      "key_event_count": 2,
+      "pointer_start": null,
+      "pointer_end": null,
+      "delta_x": null,
+      "delta_y": null,
+      "duration_ms": null,
+      "input_event_count": null
     },
     "immediate_error": null
   }
@@ -1016,12 +1048,86 @@ Redaction behavior:
 - `key` output does not capture DOM text, input values, cookies, storage, headers, request bodies, response bodies, or screenshots.
 - `--no-redact` may expose the selected page's full URL metadata for this invocation only.
 
+### `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
+
+Purpose: move the mouse pointer to the center of the selected element without pressing a button.
+
+`lantern hover` is a bounded pointer interaction helper for menus, tooltips, canvases, and visual hover states. It requires an explicit selector and timeout. If the selector is not found or the element cannot produce a content box before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and a concise `immediate_error`; endpoint, target, and CDP failures still use the normal non-zero error path.
+
+Supported form:
+
+- `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
+
+CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseMoved`, `button=none`, and the computed center coordinates.
+
+Target selection, WebSocket requirements, timeout bounds, output redaction, and target-related error cases are identical to `lantern click`.
+
+### `lantern wheel --selector <CSS_SELECTOR> [--dx <PX>] [--dy <PX>] --timeout-ms <MS>`
+
+Purpose: dispatch one mouse-wheel event at the center of the selected element.
+
+`lantern wheel` is a bounded pointer interaction helper for zoomable, scrollable, map-like, canvas, and WebGL surfaces. It requires an explicit selector, explicit timeout, and at least one non-zero finite delta. `--delta-x` and `--delta-y` are accepted as aliases for `--dx` and `--dy`.
+
+Supported forms:
+
+- `lantern wheel --selector <CSS_SELECTOR> --dy <PX> --timeout-ms <MS>`
+- `lantern wheel --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --timeout-ms <MS>`
+
+CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseWheel`, the computed center coordinates, and `deltaX`/`deltaY`.
+
+Command-specific error cases:
+
+- missing `--selector` or `--timeout-ms`: exit code `2`, error code `usage`
+- missing, zero-only, non-finite, or invalid deltas: exit code `2`, error code `interaction_delta_invalid`
+- invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
+- target, WebSocket, and CDP errors are identical to `lantern click`.
+
+### `lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
+
+Purpose: dispatch one left-button pointer drag starting at the center of the selected element and ending at the requested offset.
+
+`lantern drag` is a bounded pointer interaction helper for panning canvases, maps, node graphs, timelines, and similar viewport surfaces. `lantern pointer-drag` is an alias. The command requires an explicit selector, explicit timeout, finite deltas, and an explicit duration from `0` through `30000` milliseconds. It does not infer a target surface, switch mouse buttons, use touch events, perform pinch gestures, or run multi-step interaction sessions.
+
+Supported forms:
+
+- `lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
+- `lantern pointer-drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
+
+CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches:
+
+- `mouseMoved` at the computed start point with no button pressed
+- `mousePressed` at the start point with the left button
+- one or more interpolated `mouseMoved` events with the left button pressed
+- `mouseReleased` at the computed end point
+
+Lantern caps drag interpolation at 60 movement events, but schedules those
+events across the requested duration. The final interpolated move is scheduled
+at the requested duration before the release event is sent; CDP transport
+latency can still make the wall-clock command runtime slightly longer.
+
+Command-specific error cases:
+
+- missing `--selector`, `--duration-ms`, or `--timeout-ms`: exit code `2`, error code `usage`
+- non-finite or invalid deltas: exit code `2`, error code `interaction_delta_invalid`
+- invalid duration bounds: exit code `2`, error code `interaction_duration_invalid`
+- invalid timeout bounds: exit code `2`, error code `interaction_timeout_invalid`
+- target, WebSocket, and CDP errors are identical to `lantern click`.
+
+Pointer interaction JSON extends the shared `interaction.observed` object with nullable pointer fields:
+
+- `pointer_start`: `{ "x": <number>, "y": <number> }` when a point is available
+- `pointer_end`: drag endpoint, or `null` for click, hover, wheel, type, and key
+- `delta_x` and `delta_y`: wheel or drag deltas, or `null`
+- `duration_ms`: drag duration, or `null`
+- `input_event_count`: number of CDP input events dispatched, or `0` for a timed-out pointer interaction
+
+These fields are metadata only. Pointer interaction output does not capture DOM text, input values, cookies, storage, headers, request bodies, response bodies, or screenshots.
 
 ### `lantern flow`
 
 Purpose: run one bounded browser-observation session over a single CDP attachment, so an agent can observe `open -> wait -> inspect` without losing console or network events between separate CLI invocations.
 
-`lantern flow` is not a daemon and does not provide arbitrary test-runner automation. It attaches to the selected page target, enables Runtime, Log, Network, and Page domains, optionally navigates with `--open <URL>`, waits either for `document.readyState == complete` or for a quiet event window, collects console/runtime failures and network failures during that same attachment, reads final page title, URL shape, and ready state, then exits. It does not click, type, press keys, evaluate operator-supplied JavaScript, persist artifacts, emit HAR output, read request or response bodies, capture screenshots, or keep a reusable browser session open after the command exits.
+`lantern flow` is not a daemon and does not provide arbitrary test-runner automation. It attaches to the selected page target, enables Runtime, Log, Network, and Page domains, optionally navigates with `--open <URL>`, waits either for `document.readyState == complete` or for a quiet event window, collects console/runtime failures and network failures during that same attachment, reads final page title, URL shape, and ready state, then exits. It does not click, type, press keys, dispatch pointer gestures, evaluate operator-supplied JavaScript, persist artifacts, emit HAR output, read request or response bodies, capture screenshots, or keep a reusable browser session open after the command exits.
 
 Required and optional flags:
 
@@ -1437,7 +1543,7 @@ CDP inputs:
 - `GET /json/list`
 - The selected page target's WebSocket debugger endpoint.
 - `Page.getLayoutMetrics` for best-effort viewport dimensions.
-- `Page.captureScreenshot` with PNG output, `fromSurface=true`, and `captureBeyondViewport=false`.
+- `Page.captureScreenshot` with PNG output, `fromSurface=true`, `captureBeyondViewport=false`, and an optional `clip` when a region is supplied.
 
 Target selection:
 
@@ -1461,6 +1567,14 @@ Artifact path and overwrite behavior:
 - On success, Lantern writes exactly one PNG file to the requested path. It does not create screenshot history, sidecar metadata, visual diffs, thumbnails, galleries, or cleanup jobs.
 - Cleanup is operator-owned: Lantern reports the output path and does not delete successful screenshots automatically.
 
+Region/crop behavior:
+
+- By default, `lantern screenshot` captures the full visible viewport.
+- To crop the visible viewport, pass all of `--region-x`, `--region-y`, `--region-width`, and `--region-height`.
+- `--crop-x`, `--crop-y`, `--crop-width`, and `--crop-height` are aliases for the matching region flags.
+- Region `x` and `y` must be non-negative finite CSS-pixel coordinates; region `width` and `height` must be positive finite CSS-pixel dimensions.
+- Region captures still write one PNG to the explicit `--output` path and still do not redact pixels.
+
 Viewport assumptions:
 
 - `lantern screenshot` captures the target's current visible viewport.
@@ -1473,6 +1587,7 @@ Human output should include:
 - selected page title, truncated by default
 - URL shape, not the full URL by default
 - viewport dimensions when known
+- requested region when supplied, otherwise `null`
 - image byte count
 - output path
 - screenshot redaction caveat
@@ -1480,7 +1595,7 @@ Human output should include:
 Recommended human output shape:
 
 ```text
-screenshot: ABCD1234 title="Example" url=https://example.test/path dimensions=1280x720 bytes=123456 path=artifacts/page.png caveat=screenshot_contains_visible_page_pixels
+screenshot: ABCD1234 title="Example" url=https://example.test/path dimensions=1280x720 region=null bytes=123456 path=artifacts/page.png caveat=screenshot_contains_visible_page_pixels
 ```
 
 JSON output shape:
@@ -1499,6 +1614,7 @@ JSON output shape:
     "format": "png",
     "width": 1280,
     "height": 720,
+    "region": null,
     "byte_count": 123456,
     "path": "artifacts/page.png",
     "overwritten": false,
@@ -1518,18 +1634,20 @@ Required JSON fields:
 - `screenshot.format`
 - `screenshot.width`
 - `screenshot.height`
+- `screenshot.region`
 - `screenshot.byte_count`
 - `screenshot.path`
 - `screenshot.overwritten`
 - `screenshot.redaction_caveat`
 
-`page.title`, `page.url_shape`, `screenshot.width`, and `screenshot.height` may be `null` when unavailable.
+`page.title`, `page.url_shape`, `screenshot.width`, `screenshot.height`, and `screenshot.region` may be `null` when unavailable or when no region is supplied.
 
 Default output follows the screenshot policy in `docs/product-specs/output-policy.md`. In particular, `lantern screenshot` must not embed image bytes in JSON, print base64 image data to stdout, upload screenshots, keep screenshot history, or imply that visible page pixels are redacted. `--no-redact` may expose the selected page's full URL shape metadata only; it does not alter screenshot pixels or artifact persistence behavior.
 
 Command-specific error cases:
 
 - missing `--output`: exit code `2`, error code `usage`
+- incomplete, non-finite, negative-origin, or non-positive-size region: exit code `2`, error code `screenshot_region_invalid`
 - output path already exists without `--overwrite`: exit code `2`, error code `screenshot_output_exists`
 - output path parent is missing or the file cannot be written: exit code `1`, error code `screenshot_write_failed`
 - no page target: exit code `1`, error code `target_not_found`
@@ -1798,13 +1916,16 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, or `lantern key`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, or `lantern key`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range
-- `interaction_timeout_invalid`: click, type, or key timeout bounds were outside the supported range
+- `interaction_timeout_invalid`: interaction timeout bounds were outside the supported range
+- `interaction_duration_invalid`: drag duration bounds were outside the supported range
+- `interaction_delta_invalid`: wheel or drag deltas were missing or invalid
+- `screenshot_region_invalid`: screenshot region/crop coordinates were incomplete or invalid
 - `screenshot_output_exists`: screenshot output path already exists and `--overwrite` was not supplied
 - `screenshot_write_failed`: screenshot output path could not be written
 - `interrupted`: command was interrupted
