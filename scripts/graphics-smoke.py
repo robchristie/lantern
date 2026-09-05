@@ -74,7 +74,8 @@ def main():
         return value
 
     separator = '&' if '?' in args.fixture_url else '?'
-    run('open', args.fixture_url + separator + 'api=' + args.api)
+    run('flow', '--open', args.fixture_url + separator + 'api=' + args.api,
+        '--timeout-ms', '15000', '--quiet-ms', '500')
     wait = run('wait', 'text', '--selector', '#status', '--text', '"status":"rendered"',
                '--timeout-ms', '15000')
     assert wait['wait']['matched'], wait
