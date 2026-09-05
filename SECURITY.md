@@ -6,11 +6,12 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-08-16**
+Last reviewed: **2026-08-20**
 
 Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git,
 conservative harness profiles, a documented secrets policy, redacted and
 bounded CLI output by default, bounded click/type/key interaction metadata,
+owner-private no-follow file-backed secret entry for `type`,
 explicit screenshot artefact opt-in, explicit opt-in managed browser
 containers with loopback CDP publishing, owner-private named persistent
 profiles, session-oriented flow evidence, and optional dependency advisory
@@ -68,6 +69,10 @@ Use untracked local configuration, environment variables, or the operator's cred
   attached.
 - Lantern must not expose cookie, local-storage, session-storage or password
   contents through profile metadata or lifecycle output.
+- File-backed `type` input must come from an owner-private regular UTF-8 file,
+  must not follow a final symlink on Unix, and must never expose its path,
+  contents, hash or source kind in output or errors. `--no-redact` does not
+  relax this boundary.
 - Prefer `approval_policy = "never"` for non-interactive runs.
 - Keep review profiles read-only unless a task explicitly requires mutation.
 - Require explicit configuration for commit, push, mark-done, and auto-landing behavior.

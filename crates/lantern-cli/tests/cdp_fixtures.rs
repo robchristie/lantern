@@ -939,8 +939,13 @@ impl WebSocketFixture {
     }
 
     fn one_type_response() -> Self {
+        Self::one_type_response_for("hello lantern")
+    }
+
+    fn one_type_response_for(expected_text: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
+        let expected_text = serde_json::to_string(expected_text).expect("text should encode");
         let handle = thread::spawn(move || {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
@@ -976,8 +981,9 @@ impl WebSocketFixture {
                 .expect("fixture should write focus response");
 
             let message = read_expect(&mut socket, r#""method":"Input.insertText""#);
+            let expected_parameter = format!(r#""text":{expected_text}"#);
             assert!(
-                message.contains(r#""text":"hello lantern""#),
+                message.contains(&expected_parameter),
                 "type fixture should insert requested text: {message:?}"
             );
             socket
@@ -2489,6 +2495,56 @@ fn type_json_focuses_selected_element_and_inserts_text_without_echoing_value() {
     websocket.finish();
 }
 
+#[cfg(unix)]
+#[test]
+fn type_json_reads_owner_private_text_file_without_reporting_secret_or_path() {
+    let secret = "  pāsse phrase\nsecond line  ";
+    let secret_path = write_private_temp_file("path-secret-marker", secret.as_bytes());
+    let websocket = WebSocketFixture::one_type_response_for(secret);
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+
+    let output = lantern(
+        [
+            "--json",
+            "--no-redact",
+            "--endpoint",
+            fixture.endpoint(),
+            "type",
+            "--selector",
+            "input[name=q]",
+            "--text-file",
+            secret_path
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    let standard_out = stdout(&output);
+    let standard_error = stderr(&output);
+    let json: serde_json::Value =
+        serde_json::from_str(&standard_out).expect("stdout should be JSON");
+    assert_eq!(json["interaction"]["observed"]["inserted_text_length"], 28);
+    for forbidden in [secret, "pāsse phrase", "path-secret-marker"] {
+        assert!(
+            !standard_out.contains(forbidden),
+            "stdout leaked {forbidden:?}"
+        );
+        assert!(
+            !standard_error.contains(forbidden),
+            "stderr leaked {forbidden:?}"
+        );
+    }
+
+    fixture.finish();
+    websocket.finish();
+    fs::remove_file(secret_path).expect("temporary secret file should be removed");
+}
+
 #[test]
 fn key_json_focuses_selected_element_and_dispatches_key_events() {
     let websocket = WebSocketFixture::one_key_response();
@@ -2637,9 +2693,31 @@ fn type_json_requires_selector_text_and_bounded_timeout_before_cdp() {
     assert_eq!(missing_text.status.code(), Some(2));
     assert_eq!(
         stderr(&missing_text),
-        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing --text for type.","hint":"Run lantern type --selector <CSS_SELECTOR> --text <TEXT> --timeout-ms <MS>."}}"#.to_owned()
+        r#"{"schema_version":1,"ok":false,"error":{"code":"usage","message":"Missing text source for type.","hint":"Run lantern type with exactly one of --text <TEXT> or --text-file <PATH>."}}"#.to_owned()
             + "\n"
     );
+
+    let multiple_sources = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "type",
+            "--selector",
+            "input",
+            "--text",
+            "literal-secret",
+            "--text-file",
+            "/path-secret-marker",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!multiple_sources.status.success());
+    assert_eq!(multiple_sources.status.code(), Some(2));
+    assert!(!stderr(&multiple_sources).contains("literal-secret"));
+    assert!(!stderr(&multiple_sources).contains("path-secret-marker"));
 
     let invalid_timeout = lantern(
         [
@@ -2663,6 +2741,123 @@ fn type_json_requires_selector_text_and_bounded_timeout_before_cdp() {
         r#"{"schema_version":1,"ok":false,"error":{"code":"interaction_timeout_invalid","message":"Invalid interaction timeout.","hint":"Pass --timeout-ms from 1 through 30000."}}"#.to_owned()
             + "\n"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn type_text_file_rejects_unsafe_inputs_before_cdp_without_path_disclosure() {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let public = write_private_temp_file("public-path-secret-marker", b"public-secret");
+    fs::set_permissions(&public, fs::Permissions::from_mode(0o640))
+        .expect("permissions should change");
+    let invalid_utf8 = write_private_temp_file("utf8-path-secret-marker", &[0xff, 0xfe]);
+    let oversized = write_private_temp_file("large-path-secret-marker", &vec![b'x'; 65_537]);
+    let target = write_private_temp_file("target-path-secret-marker", b"symlink-secret");
+    let link = unique_temp_path("link-path-secret-marker");
+    symlink(&target, &link).expect("secret symlink should be created");
+    let directory = unique_temp_path("directory-path-secret-marker");
+    fs::create_dir(&directory).expect("temporary directory should be created");
+    let fifo = unique_temp_path("fifo-path-secret-marker");
+    let fifo_path = CString::new(fifo.as_os_str().as_bytes()).expect("FIFO path has no NUL");
+    // SAFETY: fifo_path is a valid NUL-terminated path and mode has no unsupported bits.
+    assert_eq!(unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o600) }, 0);
+
+    for (path, code) in [
+        (&public, "interaction_input_invalid"),
+        (&invalid_utf8, "interaction_input_invalid"),
+        (&oversized, "interaction_input_too_large"),
+        (&link, "interaction_input_invalid"),
+        (&directory, "interaction_input_invalid"),
+        (&fifo, "interaction_input_invalid"),
+    ] {
+        let output = lantern(
+            [
+                "--json",
+                "--no-redact",
+                "--endpoint",
+                "http://127.0.0.1:1",
+                "type",
+                "--selector",
+                "input",
+                "--text-file",
+                path.to_str().expect("temporary path should be UTF-8"),
+                "--timeout-ms",
+                "1000",
+            ],
+            None,
+        );
+        assert!(!output.status.success());
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(stdout(&output), "");
+        let error: serde_json::Value =
+            serde_json::from_str(&stderr(&output)).expect("stderr should be JSON");
+        assert_eq!(error["error"]["code"], code);
+        assert!(!stderr(&output).contains(path.to_string_lossy().as_ref()));
+        assert!(!stderr(&output).contains("secret"));
+        assert!(!stderr(&output).to_ascii_lowercase().contains("file"));
+    }
+
+    fs::remove_file(public).expect("public file should be removed");
+    fs::remove_file(invalid_utf8).expect("invalid UTF-8 file should be removed");
+    fs::remove_file(oversized).expect("large file should be removed");
+    fs::remove_file(link).expect("symlink should be removed");
+    fs::remove_file(target).expect("symlink target should be removed");
+    fs::remove_file(fifo).expect("FIFO should be removed");
+    fs::remove_dir(directory).expect("directory should be removed");
+}
+
+#[test]
+fn text_file_is_rejected_for_non_type_commands() {
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            "http://127.0.0.1:1",
+            "wait",
+            "text",
+            "--selector",
+            "body",
+            "--text",
+            "ready",
+            "--text-file",
+            "/path-secret-marker",
+            "--timeout-ms",
+            "1000",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!stderr(&output).contains("path-secret-marker"));
+}
+
+#[test]
+fn text_file_is_rejected_before_browser_lifecycle_dispatch() {
+    for subcommand in [
+        "start", "list", "status", "endpoint", "stop", "prune", "profile",
+    ] {
+        let output = lantern(
+            [
+                "--json",
+                "browser",
+                subcommand,
+                "--text-file",
+                "/path-secret-marker",
+            ],
+            None,
+        );
+        assert_eq!(output.status.code(), Some(2), "{subcommand}");
+        assert!(
+            stderr(&output).contains("--text-file is only supported by type."),
+            "{subcommand}: {}",
+            stderr(&output)
+        );
+        assert!(!stderr(&output).contains("path-secret-marker"));
+        assert!(stdout(&output).is_empty());
+    }
 }
 
 #[test]
@@ -3154,6 +3349,35 @@ fn unique_temp_png_path(label: &str) -> std::path::PathBuf {
     if path.exists() {
         fs::remove_file(&path).expect("stale temp path should be removable");
     }
+    path
+}
+
+fn unique_temp_path(label: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "lantern-{label}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos()
+    ))
+}
+
+#[cfg(unix)]
+fn write_private_temp_file(label: &str, bytes: &[u8]) -> std::path::PathBuf {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let path = unique_temp_path(label);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .expect("private temporary file should be created");
+    file.write_all(bytes)
+        .expect("private temporary file should be written");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+        .expect("private file permissions should be exact");
     path
 }
 

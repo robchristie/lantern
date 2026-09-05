@@ -246,6 +246,7 @@ version = "0.1.0"
 dependencies = [
  "lantern-core",
  "lantern-storage",
+ "libc",
  "serde",
  "serde_json",
  "tungstenite",
