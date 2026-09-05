@@ -95,6 +95,18 @@ The important boundary is the Docker publish rule: `-p 127.0.0.1:9222:9222` make
 
 Use `--no-sandbox` only when the container image or runtime cannot support Chromium's sandbox. Prefer a container/runtime configuration that keeps the sandbox enabled when practical.
 
+Lantern's managed browser container defaults to disabled GPU acceleration for
+maximum compatibility. For WebGL frontend smoke checks, start it with software
+rendering:
+
+```sh
+lantern browser start --graphics swiftshader --json
+```
+
+This removes `--disable-gpu` and enables Chrome's SwiftShader/ANGLE renderer.
+Use `--graphics gpu` only when the operator has configured GPU device
+passthrough for the selected container runtime.
+
 If Lantern runs in the same container as Chromium, keep Chromium bound to `127.0.0.1` and use `--endpoint http://127.0.0.1:9222` inside that container.
 
 If Lantern runs in a different container, expose Chromium to Lantern as a loopback HTTP endpoint inside Lantern's network namespace, for example with an explicit port-forwarding sidecar or by running both processes in the same container namespace. A plain Docker service name such as `http://chromium:9222` is outside Lantern's first-milestone endpoint contract because the CLI currently accepts only local HTTP hosts.

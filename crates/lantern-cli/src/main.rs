@@ -38,6 +38,7 @@ use lantern_core::{
     },
 };
 use lantern_storage::{
+    BrowserGraphicsMode,
     BrowserInstanceRecord, BrowserInstanceStatus, BrowserProfileAttachment,
     BrowserProfileAttachmentState, BrowserProfileKind, BrowserProfileRecord,
     BrowserProfileRegistry, BrowserRegistry, BrowserRunSpec, DEFAULT_BROWSER_IMAGE,
@@ -112,6 +113,9 @@ const BROWSER_ID_MISSING_HINT: &str =
     "Run lantern browser list, then pass the id to status, endpoint, or stop.";
 const BROWSER_RUNTIME_INVALID_MESSAGE: &str = "Invalid browser runtime.";
 const BROWSER_RUNTIME_INVALID_HINT: &str = "Use --runtime podman or --runtime docker.";
+const BROWSER_GRAPHICS_INVALID_MESSAGE: &str = "Invalid browser graphics mode.";
+const BROWSER_GRAPHICS_INVALID_HINT: &str =
+    "Use --graphics disabled, --graphics swiftshader, or --graphics gpu.";
 const BROWSER_RUNTIME_UNAVAILABLE_MESSAGE: &str = "No supported container runtime was found.";
 const BROWSER_RUNTIME_UNAVAILABLE_HINT: &str =
     "Install podman or docker, or pass --runtime to select an installed runtime.";
@@ -1063,6 +1067,9 @@ fn run_browser_invocation(invocation: Invocation) -> Result<(), CliError> {
             invocation.browser_wait_ms.unwrap_or(15_000),
             invocation.browser_profile_name,
             invocation.browser_host_gateway,
+            invocation
+                .browser_graphics
+                .unwrap_or(BrowserGraphicsMode::Disabled),
             invocation.json,
         ),
         BrowserCommand::List => {
@@ -1151,12 +1158,13 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         && (invocation.browser_runtime.is_some()
             || invocation.browser_image.is_some()
             || invocation.browser_wait_ms.is_some()
-            || invocation.browser_host_gateway.is_some())
+            || invocation.browser_host_gateway.is_some()
+            || invocation.browser_graphics.is_some())
     {
         return Err(CliError::usage(
             invocation.json,
             "Start-only browser flag was used with another browser subcommand.",
-            "Use --runtime, --image, --wait-ms, and --host-gateway only with lantern browser start.",
+            "Use --runtime, --image, --wait-ms, --graphics, and --host-gateway only with lantern browser start.",
         ));
     }
 
@@ -1276,6 +1284,7 @@ fn browser_start(
     wait_ms: u64,
     profile_name: Option<String>,
     host_gateway: Option<String>,
+    graphics: BrowserGraphicsMode,
     json: bool,
 ) -> Result<(), CliError> {
     let runtime = select_runtime(requested_runtime, json)?;
@@ -3542,6 +3551,7 @@ Browser lifecycle flags:
                      Map one DNS hostname to the runtime host gateway
   --profile <NAME>  Existing persistent profile selected only for browser start
   --yes             Confirm explicit browser profile deletion
+  --graphics <MODE> Browser graphics mode for start: disabled, swiftshader, or gpu
 
   -h, --help        Print help
   -V, --version     Print version"
@@ -3585,6 +3595,7 @@ struct Invocation {
     browser_profile_command: Option<BrowserProfileCommand>,
     browser_profile_name: Option<String>,
     browser_confirm: bool,
+    browser_graphics: Option<BrowserGraphicsMode>,
     help: bool,
     version: bool,
 }
@@ -3772,6 +3783,7 @@ impl Invocation {
             || self.browser_profile_command.is_some()
             || self.browser_profile_name.is_some()
             || self.browser_confirm
+            || self.browser_graphics.is_some()
     }
 
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, CliError> {
@@ -3811,6 +3823,7 @@ impl Invocation {
             browser_profile_command: None,
             browser_profile_name: None,
             browser_confirm: false,
+            browser_graphics: None,
             help: false,
             version: false,
         };
@@ -4139,6 +4152,23 @@ impl Invocation {
                     invocation.browser_profile_name = Some(name);
                 }
                 "--yes" => invocation.browser_confirm = true,
+                "--graphics" => {
+                    let Some(graphics) = args.next() else {
+                        return Err(CliError::usage(
+                            invocation.json,
+                            "Missing value for --graphics.",
+                            BROWSER_GRAPHICS_INVALID_HINT,
+                        ));
+                    };
+                    invocation.browser_graphics =
+                        Some(BrowserGraphicsMode::parse(&graphics).ok_or_else(|| {
+                            CliError::usage(
+                                invocation.json,
+                                BROWSER_GRAPHICS_INVALID_MESSAGE,
+                                BROWSER_GRAPHICS_INVALID_HINT,
+                            )
+                        })?);
+                }
                 "doctor" | "targets" | "page" | "dom" | "open" | "wait" | "console" | "network"
                 | "screenshot" | "layout" | "click" | "type" | "key" | "hover" | "wheel"
                 | "drag" | "pointer-drag" | "flow" => {
@@ -4998,6 +5028,8 @@ mod tests {
             "1000".to_string(),
             "--host-gateway".to_string(),
             "LV426.YUTANI.TECH".to_string(),
+            "--graphics".to_string(),
+            "swiftshader".to_string(),
             "--json".to_string(),
         ])
         .expect("browser start should parse");
@@ -5014,6 +5046,10 @@ mod tests {
         assert_eq!(
             invocation.browser_host_gateway.as_deref(),
             Some("lv426.yutani.tech")
+        );
+        assert_eq!(
+            invocation.browser_graphics,
+            Some(BrowserGraphicsMode::SwiftShader)
         );
         assert!(invocation.json);
     }
@@ -5047,6 +5083,20 @@ mod tests {
                 .expect_err("invalid gateway hostname should fail");
             assert_eq!(error.message, BROWSER_HOST_GATEWAY_INVALID_MESSAGE);
         }
+    }
+
+    #[test]
+    fn rejects_invalid_browser_graphics_mode() {
+        let error = Invocation::parse([
+            "browser".to_string(),
+            "start".to_string(),
+            "--graphics".to_string(),
+            "raster-pixies".to_string(),
+        ])
+        .expect_err("invalid graphics mode should fail");
+
+        assert_eq!(error.exit_code, 2);
+        assert!(error.message.contains(BROWSER_GRAPHICS_INVALID_MESSAGE));
     }
 
     #[test]

@@ -133,7 +133,7 @@ ordinary browser stop/restart cycles.
 
 Supported forms:
 
-- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--profile NAME] [--wait-ms MS] [--host-gateway HOST]`
+- `lantern browser start [--runtime podman|docker] [--image IMAGE] [--id ID] [--profile NAME] [--wait-ms MS] [--host-gateway HOST] [--graphics disabled|swiftshader|gpu]`
 - `lantern browser list`
 - `lantern browser status <ID>`
 - `lantern browser endpoint <ID>`
