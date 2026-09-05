@@ -74,11 +74,16 @@ def main():
         return value
 
     separator = '&' if '?' in args.fixture_url else '?'
-    run('flow', '--open', args.fixture_url + separator + 'api=' + args.api,
+    flow = run('flow', '--open', args.fixture_url + separator + 'api=' + args.api,
         '--timeout-ms', '15000', '--quiet-ms', '500')
+    assert flow['console']['observed_clean'] and not flow['console']['collection_gap'], flow
+    assert flow['network']['observed_clean'] and not flow['network']['collection_gap'], flow
     wait = run('wait', 'text', '--selector', '#status', '--text', '"status":"rendered"',
                '--timeout-ms', '15000')
     assert wait['wait']['matched'], wait
+    status = json.loads(wait['wait']['observed']['current_text'])
+    if args.api == 'webgpu':
+        assert status['adapterInfo']['isFallbackAdapter'] is False, status
     run('dom', '--depth', '6', '--max-nodes', '40')
     screenshot = output / f'{args.api}.png'
     run('screenshot', '--output', str(screenshot), '--overwrite', '--region-x', '0',
