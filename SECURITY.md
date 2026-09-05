@@ -53,6 +53,11 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Default to local-first operation.
 - Keep `.smoogle/` out of Git.
 - Managed browser lifecycle commands must be explicit; endpoint-based commands must not auto-start containers.
+- GPU devices must be selected explicitly. Do not auto-discover a host GPU or
+  silently enable `--enable-unsafe-webgpu`.
+- Use hardware WebGPU only for disposable profiles loading trusted sites; it
+  bypasses browser adapter safety policy and exposes a host device to the
+  container.
 - Publish managed CDP ports to host loopback only by default.
 - Treat `browser start --host-gateway` as an explicit per-host routing choice:
   accept one bounded DNS hostname, map it only to the runtime's fixed
@@ -89,6 +94,9 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Dependency and supply-chain policy is still first-version guidance.
 - Console and network commands are bounded and redacted by default, but they still depend on continued review of new fields to avoid leaking sensitive browser state.
 - Managed browser container images and runtime behavior have two-instance rootless Podman and Docker smoke evidence, but still require broader manual smoke review on representative hosts.
+- The hardware-WebGPU trust boundary is proven on one rootless Podman/NVIDIA
+  host; other runtimes, device selectors, drivers, and untrusted-page behavior
+  have not been broadly exercised.
 
 ## Synthesized Boundaries
 

@@ -66,6 +66,11 @@ Use `+` or `-` only when the repo is clearly between two grades.
 - Recovery and landing behavior have not yet been proven by repeated assisted or unattended runs.
 - Headless Linux, container, and VNC-compatible Chromium setup is documented in `docs/headless-chromium.md`, but the broader host/runtime/image matrix has not been smoke-tested across representative setups yet.
 - Managed browser lifecycle commands have deterministic parser, registry, and runtime-command tests, but normal validation does not build the image or require a real podman/docker daemon.
+- Hardware WebGPU is proven only for the repository Chrome image, rootless
+  Podman, Xvfb, NVIDIA CDI, and one RTX host; Docker, DRM/Intel/AMD, Wayland,
+  multiple devices, and broader driver versions remain manual coverage.
+- WebGPU SwiftShader can create a Dawn device in the current image but loses it
+  during swap-chain SharedImage creation, so it is not a supported visual gate.
 - Optional quality-sweep tools may not be installed on every machine.
 - CDP implementation complexity could grow beyond the intended small command vocabulary if future tasks skip the CLI contract and ExecPlan gates.
 - Stable JSON contracts require compatibility discipline as command output evolves.

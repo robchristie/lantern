@@ -257,6 +257,10 @@ pub struct BrowserInstanceRecord {
     pub name: String,
     pub runtime: RuntimeKind,
     pub image: String,
+    #[serde(default)]
+    pub graphics: BrowserGraphicsMode,
+    #[serde(default)]
+    pub gpu_device: Option<String>,
     pub container_id: Option<String>,
     pub status: BrowserInstanceStatus,
     pub endpoint: Option<String>,
@@ -295,6 +299,8 @@ impl BrowserInstanceRecord {
             name,
             runtime,
             image,
+            graphics: BrowserGraphicsMode::Disabled,
+            gpu_device: None,
             container_id: None,
             status: BrowserInstanceStatus::Starting,
             endpoint: None,
@@ -942,6 +948,48 @@ impl fmt::Display for RuntimeKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserGraphicsMode {
+    Disabled,
+    SwiftShader,
+    Gpu,
+    WebGpu,
+}
+
+impl Default for BrowserGraphicsMode {
+    fn default() -> Self {
+        Self::Disabled
+    }
+}
+
+impl BrowserGraphicsMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "disabled" => Some(Self::Disabled),
+            "swiftshader" | "software" => Some(Self::SwiftShader),
+            "gpu" => Some(Self::Gpu),
+            "webgpu" => Some(Self::WebGpu),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::SwiftShader => "swiftshader",
+            Self::Gpu => "gpu",
+            Self::WebGpu => "webgpu",
+        }
+    }
+}
+
+impl fmt::Display for BrowserGraphicsMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCommand {
     pub program: String,
@@ -965,6 +1013,8 @@ pub struct BrowserRunSpec {
     pub profile_dir: PathBuf,
     pub profile_name: Option<String>,
     pub host_gateway: Option<HostGatewayHostname>,
+    pub graphics: BrowserGraphicsMode,
+    pub gpu_device: Option<String>,
 }
 
 pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> RuntimeCommand {
@@ -989,6 +1039,8 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
         "VNC_PORT=5900".to_owned(),
         "-e".to_owned(),
         "NOVNC_PORT=6080".to_owned(),
+        "-e".to_owned(),
+        format!("CHROME_GRAPHICS={}", spec.graphics.as_str()),
         "-v".to_owned(),
         profile_volume_arg(runtime, &spec.profile_dir),
         spec.image.clone(),
@@ -1011,6 +1063,13 @@ pub fn browser_run_command(runtime: RuntimeKind, spec: &BrowserRunSpec) -> Runti
                 "--add-host".to_owned(),
                 format!("{}:host-gateway", hostname.as_str()),
             ],
+        );
+    }
+
+    if let Some(device) = &spec.gpu_device {
+        args.splice(
+            args.len() - 1..args.len() - 1,
+            ["--device".to_owned(), device.clone()],
         );
     }
 
@@ -1283,6 +1342,8 @@ mod tests {
             profile_dir: PathBuf::from("/tmp/lantern-profile"),
             profile_name: None,
             host_gateway: None,
+            graphics: BrowserGraphicsMode::Disabled,
+            gpu_device: None,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
@@ -1296,6 +1357,11 @@ mod tests {
         assert!(command.args.contains(&"127.0.0.1::9222".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::5900".to_owned()));
         assert!(command.args.contains(&"127.0.0.1::6080".to_owned()));
+        assert!(
+            command
+                .args
+                .contains(&"CHROME_GRAPHICS=disabled".to_owned())
+        );
         assert!(command.args.contains(&format!("{MANAGED_LABEL_KEY}=true")));
         assert!(
             command
@@ -1321,6 +1387,8 @@ mod tests {
                 HostGatewayHostname::parse("lv426.yutani.tech")
                     .expect("host gateway should validate"),
             ),
+            graphics: BrowserGraphicsMode::Disabled,
+            gpu_device: None,
         };
 
         for runtime in [RuntimeKind::Podman, RuntimeKind::Docker] {
@@ -1389,6 +1457,8 @@ mod tests {
             profile_dir: layout.profile_dir.clone(),
             profile_name: None,
             host_gateway: None,
+            graphics: BrowserGraphicsMode::SwiftShader,
+            gpu_device: None,
         };
 
         let command = browser_run_command(RuntimeKind::Docker, &spec);
@@ -1402,6 +1472,11 @@ mod tests {
         assert!(command.args.contains(&"--user".to_owned()));
         assert!(command.args.contains(&"HOME=/tmp".to_owned()));
         assert!(command.args.contains(&"CHROME_NO_SANDBOX=1".to_owned()));
+        assert!(
+            command
+                .args
+                .contains(&"CHROME_GRAPHICS=swiftshader".to_owned())
+        );
     }
 
     #[test]
@@ -2077,6 +2152,8 @@ mod tests {
             profile_dir: PathBuf::from("/tmp/geometis-review-profile"),
             profile_name: Some("geometis-review".to_owned()),
             host_gateway: None,
+            graphics: BrowserGraphicsMode::Disabled,
+            gpu_device: None,
         };
 
         let command = browser_run_command(RuntimeKind::Podman, &spec);
@@ -2098,5 +2175,113 @@ mod tests {
         assert_eq!(command.program, "podman");
         assert_eq!(command.args, ["ps", "-a", "--format", "{{.Names}}"]);
         assert!(!command.args.iter().any(|argument| argument == "--filter"));
+    }
+
+    #[test]
+    fn hardware_webgpu_command_passes_explicit_device_and_mode() {
+        let spec = BrowserRunSpec {
+            id: "lantern-browser-webgpu".to_owned(),
+            name: "lantern-browser-webgpu".to_owned(),
+            image: DEFAULT_BROWSER_IMAGE.to_owned(),
+            profile_dir: PathBuf::from("/tmp/lantern-webgpu-profile"),
+            graphics: BrowserGraphicsMode::WebGpu,
+            gpu_device: Some("nvidia.com/gpu=0".to_owned()),
+            profile_name: None,
+            host_gateway: None,
+        };
+
+        let command = browser_run_command(RuntimeKind::Podman, &spec);
+        let device_position = command
+            .args
+            .iter()
+            .position(|argument| argument == "--device")
+            .expect("hardware mode passes a runtime device");
+
+        assert_eq!(command.args[device_position + 1], "nvidia.com/gpu=0");
+        assert!(command.args.contains(&"CHROME_GRAPHICS=webgpu".to_owned()));
+        assert_eq!(command.args.last(), Some(&DEFAULT_BROWSER_IMAGE.to_owned()));
+    }
+
+    #[test]
+    fn runtime_graphics_composes_with_gateway_and_persistent_volume() {
+        for runtime in [RuntimeKind::Podman, RuntimeKind::Docker] {
+            for graphics in [
+                BrowserGraphicsMode::Disabled,
+                BrowserGraphicsMode::SwiftShader,
+                BrowserGraphicsMode::Gpu,
+                BrowserGraphicsMode::WebGpu,
+            ] {
+                let spec = BrowserRunSpec {
+                    id: "graphics-test".to_owned(),
+                    name: "graphics-test".to_owned(),
+                    image: DEFAULT_BROWSER_IMAGE.to_owned(),
+                    profile_dir: PathBuf::from("/tmp/graphics-profile"),
+                    profile_name: (graphics != BrowserGraphicsMode::WebGpu)
+                        .then(|| "review".to_owned()),
+                    host_gateway: Some(HostGatewayHostname::parse("app.test").unwrap()),
+                    graphics,
+                    gpu_device: matches!(
+                        graphics,
+                        BrowserGraphicsMode::Gpu | BrowserGraphicsMode::WebGpu
+                    )
+                    .then(|| "nvidia.com/gpu=0".to_owned()),
+                };
+                let args = browser_run_command(runtime, &spec).args;
+                assert_eq!(args.last(), Some(&spec.image));
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--add-host", "app.test:host-gateway"])
+                );
+                assert!(args.contains(&format!("CHROME_GRAPHICS={}", graphics.as_str())));
+                assert!(args.contains(&format!(
+                    "/tmp/graphics-profile:/profile{}",
+                    if runtime == RuntimeKind::Podman {
+                        ":Z"
+                    } else {
+                        ""
+                    }
+                )));
+                if spec.profile_name.is_some() {
+                    assert!(args.contains(&format!("{PROFILE_NAME_LABEL_KEY}=review")));
+                }
+                assert_eq!(
+                    args.iter().filter(|arg| *arg == "--device").count(),
+                    usize::from(spec.gpu_device.is_some())
+                );
+                if let Some(device) = spec.gpu_device {
+                    assert!(
+                        args.windows(2)
+                            .any(|pair| pair == ["--device", device.as_str()])
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn old_instance_records_default_to_disabled_graphics_without_a_device() {
+        let record: BrowserInstanceRecord = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "id": "legacy",
+                "name": "legacy",
+                "runtime": "podman",
+                "image": "browser:old",
+                "container_id": null,
+                "status": "stopped",
+                "endpoint": null,
+                "cdp_host_port": null,
+                "novnc_url": null,
+                "novnc_host_port": null,
+                "vnc_host_port": null,
+                "profile_dir": "/tmp/legacy",
+                "created_at_unix_ms": 1,
+                "updated_at_unix_ms": 1
+            }"#,
+        )
+        .expect("legacy record remains readable");
+
+        assert_eq!(record.graphics, BrowserGraphicsMode::Disabled);
+        assert_eq!(record.gpu_device, None);
     }
 }

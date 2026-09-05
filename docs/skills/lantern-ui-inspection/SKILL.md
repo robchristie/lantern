@@ -1,6 +1,6 @@
 ---
 name: lantern-ui-inspection
-description: Inspect and dogfood local web UIs with Lantern, a narrow CLI over Chromium CDP. Use when Codex is doing frontend, dashboard, web observability, or browser-facing UI work and should verify the result through a local browser without MCP overhead; especially for Smoogle web dashboard work, Leptos/Rust web UI changes, local app servers, flow/layout/DOM/screenshot checks, managed disposable browser sessions, or when repeated browser-inspection friction should become Lantern product work.
+description: Inspect and dogfood local web UIs with Lantern, a narrow CLI over Chromium CDP. Use when Codex is doing frontend, dashboard, WebGL/WebGPU canvas, web observability, or browser-facing UI work and should verify the result through a local browser without MCP overhead; especially for Smoogle web dashboard work, Leptos/Rust web UI changes, local app servers, flow/layout/DOM/screenshot checks, managed disposable browser sessions, or when repeated browser-inspection friction should become Lantern product work.
 ---
 
 # Lantern UI Inspection
@@ -15,6 +15,11 @@ Do not use this skill for non-UI backend tasks. Do not expand Lantern's command 
 
 - Confirm the app server is running or start it yourself when safe.
 - Use plain `lantern` first; in Smoogle child runs a run-local shim is injected when Lantern is discoverable. If unavailable, try the command path in `$LANTERN_BIN`, `/usr/local/bin/lantern`, `/nvme/development/lantern/target/release/lantern`, then `/nvme/development/lantern/target/debug/lantern`.
+- Record the resolved binary with `command -v lantern`; local builds may retain
+  the same package version while exposing different capabilities.
+- Before inspecting a GPU canvas, confirm `lantern browser start --help`
+  exposes both `--graphics` and `--gpu-device`. Use a repository build if the
+  installed binary is stale.
 - Confirm a Chromium or Chrome instance exposes a local CDP HTTP endpoint, or
   explicitly start a disposable managed instance with `lantern browser start`.
   For repeated authenticated checks, use an existing dedicated persistent
@@ -30,6 +35,24 @@ Use an operator-owned endpoint when one already exists:
 ENDPOINT=http://127.0.0.1:9222
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
+
+For software WebGL, start with `--graphics swiftshader`. Do not treat that mode
+as WebGPU coverage.
+
+For hardware WebGPU, use an explicit operator-selected device in a disposable
+trusted-site session:
+
+```bash
+ID="$(lantern browser start \
+  --graphics webgpu \
+  --gpu-device nvidia.com/gpu=0 \
+  --json | jq -r .instance.id)"
+```
+
+The WebGPU mode opts into Chrome's unsafe WebGPU boundary. Require a visibly
+nonblank application canvas and ready/rendered state in addition to a clean
+console. Treat it as evidence for the selected Linux/Vulkan device, not as a
+replacement for production-browser, Metal, D3D12, or other-GPU checks.
 
 For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance, keep the instance id, install a shell cleanup trap, and pass its endpoint explicitly:
 
@@ -146,6 +169,9 @@ lantern network --endpoint "$ENDPOINT" --json
 - Use screenshots as supporting evidence for layout and visual regressions, not as the primary inspection artifact.
 - Prefer JSON output for precise assertions and stable summaries; use human output only for quick local reading.
 - If Lantern reports a browser/tool failure but the page clearly changed, inspect the Lantern output and CDP state before treating the app as broken.
+- For WebGPU, verify browser-start output identifies `graphics=webgpu`, the
+  expected `gpu_device`, and `unsafe_webgpu=true`; CDP readiness alone only
+  proves that Chrome started.
 
 ## Interactions
 
@@ -169,8 +195,16 @@ When UI inspection is awkward because Lantern lacks a narrow affordance, record 
 ## Safety
 
 - Do not expose local dashboards broadly; use non-loopback binding only for trusted local/container setups.
+- Use hardware WebGPU only with disposable profiles and trusted sites. It
+  exposes the selected host GPU to the container and bypasses some Chrome
+  adapter safety policy.
 - Do not use `eval`-style browser operations unless the task explicitly requires it and the code is small, local, and inspectable.
 - Do not add web mutation routes just because Lantern can dispatch click, type, key, or pointer interactions. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
 - Treat named profile data as sensitive local credential material. Never inspect
   or export its cookie/storage databases, include it in Git or support bundles,
   or reuse a daily personal browser profile.
+
+
+Named persistent profiles can use `disabled`, `swiftshader`, or `gpu` graphics.
+Hardware `webgpu` is restricted to disposable trusted-site sessions: combining
+`--graphics webgpu` with `--profile` is rejected before state or runtime access.

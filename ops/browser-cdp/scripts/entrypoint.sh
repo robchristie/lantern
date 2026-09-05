@@ -9,6 +9,7 @@ profile_dir="${CHROME_USER_DATA_DIR:-/profile}"
 geometry="${BROWSER_GEOMETRY:-1280x900x24}"
 vnc_password="${VNC_PASSWORD:-}"
 cdp_proxy_bind="${CDP_PROXY_BIND_ADDR:-}"
+graphics="${CHROME_GRAPHICS:-disabled}"
 
 mkdir -p "$profile_dir"
 
@@ -80,13 +81,35 @@ chrome_args=(
   "--disable-default-apps"
   "--disable-domain-reliability"
   "--disable-dev-shm-usage"
-  "--disable-gpu"
   "--disable-sync"
   "--metrics-recording-only"
   "--no-service-autorun"
   "--password-store=basic"
   "--window-size=1280,900"
 )
+
+case "$graphics" in
+  disabled)
+    chrome_args+=("--disable-gpu")
+    ;;
+  swiftshader|software)
+    chrome_args+=("--use-angle=swiftshader" "--enable-unsafe-swiftshader" "--ignore-gpu-blocklist")
+    ;;
+  gpu)
+    ;;
+  webgpu)
+    chrome_args+=(
+      "--use-angle=vulkan"
+      "--enable-features=Vulkan"
+      "--disable-vulkan-surface"
+      "--enable-unsafe-webgpu"
+    )
+    ;;
+  *)
+    printf 'unsupported CHROME_GRAPHICS value: %s\n' "$graphics" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "${CHROME_NO_SANDBOX:-}" == "1" ]]; then
   chrome_args+=("--no-sandbox")

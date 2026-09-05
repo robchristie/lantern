@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Lantern trusted synthetic graphics probe</title>
+<style>body{margin:0}canvas{display:block;width:256px;height:256px}pre{white-space:pre-wrap}</style>
+<canvas id="surface" width="256" height="256"></canvas>
+<pre id="status">pending</pre>
+<script type="module">
+const canvas = document.querySelector('canvas');
+const status = document.querySelector('#status');
+const mode = new URL(location.href).searchParams.get('api') || 'webgl';
+try {
+  let adapterInfo = null;
+  if (mode === 'webgpu') {
+    if (!isSecureContext) throw new Error('WebGPU requires a secure context');
+    const adapter = await navigator.gpu?.requestAdapter();
+    if (!adapter) throw new Error('No WebGPU adapter');
+    adapterInfo = {vendor: adapter.info.vendor, architecture: adapter.info.architecture,
+      device: adapter.info.device, description: adapter.info.description,
+      isFallbackAdapter: adapter.info.isFallbackAdapter};
+    const device = await adapter.requestDevice();
+    const context = canvas.getContext('webgpu');
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({device, format, alphaMode: 'opaque'});
+    const module = device.createShaderModule({code: `
+      @vertex fn vertex(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+        var p = array<vec2f,3>(vec2f(-0.8,-0.8), vec2f(0.8,-0.8), vec2f(0.0,0.8));
+        return vec4f(p[i],0.0,1.0);
+      }
+      @fragment fn fragment() -> @location(0) vec4f { return vec4f(0.0,1.0,0.0,1.0); }
+    `});
+    const pipeline = await device.createRenderPipelineAsync({layout:'auto',
+      vertex:{module,entryPoint:'vertex'}, fragment:{module,entryPoint:'fragment',targets:[{format}]}});
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({colorAttachments:[{
+      view:context.getCurrentTexture().createView(), clearValue:{r:1,g:0,b:0,a:1},
+      loadOp:'clear',storeOp:'store'}]});
+    pass.setPipeline(pipeline);pass.draw(3);pass.end();
+    device.queue.submit([encoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+  } else if (mode === 'webgl') {
+    const gl = canvas.getContext('webgl', {preserveDrawingBuffer:true});
+    if (!gl) throw new Error('No WebGL context');
+    gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.SCISSOR_TEST);gl.scissor(64,64,128,128);
+    gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.finish();
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL render failed');
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    adapterInfo = {renderer:ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)};
+  } else throw new Error('Unknown API');
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  status.textContent = JSON.stringify({status:'rendered', api:mode, secureContext:isSecureContext, adapterInfo});
+} catch (error) { status.textContent = JSON.stringify({status:'failed',api:mode,error:String(error)}); }
+</script>

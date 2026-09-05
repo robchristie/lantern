@@ -2,7 +2,7 @@
 
 Status: active
 
-Phase: pointer candidate verification
+Phase: graphics candidate verification
 
 ## Outcome and provenance
 
@@ -21,8 +21,8 @@ work package. Base main for pointer recovery: `2d55db7`.
 
 | Increment | Owner revision | Consumer revision | Aggregate result | Status | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| Pointer, wheel, crop and cleanup guidance | Archive pointer commits above | Pending reviewed landing | Canonical validation passed 161 tests; repaired real-browser smoke passed | Candidate | Recovered historical plan: `../completed/2026-05-28-pointer-wheel-screenshot-region.md`; current PR and local smoke evidence |
-| Graphics configuration and diagnostics | Archive graphics commits above | Pending pointer landing | Pending | Queued | Separate graphics PR and runtime evidence |
+| Pointer, wheel, crop and cleanup guidance | Archive pointer commits above | `75d5173` | Canonical validation passed 162 tests; real-browser smoke passed; independent review PASS at `df58d48` | Landed | Recovered historical plan: `../completed/2026-05-28-pointer-wheel-screenshot-region.md`; current PR and local smoke evidence |
+| Graphics configuration and diagnostics | Archive graphics commits above | Pending reviewed graphics landing | Canonical validation passed 173 tests; hardware WebGPU, profile WebGL restart and pointer integration passed | Candidate | `../completed/2026-07-27-managed-browser-hardware-webgpu.md#recovery-qualification--2026-09-05` |
 | Final integration and binary refresh | Both landed increments | Pending | Pending | Queued | Final canonical checks and installed-binary provenance |
 
 ## Acceptance and next action
@@ -42,9 +42,8 @@ GPU/runtime identity and observed graphics result with the graphics evidence
 owner before calling hardware acceleration proven. If runtime behaviour needs
 calibration, define the smallest probe and exit condition there first.
 
-Next: finish the pointer browser smoke, repair any observed contract mismatch,
-then review and land pointer before recovering graphics in a fresh bounded
-implementation context. Update this table at each phase boundary; detailed
+Next: independently review and land the qualified graphics candidate, then
+refresh the installed binary from merged main and complete recovery. Detailed
 review and CI evidence belong to their pull requests.
 
 ## Pointer calibration evidence
@@ -67,4 +66,23 @@ using Chrome for Testing 151.0.7922.47, image
 `sha256:b0e3d80abba6a43e9a9790664d10109c70452dbc98a00859a0e2e36cbe3d7b3f`.
 Hover, wheel, a 1200 ms drag, and identical 120 x 80 crop pixels before/after
 scroll all passed. Untracked evidence: `.smoogle/artifacts/pointer-smoke/`.
-Only this evidence paragraph changed after the runtime-qualified source.
+The subsequent drag-error release repair passed canonical and runtime checks
+on `df58d48501e0f419f4df7a7cbb29b503e23d48b9`, independently reviewed PASS
+and landed in PR #1.
+
+
+## Graphics recovery boundary
+
+The recovered implementation unions graphics/device metadata with current profile
+and gateway metadata and retains the current reservation and failed-start cleanup
+lifecycle. `webgpu` with `--profile` fails validation before state or runtime
+access; disabled, SwiftShader and generic GPU modes support named profiles.
+The archived completed graphics plans below remain historical evidence, not
+qualification of this recovered candidate.
+
+`scripts/graphics-smoke.py` requires a caller-selected page and fixture URL for
+`scripts/fixtures/graphics-smoke.html`. It requires rendered application status
+and red/green screenshot pixels. For WebGPU, serve the fixture inside the browser
+container at `http://localhost:8765/graphics-smoke.html` using a loopback-bound
+Python HTTP server; do not expand insecure-origin browser flags. Runtime and
+image qualification evidence remains owned by the graphics delivery work package.

@@ -27,6 +27,8 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 ## Recently Completed Plans
 
 - `docs/exec-plans/completed/2026-08-20-secret-safe-form-entry.md`
+- `docs/exec-plans/completed/2026-07-27-managed-browser-hardware-webgpu.md`
+- `docs/exec-plans/completed/2026-06-28-managed-browser-webgl-graphics-mode.md`
 - `docs/exec-plans/completed/2026-04-29-key-press-interaction.md`
 - `docs/exec-plans/completed/2026-05-28-pointer-wheel-screenshot-region.md`
 - `docs/exec-plans/completed/2026-04-23-managed-browser-cdp-containers.md`
