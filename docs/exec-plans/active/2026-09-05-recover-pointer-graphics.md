@@ -21,7 +21,7 @@ work package. Base main for pointer recovery: `2d55db7`.
 
 | Increment | Owner revision | Consumer revision | Aggregate result | Status | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| Pointer, wheel, crop and cleanup guidance | Archive pointer commits above | Pending reviewed landing | Canonical validation passed 160 tests; browser smoke exposed scrolled crop mismatch | Candidate | Recovered historical plan: `../completed/2026-05-28-pointer-wheel-screenshot-region.md`; current PR and local smoke evidence |
+| Pointer, wheel, crop and cleanup guidance | Archive pointer commits above | Pending reviewed landing | Canonical validation passed 161 tests; repaired real-browser smoke passed | Candidate | Recovered historical plan: `../completed/2026-05-28-pointer-wheel-screenshot-region.md`; current PR and local smoke evidence |
 | Graphics configuration and diagnostics | Archive graphics commits above | Pending pointer landing | Pending | Queued | Separate graphics PR and runtime evidence |
 | Final integration and binary refresh | Both landed increments | Pending | Pending | Queued | Final canonical checks and installed-binary provenance |
 
@@ -62,4 +62,9 @@ implementation: it passed viewport-relative coordinates directly as CDP
 page-relative clip coordinates. The repair adds the selected viewport's page
 origin while retaining requested region metadata and viewport dimensions.
 The fixture regression covers non-zero horizontal and vertical page offsets.
-Final runtime qualification is pending on the repaired candidate.
+Runtime qualification passed on `1bb0e00e065a9f2b57be81ce422915bc21688a0d`
+using Chrome for Testing 151.0.7922.47, image
+`sha256:b0e3d80abba6a43e9a9790664d10109c70452dbc98a00859a0e2e36cbe3d7b3f`.
+Hover, wheel, a 1200 ms drag, and identical 120 x 80 crop pixels before/after
+scroll all passed. Untracked evidence: `.smoogle/artifacts/pointer-smoke/`.
+Only this evidence paragraph changed after the runtime-qualified source.
