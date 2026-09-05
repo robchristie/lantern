@@ -44,6 +44,8 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
    with `lantern browser start`, or create a dedicated authenticated profile
    with `lantern browser profile create <NAME>` and start it using
    `lantern browser start --profile <NAME>`.
+   For a trusted hardware-WebGPU application, use `--graphics webgpu` with an
+   explicit `--gpu-device`; Lantern never selects a host device implicitly.
 5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
 6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
 7. Use `lantern hover`, `lantern wheel`, and `lantern drag` for explicit canvas or viewport pointer checks after reviewing the target and selector.

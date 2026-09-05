@@ -4070,3 +4070,28 @@ fn drag_move_failure_releases_button_and_preserves_original_error() {
         websocket.finish();
     }
 }
+
+#[test]
+fn webgpu_profile_rejected_before_state_or_runtime_access() {
+    let state = unique_temp_state_home("webgpu-rejection");
+    let output = lantern_with_state(
+        [
+            "--json",
+            "browser",
+            "start",
+            "--profile",
+            "review",
+            "--graphics",
+            "webgpu",
+            "--gpu-device",
+            "nvidia.com/gpu=0",
+        ],
+        &state,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("Hardware WebGPU requires a disposable profile."));
+    assert!(
+        !state.exists(),
+        "invalid unsafe profile combination must not initialise state"
+    );
+}

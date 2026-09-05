@@ -1,5 +1,10 @@
 # Managed Browser WebGL Graphics Mode
 
+Recovery note (2026-09-05): historical archive evidence; current candidate
+qualification is tracked in `../active/2026-09-05-recover-pointer-graphics.md`.
+
+Status: completed
+
 ## Summary
 
 Lantern managed browser containers previously launched Chrome with

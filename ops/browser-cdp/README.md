@@ -31,3 +31,26 @@ historical `--disable-gpu` launch behavior. For WebGL smoke checks without host
 GPU passthrough, start through Lantern with `--graphics swiftshader`; the
 entrypoint enables Chrome's SwiftShader/ANGLE software renderer. For
 operator-managed GPU passthrough experiments, use `--graphics gpu`.
+
+For a hardware-backed WebGPU session, select the reviewed WebGPU launch mode
+and pass one explicit container-runtime device selector:
+
+```sh
+lantern browser start \
+  --graphics webgpu \
+  --gpu-device nvidia.com/gpu=0 \
+  --json
+```
+
+`webgpu` enables Chrome's Vulkan path with `--enable-unsafe-webgpu`. It is an
+opt-in development mode for disposable profiles and trusted sites, not a claim
+that ordinary production Chrome would expose the same adapter. Lantern does
+not auto-detect devices. NVIDIA CDI selectors require the NVIDIA Container
+Toolkit; other runtimes and drivers may use a path such as
+`/dev/dri/renderD128`. Always require application-level rendered pixels in
+addition to CDP readiness.
+
+
+Named persistent profiles can use `disabled`, `swiftshader`, or `gpu` graphics.
+Hardware `webgpu` is restricted to disposable trusted-site sessions: combining
+`--graphics webgpu` with `--profile` is rejected before state or runtime access.
