@@ -686,7 +686,7 @@ impl WebSocketFixture {
         }
     }
 
-    fn one_screenshot_region_response() -> Self {
+    fn one_screenshot_region_response(page_x: f64, page_y: f64) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
         let handle = thread::spawn(move || {
@@ -696,18 +696,22 @@ impl WebSocketFixture {
             read_expect(&mut socket, r#""method":"Page.getLayoutMetrics""#);
             socket
                 .send(Message::Text(
-                    r#"{"id":1,"result":{"cssVisualViewport":{"clientWidth":1280,"clientHeight":720}}}"#
-                        .to_owned()
-                        .into(),
+                    serde_json::json!({"id":1,"result":{"cssVisualViewport":{
+                        "clientWidth":1280,"clientHeight":720,"pageX":page_x,"pageY":page_y
+                    }}})
+                    .to_string()
+                    .into(),
                 ))
                 .expect("fixture should write layout metrics response");
 
             let message = read_expect(&mut socket, r#""method":"Page.captureScreenshot""#);
-            assert!(
-                message.contains(
-                    r#""clip":{"height":240.0,"scale":1.0,"width":320.0,"x":100.0,"y":80.0}"#
-                ),
-                "screenshot fixture should pass requested clip: {message:?}"
+            let request: serde_json::Value = serde_json::from_str(&message).unwrap();
+            assert_eq!(
+                request["params"]["clip"],
+                serde_json::json!({
+                    "height":240.0,"scale":1.0,"width":320.0,
+                    "x":100.0 + page_x,"y":80.0 + page_y
+                })
             );
             socket
                 .send(Message::Text(
@@ -2476,7 +2480,16 @@ fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
 
 #[test]
 fn screenshot_json_captures_explicit_viewport_region() {
-    let websocket = WebSocketFixture::one_screenshot_region_response();
+    check_viewport_region(0.0, 0.0);
+}
+
+#[test]
+fn screenshot_json_translates_viewport_region_after_scroll() {
+    check_viewport_region(25.0, 500.0);
+}
+
+fn check_viewport_region(page_x: f64, page_y: f64) {
+    let websocket = WebSocketFixture::one_screenshot_region_response(page_x, page_y);
     let fixture =
         HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
     let output_path = unique_temp_png_path("region");

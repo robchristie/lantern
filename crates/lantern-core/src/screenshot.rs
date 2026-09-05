@@ -92,7 +92,13 @@ pub fn capture_visible_viewport_screenshot(
         .ok_or(ScreenshotError::TargetWebSocketMissing)?;
 
     let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let (width, height) = viewport_dimensions(&mut socket)?;
+    let viewport = viewport_metrics(&mut socket)?;
+    let width = viewport
+        .client_width
+        .and_then(non_negative_finite_dimension);
+    let height = viewport
+        .client_height
+        .and_then(non_negative_finite_dimension);
     let mut params = json!({
         "format": SCREENSHOT_FORMAT,
         "fromSurface": true,
@@ -100,8 +106,8 @@ pub fn capture_visible_viewport_screenshot(
     });
     if let Some(region) = region {
         params["clip"] = json!({
-            "x": region.x,
-            "y": region.y,
+            "x": region.x + viewport.page_x.unwrap_or(0.0),
+            "y": region.y + viewport.page_y.unwrap_or(0.0),
             "width": region.width,
             "height": region.height,
             "scale": 1.0
@@ -138,9 +144,7 @@ pub fn capture_visible_viewport_screenshot(
     })
 }
 
-fn viewport_dimensions(
-    socket: &mut CdpWebSocket,
-) -> Result<(Option<u64>, Option<u64>), ScreenshotError> {
+fn viewport_metrics(socket: &mut CdpWebSocket) -> Result<CdpViewport, ScreenshotError> {
     let result = socket.call("Page.getLayoutMetrics", None)?;
     let response: CdpLayoutMetricsResponse =
         serde_json::from_value(result).map_err(|source| CdpError::ResponseInvalid {
@@ -148,22 +152,14 @@ fn viewport_dimensions(
             source: source.to_string(),
         })?;
 
+    // CDP clip origins are page-relative; public crop coordinates are relative
+    // to the visible viewport, including its scroll offset.
     Ok(response
         .css_visual_viewport
         .or(response.css_layout_viewport)
         .or(response.visual_viewport)
         .or(response.layout_viewport)
-        .map(|viewport| {
-            (
-                viewport
-                    .client_width
-                    .and_then(non_negative_finite_dimension),
-                viewport
-                    .client_height
-                    .and_then(non_negative_finite_dimension),
-            )
-        })
-        .unwrap_or((None, None)))
+        .unwrap_or_default())
 }
 
 fn non_negative_finite_dimension(value: f64) -> Option<u64> {
@@ -189,9 +185,11 @@ struct CdpLayoutMetricsResponse {
     css_visual_viewport: Option<CdpViewport>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CdpViewport {
+    page_x: Option<f64>,
+    page_y: Option<f64>,
     client_width: Option<f64>,
     client_height: Option<f64>,
 }
