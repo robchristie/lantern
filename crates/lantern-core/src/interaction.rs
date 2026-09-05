@@ -870,6 +870,7 @@ fn dispatch_drag(
     let steps = drag_step_count(duration);
     let drag_started = Instant::now();
     let mut event_count = 2;
+    let mut last_accepted = start;
     for step in 1..=steps {
         if !duration.is_zero() {
             sleep_until(drag_started + drag_step_elapsed(duration, step, steps));
@@ -879,7 +880,7 @@ fn dispatch_drag(
             x: (start.x + ((end.x - start.x) * progress)).round(),
             y: (start.y + ((end.y - start.y) * progress)).round(),
         };
-        socket.call(
+        if let Err(error) = socket.call(
             "Input.dispatchMouseEvent",
             Some(json!({
                 "type": "mouseMoved",
@@ -888,24 +889,39 @@ fn dispatch_drag(
                 "button": "left",
                 "buttons": 1
             })),
-        )?;
+        ) {
+            // A rejected move must not leave the shared browser holding the
+            // button down. Attempt one release using the normal CDP timeout,
+            // preserving the original movement error if cleanup also fails.
+            let _ = dispatch_drag_release(socket, last_accepted);
+            return Err(error.into());
+        }
+        last_accepted = point;
         event_count += 1;
     }
 
+    dispatch_drag_release(socket, end)?;
+    event_count += 1;
+
+    Ok(event_count)
+}
+
+fn dispatch_drag_release(
+    socket: &mut CdpWebSocket,
+    point: InteractionPoint,
+) -> Result<(), InteractionError> {
     socket.call(
         "Input.dispatchMouseEvent",
         Some(json!({
             "type": "mouseReleased",
-            "x": end.x,
-            "y": end.y,
+            "x": point.x,
+            "y": point.y,
             "button": "left",
             "buttons": 0,
             "clickCount": 1
         })),
     )?;
-    event_count += 1;
-
-    Ok(event_count)
+    Ok(())
 }
 
 fn dispatch_key(socket: &mut CdpWebSocket, key: &str) -> Result<(), InteractionError> {

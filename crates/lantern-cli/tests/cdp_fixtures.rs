@@ -1274,6 +1274,75 @@ impl WebSocketFixture {
         }
     }
 
+    fn one_drag_move_failure_response(release_fails: bool) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
+        let address = listener.local_addr().expect("fixture should have address");
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("fixture should accept");
+            let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
+
+            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write document response");
+            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write selector response");
+            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
+                ))
+                .expect("fixture should write node response");
+            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
+            socket
+                .send(Message::Text(
+                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
+                        .to_owned()
+                        .into(),
+                ))
+                .expect("fixture should write box response");
+
+            for (id, event_type) in [
+                (5, "mouseMoved"),
+                (6, "mousePressed"),
+                (7, "mouseMoved"),
+                (8, "mouseReleased"),
+            ] {
+                let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
+                assert!(
+                    message.contains(&format!(r#""type":"{event_type}""#)),
+                    "drag fixture should dispatch {event_type}: {message:?}"
+                );
+                if id == 8 {
+                    assert!(
+                        message.contains(r#""x":60.0"#) && message.contains(r#""y":40.0"#),
+                        "failed drag should release at last accepted position: {message:?}"
+                    );
+                }
+                socket
+                    .send(Message::Text(
+                        if id == 7 || (id == 8 && release_fails) {
+                            format!(r#"{{"id":{id},"error":{{"code":-32000,"message":"rejected event {id}"}}}}"#)
+                        } else {
+                            format!(r#"{{"id":{id},"result":{{}}}}"#)
+                        }.into(),
+                    ))
+                    .expect("fixture should write drag response");
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}/devtools/page/PAGE_ATTACHED_1234567890"),
+            handle,
+        }
+    }
+
     fn one_click_selector_timeout_response() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture should bind");
         let address = listener.local_addr().expect("fixture should have address");
@@ -3976,5 +4045,28 @@ fn pointer_and_crop_flags_are_rejected_before_browser_lifecycle_dispatch() {
             );
             assert!(stdout(&output).is_empty());
         }
+    }
+}
+
+#[test]
+fn drag_move_failure_releases_button_and_preserves_original_error() {
+    for release_fails in [false, true] {
+        let websocket = WebSocketFixture::one_drag_move_failure_response(release_fails);
+        let targets: Vec<lantern_core::cdp::TargetInfo> =
+            serde_json::from_str(&target_list_with_websocket(websocket.url())).unwrap();
+        let error = lantern_core::interaction::drag_element(
+            &targets[0],
+            "canvas",
+            160.0,
+            -80.0,
+            Duration::ZERO,
+            Duration::from_secs(1),
+            lantern_core::redaction::RedactionMode::Redacted,
+        )
+        .expect_err("failed movement must remain an error");
+        let error = format!("{error:?}");
+        assert!(error.contains("rejected event 7"), "{error}");
+        assert!(!error.contains("rejected event 8"));
+        websocket.finish();
     }
 }
