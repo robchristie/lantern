@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lantern pointer smoke</title>
+<style>
+  body { margin: 0; min-height: 2000px; background: white; font: 16px sans-serif; }
+  #surface { position: fixed; left: 40px; top: 40px; width: 320px; height: 200px;
+    background: #2468ac; touch-action: none; }
+  #evidence { position: fixed; top: 260px; }
+  #scroll { position: fixed; left: 400px; top: 40px; }
+</style>
+<div id="surface" aria-label="Synthetic pointer surface"></div>
+<div id="evidence">ready</div>
+<button id="scroll">Scroll fixture</button>
+<script>
+  const surface = document.querySelector('#surface');
+  const evidence = document.querySelector('#evidence');
+  document.querySelector('#scroll').addEventListener('click', () => window.scrollTo(0, 500));
+  window.addEventListener('scroll', () => {
+    if (window.scrollY === 500) record('scroll-observed');
+  });
+  let dragging = false;
+  const seen = new Set();
+  function record(value) { seen.add(value); evidence.textContent = [...seen].join(' '); }
+  surface.addEventListener('mousemove', event => {
+    record('hover-observed');
+    if (dragging && event.buttons === 1) record('drag-move-observed');
+  });
+  surface.addEventListener('mousedown', event => {
+    if (event.button === 0) { dragging = true; record('drag-start-observed'); }
+  });
+  surface.addEventListener('mouseup', event => {
+    if (dragging && event.button === 0) { dragging = false; record('drag-end-observed'); }
+  });
+  surface.addEventListener('wheel', event => {
+    event.preventDefault();
+    if (event.deltaY === 80) record('wheel-observed');
+  }, { passive: false });
+</script>

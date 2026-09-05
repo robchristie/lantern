@@ -20,6 +20,8 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Current Active Plans
 
+- `docs/exec-plans/active/2026-09-05-recover-pointer-graphics.md`
+
 - `docs/exec-plans/active/2026-08-16-persistent-authenticated-browser-profiles.md`
 
 ## Recently Completed Plans

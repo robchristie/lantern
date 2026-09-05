@@ -3937,3 +3937,31 @@ fn stderr(output: &Output) -> String {
 fn json_stdout(output: &Output) -> serde_json::Value {
     serde_json::from_str(&stdout(output)).expect("stdout should be JSON")
 }
+
+#[test]
+fn pointer_and_crop_flags_are_rejected_before_browser_lifecycle_dispatch() {
+    for subcommand in ["start", "list", "status", "endpoint", "stop", "prune"] {
+        for (flag, value) in [
+            ("--dx", "1"),
+            ("--dy", "1"),
+            ("--duration-ms", "100"),
+            ("--region-x", "1"),
+            ("--region-y", "1"),
+            ("--region-width", "1"),
+            ("--region-height", "1"),
+            ("--crop-x", "1"),
+            ("--crop-y", "1"),
+            ("--crop-width", "1"),
+            ("--crop-height", "1"),
+        ] {
+            let output = lantern(["--json", "browser", subcommand, flag, value], None);
+            assert_eq!(output.status.code(), Some(2), "{subcommand} {flag}");
+            assert!(
+                stderr(&output).contains("Unsupported flag for browser command."),
+                "{subcommand} {flag}: {}",
+                stderr(&output)
+            );
+            assert!(stdout(&output).is_empty());
+        }
+    }
+}
