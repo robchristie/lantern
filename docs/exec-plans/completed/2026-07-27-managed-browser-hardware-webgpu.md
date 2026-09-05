@@ -108,3 +108,39 @@ Final evidence on 2026-07-27:
   `clippy::single_match` warning in `crates/lantern-core/src/cdp.rs`; this plan
   does not modify that file, and the standard repository validation remains
   green.
+
+
+## Recovery qualification — 2026-09-05
+
+The recovered integration was qualified at
+`27088bac31d35bd2afd39e1b6a7c40726c9e7600` on top of pointer landing
+`75d5173ac14ff5dcffb4e9b64c77a9183373c08c`.
+
+- Browser image: `sha256:812689b74fc4ca018ccba0acfeac949b0fbd2dbfd301c807c9d93b4a9507d286`,
+  local tag `localhost/lantern-browser-cdp:recovery-2026-09-05`.
+  Built by copying the recovered entrypoint into immutable existing base image
+  `sha256:b0e3d80abba6a43e9a9790664d10109c70452dbc98a00859a0e2e36cbe3d7b3f`;
+  the repository Containerfile and other image inputs did not change.
+  Chrome for Testing 151.0.7922.47; entrypoint SHA-256
+  `662688cc8c05d81db84b0af047d32168853f322e7dc823f2fbeae916224684c8`.
+- Podman 6.0.0, explicit CDI selector `nvidia.com/gpu=0`, NVIDIA RTX 3090
+  UUID `GPU-45bd98b8-90fa-f274-d033-87c48ecbefd4`.
+- Trusted synthetic fixture served inside the disposable container on localhost.
+  WebGPU reported NVIDIA/Ampere, `isFallbackAdapter=false`, and rendered red
+  `[255,0,0]` and green `[0,255,0]` sample pixels in a 256 x 256 PNG.
+  The pre-navigation flow observed no console messages/exceptions or network
+  failures/HTTP errors and reported no collection gaps.
+- The same WebGPU session passed hover, wheel, timed drag and scrolled viewport
+  cropping through the explicit `host.docker.internal` host-gateway mapping.
+- A newly created synthetic named profile rendered SwiftShader WebGL before and
+  after stop/prune/restart. WebGPU with that named profile returned usage and
+  left its profile state unchanged. All owned browsers were stopped/pruned,
+  and the synthetic profile was explicitly deleted.
+- Untracked evidence lives in `.smoogle/recovery-evidence/`: graphics PNG/JSON,
+  `profile-evidence.json`, `webgpu-pointer/`, image build and canonical logs.
+  The recovery coordinator retains these under the root checkout's ignored
+  `.smoogle/recovery-2026-09-05/` when removing worktrees.
+
+Retain the recovered candidate. This proves the selected Linux/NVIDIA hardware
+and software-WebGL paths, not other devices, production browser parity, or
+hardware WebGPU with named profiles (which is deliberately rejected).

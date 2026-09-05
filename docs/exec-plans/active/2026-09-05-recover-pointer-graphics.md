@@ -22,7 +22,7 @@ work package. Base main for pointer recovery: `2d55db7`.
 | Increment | Owner revision | Consumer revision | Aggregate result | Status | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Pointer, wheel, crop and cleanup guidance | Archive pointer commits above | `75d5173` | Canonical validation passed 162 tests; real-browser smoke passed; independent review PASS at `df58d48` | Landed | Recovered historical plan: `../completed/2026-05-28-pointer-wheel-screenshot-region.md`; current PR and local smoke evidence |
-| Graphics configuration and diagnostics | Archive graphics commits above | Pending reviewed graphics landing | Canonical validation passed 173 tests; current runtime proof pending | Candidate | Separate graphics PR and runtime evidence |
+| Graphics configuration and diagnostics | Archive graphics commits above | Pending reviewed graphics landing | Canonical validation passed 173 tests; hardware WebGPU, profile WebGL restart and pointer integration passed | Candidate | `../completed/2026-07-27-managed-browser-hardware-webgpu.md#recovery-qualification--2026-09-05` |
 | Final integration and binary refresh | Both landed increments | Pending | Pending | Queued | Final canonical checks and installed-binary provenance |
 
 ## Acceptance and next action
@@ -42,8 +42,8 @@ GPU/runtime identity and observed graphics result with the graphics evidence
 owner before calling hardware acceleration proven. If runtime behaviour needs
 calibration, define the smallest probe and exit condition there first.
 
-Next: validate the graphics candidate, qualify the current image and hardware
-with the synthetic rendered-pixel probe, then independently review and land. Update this table at each phase boundary; detailed
+Next: independently review and land the qualified graphics candidate, then
+refresh the installed binary from merged main and complete recovery. Detailed
 review and CI evidence belong to their pull requests.
 
 ## Pointer calibration evidence
@@ -66,7 +66,9 @@ using Chrome for Testing 151.0.7922.47, image
 `sha256:b0e3d80abba6a43e9a9790664d10109c70452dbc98a00859a0e2e36cbe3d7b3f`.
 Hover, wheel, a 1200 ms drag, and identical 120 x 80 crop pixels before/after
 scroll all passed. Untracked evidence: `.smoogle/artifacts/pointer-smoke/`.
-Only this evidence paragraph changed after the runtime-qualified source.
+The subsequent drag-error release repair passed canonical and runtime checks
+on `df58d48501e0f419f4df7a7cbb29b503e23d48b9`, independently reviewed PASS
+and landed in PR #1.
 
 
 ## Graphics recovery boundary
