@@ -1,6 +1,6 @@
 # Secret-safe file-backed form entry
 
-Status: active
+Status: completed
 
 ## Outcome
 
@@ -80,4 +80,14 @@ Lantern.
 - 2026-08-20: Independent exact-head review rejected `a05504a` because a FIFO
   could block before regular-file validation and file-specific errors exposed
   the input-source kind. Added non-blocking Unix open, source-neutral errors
-  and a bounded FIFO regression; re-review remains pending.
+  and a bounded FIFO regression; the repaired head passed independent review.
+
+- 2026-09-05: A fresh review found browser dispatch bypassed the type-only
+  input guard. Moved that guard before dispatch and added coverage for every
+  browser subcommand, requiring a usage error without path disclosure.
+- 2026-09-05: The user explicitly authorised repair and landing of Lantern
+  PR #4, discharging its human-review hold. This does not release the separate
+  Geometis consumer hold or authorise live identity operations.
+- Final validation and exact-head review evidence are recorded on
+  https://github.com/robchristie/lantern/pull/4. The real Geometis login canary
+  remains owned by the downstream system work.

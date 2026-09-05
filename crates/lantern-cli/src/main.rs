@@ -174,6 +174,14 @@ fn run(
         )
     })?;
 
+    if command != Command::Type && invocation.type_text_file.is_some() {
+        return Err(CliError::usage(
+            invocation.json,
+            "--text-file is only supported by type.",
+            "Run lantern type with exactly one of --text <TEXT> or --text-file <PATH>.",
+        ));
+    }
+
     if matches!(command, Command::Browser) {
         return run_browser_invocation(invocation);
     }
@@ -273,14 +281,6 @@ fn run(
             invocation.json,
             "--text is only supported by wait text and type.",
             "Run lantern wait text or lantern type with --text <TEXT>.",
-        ));
-    }
-
-    if command != Command::Type && invocation.type_text_file.is_some() {
-        return Err(CliError::usage(
-            invocation.json,
-            "--text-file is only supported by type.",
-            "Run lantern type with exactly one of --text <TEXT> or --text-file <PATH>.",
         ));
     }
 

@@ -2835,6 +2835,32 @@ fn text_file_is_rejected_for_non_type_commands() {
 }
 
 #[test]
+fn text_file_is_rejected_before_browser_lifecycle_dispatch() {
+    for subcommand in [
+        "start", "list", "status", "endpoint", "stop", "prune", "profile",
+    ] {
+        let output = lantern(
+            [
+                "--json",
+                "browser",
+                subcommand,
+                "--text-file",
+                "/path-secret-marker",
+            ],
+            None,
+        );
+        assert_eq!(output.status.code(), Some(2), "{subcommand}");
+        assert!(
+            stderr(&output).contains("--text-file is only supported by type."),
+            "{subcommand}: {}",
+            stderr(&output)
+        );
+        assert!(!stderr(&output).contains("path-secret-marker"));
+        assert!(stdout(&output).is_empty());
+    }
+}
+
+#[test]
 fn key_json_requires_selector_key_and_bounded_timeout_before_cdp() {
     let missing_key = lantern(
         [
