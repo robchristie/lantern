@@ -25,9 +25,13 @@ profile.
 Lantern performs every click, text, key and pointer interaction. A successful
 dispatch is not accepted as the application postcondition: the fixture changes
 its title from event handlers, and a separate read-only `lantern page` call
-checks the resulting state. Failure contracts also check that the title did not
-change. The runner invokes each mutation once and never automatically retries a
-possibly dispatched action.
+checks the resulting state. Negative fixtures also install document-level event
+capture and, where focus matters, a separate editable sentinel. A loopback CDP
+proxy audits commands from Lantern to Chromium and requires no `Input.*` command
+for every non-dispatched result. Positive controls prove that the same proxy
+detects mouse, text and key commands, while deliberately injected audit records
+exercise the same assertion and prove that it fails closed. The runner invokes
+each mutation once and never automatically retries a possibly dispatched action.
 
 The suite covers unique and duplicate selectors, native, disabled-fieldset and
 ARIA disabled controls, disabled pointer hover, read-only and non-editable text
@@ -47,9 +51,19 @@ contracts.
 
 Each run first replaces any previous verdict with a fresh failing record, then
 writes `evidence.json` and the Chromium log under the selected output directory.
+This happens before checking `LANTERN_CHROMIUM` or either executable path, so a
+preflight failure cannot leave a previous pass as the apparent current result.
 Evidence names the run UUID and UTC bounds, source revision and dirty state,
 fixture SHA-256, Lantern build capabilities, actual browser product and protocol
 version, requested window and actual fixture viewport, per-case command and
 verdict, and elapsed time. The browser contracts establish functional behaviour
 only. Screenshot repeatability, visual review and selected hardware graphics
 qualification require separate, pinned evidence.
+
+CI runs these contracts on GitHub's supported `macos-15-intel` hosted runner and
+installs the browser selected by Playwright 1.62.1 into a job-local directory.
+The earlier Ubuntu runner could not initialise Chrome's usable sandbox under its
+AppArmor user-namespace policy. Moving the functional contract to macOS retains
+the browser sandbox without weakening host policy or passing an unsafe browser
+flag. Local Linux and CI macOS runs are separate platform observations; neither
+establishes visual equivalence or hardware graphics qualification.

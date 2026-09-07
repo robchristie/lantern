@@ -4169,3 +4169,80 @@ fn stalled_preparation_without_observed_blocker_keeps_runtime_failure_exit() {
     fixture.finish();
     handle.join().unwrap();
 }
+
+#[test]
+fn incomplete_second_sample_does_not_invent_instability_or_succeed_in_legacy_mode() {
+    for stalled_second in [false, true] {
+        for strict in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let handle = thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut socket = tungstenite::accept(stream).unwrap();
+                read_expect(&mut socket, r#""method":"Runtime.evaluate""#);
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({"id":1,"result":{"result":{"objectId":"target"}}})
+                            .to_string()
+                            .into(),
+                    ))
+                    .unwrap();
+                read_expect(&mut socket, r#""method":"Runtime.callFunctionOn""#);
+                socket.send(Message::Text(serde_json::json!({"id":2,"result":{"result":{"value":{"node_name":"BUTTON","rect":[0,0,50,50],"point":{"x":25,"y":25}}}}}).to_string().into())).unwrap();
+                if stalled_second {
+                    read_expect(&mut socket, r#""method":"Runtime.callFunctionOn""#);
+                    // This second probe was sent but never returned a blocker.
+                    thread::sleep(Duration::from_millis(250));
+                }
+                // A short budget expires between samples; neither path sends input.
+                assert!(socket.read().is_err());
+            });
+            let fixture = HttpFixture::one_response(
+                "/json/list",
+                target_list_with_websocket(&format!("ws://{address}/page")),
+            );
+            let mut args = vec![
+                "click",
+                "--selector",
+                "#target",
+                "--timeout-ms",
+                if stalled_second { "220" } else { "80" },
+                "--endpoint",
+                fixture.endpoint(),
+                "--json",
+            ];
+            if strict {
+                args.push("--strict");
+            }
+            let output = Command::new(env!("CARGO_BIN_EXE_lantern"))
+                .args(args)
+                .env_remove("LANTERN_CDP_ENDPOINT")
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(1),
+                "stalled_second={stalled_second} strict={strict}"
+            );
+            assert!(stderr(&output).is_empty());
+            let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+            assert_eq!(value["ok"], false);
+            assert_eq!(value["interaction"]["dispatched"], false);
+            assert_eq!(value["interaction"]["dispatch_state"], "not_dispatched");
+            assert_eq!(value["interaction"]["timed_out"], true);
+            assert_eq!(
+                value["interaction"]["immediate_error"],
+                if stalled_second {
+                    "cdp_command_uncertain"
+                } else {
+                    "actionability_incomplete"
+                }
+            );
+            fixture.finish();
+            handle.join().unwrap();
+        }
+    }
+}

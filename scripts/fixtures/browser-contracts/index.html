@@ -26,6 +26,34 @@
     node.addEventListener('click', () => mark('clicked'));
     return node;
   };
+  const pointerBlocked = new Set([
+    'native-disabled', 'fieldset-disabled', 'aria-disabled', 'occluded', 'unstable'
+  ]);
+  const textBlocked = new Set([
+    'readonly', 'noneditable', 'focus-disables', 'focus-readonly'
+  ]);
+  const keyBlocked = scenario === 'nonfocusable-key';
+  const needsSentinel = textBlocked.has(scenario) || keyBlocked;
+  let sentinel = null;
+  if (needsSentinel) {
+    sentinel = document.createElement('input');
+    sentinel.id = 'sentinel';
+    sentinel.setAttribute('aria-label', 'Independent input sentinel');
+    sentinel.addEventListener('beforeinput', () => mark('sentinel-text'));
+    sentinel.addEventListener('keydown', () => mark('sentinel-key'));
+    fixture.append(sentinel);
+  }
+  if (pointerBlocked.has(scenario)) {
+    document.addEventListener('pointerdown', () => mark('forbidden-pointer'), true);
+    document.addEventListener('mousedown', () => mark('forbidden-pointer'), true);
+  }
+  if (textBlocked.has(scenario)) {
+    document.addEventListener('beforeinput', () => mark('forbidden-text'), true);
+    document.addEventListener('input', () => mark('forbidden-text'), true);
+  }
+  if (keyBlocked) {
+    document.addEventListener('keydown', () => mark('forbidden-key'), true);
+  }
 
   if (scenario === 'unique') {
     fixture.append(button('#target'));
@@ -56,8 +84,11 @@
     node.addEventListener('input', () => mark('unexpected-input'));
     fixture.append(node);
   } else if (scenario === 'noneditable') {
-    fixture.innerHTML = '<div id="target">Plain text</div>';
-    document.querySelector('#target').addEventListener('input', () => mark('unexpected-input'));
+    const node = document.createElement('div');
+    node.id = 'target';
+    node.textContent = 'Plain text';
+    node.addEventListener('input', () => mark('unexpected-input'));
+    fixture.append(node);
   } else if (scenario === 'focus-disables') {
     const node = document.createElement('input');
     node.id = 'target';
@@ -71,8 +102,11 @@
     node.addEventListener('input', () => mark('unexpected-input'));
     fixture.append(node);
   } else if (scenario === 'nonfocusable-key') {
-    fixture.innerHTML = '<div id="target">Cannot receive focus</div>';
-    document.querySelector('#target').addEventListener('keydown', () => mark('unexpected-key'));
+    const node = document.createElement('div');
+    node.id = 'target';
+    node.textContent = 'Cannot receive focus';
+    node.addEventListener('keydown', () => mark('unexpected-key'));
+    fixture.append(node);
   } else if (scenario === 'occluded') {
     fixture.innerHTML = '<div id="occlusion-host"><button id="target">Covered</button><div id="cover">Cover</div></div>';
     document.querySelector('#target').addEventListener('click', () => mark('clicked'));
@@ -127,5 +161,6 @@
     fixture.textContent = 'Unknown fixture case';
     mark('unknown');
   }
+  if (sentinel) sentinel.focus();
   if (document.title === 'loading') mark('ready');
 </script>

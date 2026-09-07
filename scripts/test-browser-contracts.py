@@ -2,17 +2,22 @@
 """Run deterministic Lantern interaction contracts against disposable Chromium."""
 
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
+import platform
+import select
+import socket
 import subprocess
 import tempfile
 import threading
 import time
 import urllib.request
+from urllib.parse import urlparse
 import uuid
 
 
@@ -40,44 +45,212 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class CdpAuditProxy(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, upstream):
+        super().__init__(("127.0.0.1", 0), CdpAuditHandler)
+        self.upstream = upstream
+        self.input_commands = []
+        self.audit_lock = threading.Lock()
+
+    def record(self, payload):
+        try:
+            message = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        method = message.get("method", "")
+        if method.startswith("Input."):
+            with self.audit_lock:
+                self.input_commands.append(method)
+
+    def checkpoint(self):
+        with self.audit_lock:
+            return len(self.input_commands)
+
+    def commands_since(self, checkpoint):
+        with self.audit_lock:
+            return self.input_commands[checkpoint:]
+
+
+class CdpAuditHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self):
+        if self.headers.get("Upgrade", "").lower() == "websocket":
+            self.proxy_websocket()
+            return
+        with urllib.request.urlopen(self.server.upstream + self.path, timeout=3) as response:
+            body = response.read()
+            content_type = response.headers.get("Content-Type", "application/json")
+        if self.path.startswith("/json/list"):
+            targets = json.loads(body)
+            proxy_host = f"127.0.0.1:{self.server.server_port}"
+            for target in targets:
+                websocket = target.get("webSocketDebuggerUrl")
+                if websocket:
+                    target["webSocketDebuggerUrl"] = (
+                        f"ws://{proxy_host}{urlparse(websocket).path}"
+                    )
+            body = json.dumps(targets).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def proxy_websocket(self):
+        upstream_url = urlparse(self.server.upstream)
+        upstream = socket.create_connection(
+            (upstream_url.hostname, upstream_url.port), timeout=3
+        )
+        upstream_key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {self.path} HTTP/1.1\r\n"
+            f"Host: {upstream_url.hostname}:{upstream_url.port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {upstream_key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        ).encode()
+        upstream.sendall(request)
+        response = receive_headers(upstream)
+        if not response.startswith(b"HTTP/1.1 101"):
+            upstream.close()
+            raise RuntimeError(f"CDP WebSocket upgrade failed: {response[:120]!r}")
+
+        client_key = self.headers["Sec-WebSocket-Key"]
+        accept = base64.b64encode(hashlib.sha1(
+            (client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
+        ).digest()).decode()
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+        try:
+            while True:
+                readable, _, _ = select.select([self.connection, upstream], [], [], 1)
+                if not readable:
+                    continue
+                for source in readable:
+                    frame, opcode, payload = receive_frame(source)
+                    if source is self.connection:
+                        self.server.record(payload if opcode == 1 else b"")
+                        upstream.sendall(frame)
+                    else:
+                        self.connection.sendall(frame)
+                    if opcode == 8:
+                        return
+        except (ConnectionError, OSError):
+            return
+        finally:
+            upstream.close()
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+def receive_headers(connection):
+    data = bytearray()
+    while b"\r\n\r\n" not in data:
+        chunk = connection.recv(4096)
+        if not chunk:
+            raise ConnectionError("connection closed during WebSocket upgrade")
+        data.extend(chunk)
+        if len(data) > 65536:
+            raise RuntimeError("oversized WebSocket upgrade")
+    return bytes(data)
+
+
+def receive_exact(connection, length):
+    data = bytearray()
+    while len(data) < length:
+        chunk = connection.recv(length - len(data))
+        if not chunk:
+            raise ConnectionError("connection closed during WebSocket frame")
+        data.extend(chunk)
+    return bytes(data)
+
+
+def receive_frame(connection):
+    header = receive_exact(connection, 2)
+    opcode = header[0] & 0x0F
+    masked = bool(header[1] & 0x80)
+    length = header[1] & 0x7F
+    extension = b""
+    if length == 126:
+        extension = receive_exact(connection, 2)
+        length = int.from_bytes(extension, "big")
+    elif length == 127:
+        extension = receive_exact(connection, 8)
+        length = int.from_bytes(extension, "big")
+    if length > 16 * 1024 * 1024:
+        raise RuntimeError("oversized WebSocket frame in CDP audit proxy")
+    mask = receive_exact(connection, 4) if masked else b""
+    wire_payload = receive_exact(connection, length)
+    payload = wire_payload
+    if masked:
+        payload = bytes(value ^ mask[index % 4] for index, value in enumerate(wire_payload))
+    return header + extension + mask + wire_payload, opcode, payload
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lantern", default="target/debug/lantern")
     parser.add_argument("--output-dir", default=".smoogle/browser-contracts")
     args = parser.parse_args()
 
-    lantern = Path(args.lantern).resolve()
-    chromium_value = os.environ.get("LANTERN_CHROMIUM")
-    if not chromium_value:
-        parser.error("LANTERN_CHROMIUM must name an explicit Chromium binary")
-    chromium = Path(chromium_value).resolve()
-    if not lantern.is_file() or not os.access(lantern, os.X_OK):
-        parser.error(f"Lantern is not executable: {lantern}")
-    if not chromium.is_file() or not os.access(chromium, os.X_OK):
-        parser.error(f"LANTERN_CHROMIUM is not executable: {chromium}")
-
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     evidence_path = output / "evidence.json"
-    fixture_bytes = FIXTURE.read_bytes()
-    fixture_identity = {
-        "path": str(FIXTURE.relative_to(ROOT)),
-        "sha256": hashlib.sha256(fixture_bytes).hexdigest(),
-    }
     evidence = {
         "schema_version": 1,
         "result": "fail",
         "run_id": str(uuid.uuid4()),
         "started_at": datetime.now(timezone.utc).isoformat(),
         "scope": "Real-Chromium interaction contracts; not visual or hardware qualification.",
-        "fixture": fixture_identity,
+        "fixture": None,
         "source_revision": None,
         "lantern_capabilities": None,
         "browser": {},
+        "environment": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "input_audit": {
+            "transport": "loopback-websocket-proxy",
+            "recorded_data": "CDP Input method names only",
+        },
         "viewport": {},
+        "self_tests": [],
         "cases": [],
     }
-    evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    write_evidence(evidence_path, evidence)
+
+    lantern = Path(args.lantern).resolve()
+    chromium_value = os.environ.get("LANTERN_CHROMIUM")
+    if not chromium_value:
+        preflight_error(
+            parser, evidence_path, evidence,
+            "LANTERN_CHROMIUM must name an explicit Chromium binary",
+        )
+    chromium = Path(chromium_value).resolve()
+    if not lantern.is_file() or not os.access(lantern, os.X_OK):
+        preflight_error(parser, evidence_path, evidence, f"Lantern is not executable: {lantern}")
+    if not chromium.is_file() or not os.access(chromium, os.X_OK):
+        preflight_error(
+            parser, evidence_path, evidence,
+            f"LANTERN_CHROMIUM is not executable: {chromium}",
+        )
+
+    fixture_bytes = FIXTURE.read_bytes()
+    evidence["fixture"] = {
+        "path": str(FIXTURE.relative_to(ROOT)),
+        "sha256": hashlib.sha256(fixture_bytes).hexdigest(),
+    }
     evidence["source_revision"] = source_revision()
     evidence["lantern_capabilities"] = command_json(
         [str(lantern), "capabilities", "--json"]
@@ -118,14 +291,25 @@ def main():
                         "headless": "new",
                         "requested_window_size": {"width": 1000, "height": 700},
                     }
-                    run_suite(
-                        lantern,
-                        endpoint,
-                        f"http://127.0.0.1:{server.server_port}",
-                        evidence,
-                        suite_started,
-                    )
-                    evidence["result"] = "pass"
+                    audit = CdpAuditProxy(endpoint)
+                    audit_thread = threading.Thread(target=audit.serve_forever, daemon=True)
+                    audit_thread.start()
+                    try:
+                        audit_endpoint = f"http://127.0.0.1:{audit.server_port}"
+                        verify_audit_guards(audit, evidence)
+                        run_suite(
+                            lantern,
+                            audit_endpoint,
+                            f"http://127.0.0.1:{server.server_port}",
+                            evidence,
+                            suite_started,
+                            audit,
+                        )
+                        evidence["result"] = "pass"
+                    finally:
+                        audit.shutdown()
+                        audit.server_close()
+                        audit_thread.join(timeout=3)
                 finally:
                     stop_browser(browser)
     except Exception as error:
@@ -143,9 +327,20 @@ def main():
         server_thread.join(timeout=3)
         evidence["elapsed_ms"] = round((time.monotonic() - suite_started) * 1000)
         evidence["finished_at"] = datetime.now(timezone.utc).isoformat()
-        evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+        write_evidence(evidence_path, evidence)
 
     print(f"Browser contracts passed; evidence: {evidence_path}")
+
+
+def write_evidence(path, evidence):
+    path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+
+
+def preflight_error(parser, path, evidence, message):
+    evidence["failure"] = message
+    evidence["finished_at"] = datetime.now(timezone.utc).isoformat()
+    write_evidence(path, evidence)
+    parser.error(message)
 
 
 def source_revision():
@@ -212,7 +407,42 @@ def stop_browser(browser):
         browser.wait(timeout=3)
 
 
-def run_suite(lantern, endpoint, fixture_base, evidence, suite_started):
+def assert_input_contract(case, action, dispatched, commands):
+    expected_method = {
+        "click": "Input.dispatchMouseEvent",
+        "hover": "Input.dispatchMouseEvent",
+        "wheel": "Input.dispatchMouseEvent",
+        "drag": "Input.dispatchMouseEvent",
+        "type": "Input.insertText",
+        "key": "Input.dispatchKeyEvent",
+    }[action]
+    if not dispatched and commands:
+        raise AssertionError(f"{case}: forbidden CDP input commands observed: {commands}")
+    if dispatched and expected_method not in commands:
+        raise AssertionError(
+            f"{case}: dispatch was reported without audited {expected_method}: {commands}"
+        )
+
+
+def verify_audit_guards(audit, evidence):
+    for label, action, method in (
+        ("forbidden-pointer", "click", "Input.dispatchMouseEvent"),
+        ("forbidden-text", "type", "Input.insertText"),
+        ("forbidden-key", "key", "Input.dispatchKeyEvent"),
+    ):
+        checkpoint = audit.checkpoint()
+        audit.record(json.dumps({"id": -1, "method": method}).encode())
+        try:
+            assert_input_contract(label, action, False, audit.commands_since(checkpoint))
+        except AssertionError:
+            evidence["self_tests"].append(
+                {"case": label, "injected_method": method, "verdict": "pass"}
+            )
+        else:
+            raise AssertionError(f"audit guard accepted deliberate {method} injection")
+
+
+def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
     def invoke(*arguments, expected_exit=0):
         if time.monotonic() - suite_started > SUITE_TIMEOUT_SECONDS:
             raise TimeoutError(f"browser contract suite exceeded {SUITE_TIMEOUT_SECONDS} seconds")
@@ -248,12 +478,15 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started):
     def interaction(case, scenario, command, expected_exit, dispatched, error, expected_state):
         evidence["active_case"] = case
         before = navigate(scenario)
+        checkpoint = audit.checkpoint()
         value, elapsed_ms = invoke(*command, expected_exit=expected_exit)
         summary = value.get("interaction", {})
         if summary.get("dispatched") is not dispatched:
             raise AssertionError(f"{case}: unexpected dispatch state: {value}")
         if summary.get("immediate_error") != error:
             raise AssertionError(f"{case}: unexpected immediate error: {value}")
+        input_commands = audit.commands_since(checkpoint)
+        assert_input_contract(case, command[0], dispatched, input_commands)
         after = page_title()
         expected_title = f"{scenario}:{expected_state}:" + before.rsplit(":", 1)[1]
         if after != expected_title:
@@ -268,6 +501,7 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started):
                 "dispatch_state": summary.get("dispatch_state"),
                 "timed_out": summary.get("timed_out"),
                 "immediate_error": summary.get("immediate_error"),
+                "audited_input_commands": input_commands,
                 "application_state_before": before,
                 "application_state_after": after,
                 "elapsed_ms": elapsed_ms,
@@ -365,11 +599,16 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started):
     )
     evidence["active_case"] = "focused-key-body-shortcut"
     before_key = page_title()
+    key_checkpoint = audit.checkpoint()
     key_value, key_ms = invoke(
         "key", "--selector", "body", "--key", "ArrowDown",
         "--timeout-ms", "2000", "--strict",
     )
     key_summary = key_value.get("interaction", {})
+    key_input_commands = audit.commands_since(key_checkpoint)
+    assert_input_contract(
+        "focused-key-body-shortcut", "key", True, key_input_commands
+    )
     after_key = page_title()
     if not key_summary.get("dispatched") or after_key.split(":")[1] != "key-focused":
         raise AssertionError(f"key was not delivered to the focused input: {key_value}")
@@ -382,6 +621,7 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started):
         "dispatch_state": key_summary.get("dispatch_state"),
         "timed_out": key_summary.get("timed_out"),
         "immediate_error": key_summary.get("immediate_error"),
+        "audited_input_commands": key_input_commands,
         "application_state_before": before_key,
         "application_state_after": after_key,
         "elapsed_ms": key_ms,

@@ -803,6 +803,12 @@ Preparation rechecks identity, disabled and editable state after synchronous
 focus/scroll listeners. It retains the latest observed blocker at deadline expiry,
 including `element_disabled`, `element_not_editable` and `element_not_focused`;
 expiry alone never relabels a known geometry failure as `selector_not_found`.
+A valid first geometry sample is not an observed instability. If the deadline
+prevents the second sample and no blocker has been observed, Lantern returns
+`actionability_incomplete`, `ok=false` and exit `1` in both modes. A stalled CDP
+probe without any observed blocker remains a CDP failure, also exit `1` in both
+modes. An actual previously observed blocker remains available if a later probe
+cannot finish before expiry.
 Diagnostics return fixed codes and at most 64 characters of node name, without
 reading input values or page text. This is a conservative ordinary-DOM contract,
 not full [Playwright actionability](https://playwright.dev/docs/actionability)
@@ -816,7 +822,8 @@ envelope on stderr. Failures before attachment retain the standard stderr error
 envelope. The interaction result distinguishes:
 
 - `ok`: command evaluation completed; a completed actionability blocker remains
-  `true` for compatibility. In-socket CDP failure makes this `false`.
+  `true` for compatibility. Incomplete evaluation without an observed blocker
+  or a reported CDP failure makes this `false`.
 - `interaction.dispatched`: every requested input event was acknowledged by CDP.
   This is false for blocked, partial or uncertain sequences.
 - `interaction.dispatch_state`: `not_dispatched` when no requested input is known

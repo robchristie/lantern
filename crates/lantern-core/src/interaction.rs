@@ -37,7 +37,7 @@ impl InteractionCommandOutput {
             command,
             ok: !interaction
                 .immediate_error
-                .is_some_and(|code| code.starts_with("cdp_")),
+                .is_some_and(|code| code.starts_with("cdp_") || code == "actionability_incomplete"),
             page,
             interaction,
         }
@@ -457,14 +457,14 @@ pub(crate) fn interact_on_socket(
         immediate_error: None,
         evidence_loss: socket.evidence_loss(),
     };
-    let mut last_error = "operation_deadline_exceeded";
+    let mut last_blocker = None;
     loop {
         if Instant::now() >= budget.end() {
             summary.timed_out = true;
-            summary.immediate_error = Some(last_error);
+            summary.immediate_error = Some(last_blocker.unwrap_or("actionability_incomplete"));
             break;
         }
-        match prepare_target(socket, selector, request, &mut last_error) {
+        match prepare_target(socket, selector, request, &mut last_blocker) {
             Ok(Some(probe)) => {
                 summary.observed = request.observed(probe.node_name.clone(), probe.point, 0);
                 // Never retry this operation once its input sequence has begun.
@@ -489,20 +489,21 @@ pub(crate) fn interact_on_socket(
             Ok(None) => {
                 // Ambiguity and malformed selectors are deterministic, not a request
                 // to wait for one arbitrary match to disappear.
-                if matches!(last_error, "ambiguous_selector" | "selector_invalid") {
-                    summary.immediate_error = Some(last_error);
+                if matches!(
+                    last_blocker,
+                    Some("ambiguous_selector" | "selector_invalid")
+                ) {
+                    summary.immediate_error = last_blocker;
                     break;
                 }
             }
             Err(error) => {
                 summary.timed_out = Instant::now() >= budget.end();
-                summary.immediate_error = Some(
-                    if summary.timed_out && last_error != "operation_deadline_exceeded" {
-                        last_error
-                    } else {
-                        error_code(&error)
-                    },
-                );
+                summary.immediate_error = Some(if summary.timed_out {
+                    last_blocker.unwrap_or_else(|| error_code(&error))
+                } else {
+                    error_code(&error)
+                });
                 break;
             }
         }
@@ -530,8 +531,8 @@ struct ActionabilityProbe {
     point: Option<InteractionPoint>,
 }
 
-fn blocker(code: &str) -> &'static str {
-    match code {
+fn blocker(code: &str) -> Result<&'static str, InteractionError> {
+    Ok(match code {
         "ambiguous_selector" => "ambiguous_selector",
         "selector_invalid" => "selector_invalid",
         "selector_not_found" => "selector_not_found",
@@ -540,15 +541,22 @@ fn blocker(code: &str) -> &'static str {
         "element_not_focused" => "element_not_focused",
         "element_not_visible" => "element_not_visible",
         "element_occluded" => "element_occluded",
-        _ => "element_unstable",
-    }
+        "element_unstable" => "element_unstable",
+        _ => {
+            return Err(CdpError::ResponseInvalid {
+                context: "unexpected interaction blocker",
+                source: "unknown blocker code".to_owned(),
+            }
+            .into());
+        }
+    })
 }
 
 fn prepare_target(
     socket: &mut CdpWebSocket,
     selector: &str,
     request: ActionRequest<'_>,
-    last_error: &mut &'static str,
+    last_blocker: &mut Option<&'static str>,
 ) -> Result<Option<ActionabilityProbe>, InteractionError> {
     // Encode the selector as JSON data, never executable source supplied by the caller.
     let expression = format!(
@@ -560,7 +568,7 @@ fn prepare_target(
         Some(json!({"expression": expression, "objectGroup": "lantern-interaction"})),
     )?;
     if let Some(code) = resolved["result"]["value"].as_str() {
-        *last_error = blocker(code);
+        *last_blocker = Some(blocker(code)?);
         return Ok(None);
     }
     let object_id =
@@ -573,10 +581,12 @@ fn prepare_target(
     let result = (|| {
         let first = probe_target(socket, object_id, selector, request, None)?;
         if let Some(error) = first.error {
-            *last_error = blocker(&error);
+            *last_blocker = Some(blocker(&error)?);
             return Ok(None);
         }
-        *last_error = "element_unstable";
+        // One valid sample does not establish stability or instability. Preserve
+        // only a blocker actually returned by a probe; an unfinished second
+        // sample is an incomplete evaluation, not an observed moving target.
         let deadline = socket
             .deadline()
             .expect("interaction has an operation deadline");
@@ -586,7 +596,7 @@ fn prepare_target(
         }
         let second = probe_target(socket, object_id, selector, request, first.rect)?;
         if let Some(error) = &second.error {
-            *last_error = blocker(error);
+            *last_blocker = Some(blocker(error)?);
             return Ok(None);
         }
         Ok(Some(second))
@@ -1023,6 +1033,59 @@ mod tests {
             drop(socket);
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn observed_blocker_survives_a_later_incomplete_stability_probe() {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            let mut probe_count = 0;
+            while let Ok(message) = socket.read() {
+                let command: serde_json::Value =
+                    serde_json::from_str(&message.into_text().unwrap()).unwrap();
+                let result = match command["method"].as_str().unwrap() {
+                    "Runtime.evaluate" => json!({"result":{"objectId":"target"}}),
+                    "Runtime.releaseObjectGroup" => json!({}),
+                    "Runtime.callFunctionOn" => {
+                        probe_count += 1;
+                        match probe_count {
+                            1 => json!({"result":{"value":{"error":"element_disabled"}}}),
+                            2 => {
+                                json!({"result":{"value":{"node_name":"BUTTON","rect":[0,0,50,50],"point":{"x":25,"y":25}}}})
+                            }
+                            3 => {
+                                thread::sleep(Duration::from_millis(300));
+                                break;
+                            }
+                            _ => panic!("unexpected extra probe"),
+                        }
+                    }
+                    method => panic!("incomplete preparation dispatched {method}"),
+                };
+                socket
+                    .send(Message::Text(
+                        json!({"id":command["id"],"result":result})
+                            .to_string()
+                            .into(),
+                    ))
+                    .unwrap();
+            }
+        });
+        let budget = OperationDeadline::from(Duration::from_millis(350));
+        let mut socket =
+            CdpWebSocket::connect_until(&format!("ws://{address}/page"), budget.end()).unwrap();
+        let summary = interact_on_socket(&mut socket, "#target", ActionRequest::default(), budget);
+        assert!(!summary.dispatched);
+        assert!(summary.timed_out);
+        assert_eq!(summary.immediate_error, Some("element_disabled"));
+        assert_eq!(summary.dispatch_state, DispatchState::NotDispatched);
+        drop(socket);
+        handle.join().unwrap();
     }
 
     #[test]

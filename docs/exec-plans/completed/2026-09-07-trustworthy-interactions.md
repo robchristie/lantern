@@ -43,8 +43,9 @@ landing candidates.
 Calibration passed on Chrome `151.0.7922.34`: unique and offscreen controls
 received clicks and changed the independently inspected fixture title; the
 occluded target received no input and retained `element_occluded` at expiry.
-The same-socket target-handle mechanism was retained. The committed implementation
-`a4cadb95b38d102e6ec54c60d94358e3ca5c7fae` passed all 22 cases at viewport `1000x557`, including disabled hover, read-only
+The same-socket target-handle mechanism was retained. Initial committed
+implementation `a4cadb95b38d102e6ec54c60d94358e3ca5c7fae` passed 22 provisional
+contracts at viewport `1000x557`, including disabled hover, read-only
 and non-editable input, focus-listener state changes, global keys preserving
 focus, and an empty padded control. Fixture SHA-256:
 `bbb0c718bb5b77a507b9f050cb05105417e47590b2b24e537adbeafbe461cdeb`.
@@ -56,6 +57,27 @@ validation passed formatting, workspace/all-target checks, locked Rust 1.85
 compatibility, all 206 tests and docs hygiene. Exact committed-head browser run
 `f33d8c04-e8b8-41ea-a5b8-a6c055d4071e` passed in 12.272 seconds with matching
 clean source/build identities.
+
+Independent review blocked `82e33a1ed1b96c25d782f8b407ed85d8c3edd550`;
+[PR #10 records the findings](https://github.com/robchristie/lantern/pull/10#issuecomment-5564474611).
+The repair retains only actually observed blockers, distinguishes incomplete
+sampling from instability, and keeps stalled probes without a blocker on the
+runtime-failure exit path. Regression fixtures exercise both legacy and strict
+modes with a stalled second sample and insufficient time to take it; a separate
+regression retains an actual earlier blocker across a later stalled sample.
+Repair Rust qualification passed all 208 tests. The repaired browser cohort
+passed 22 cases on local Linux/Chrome `151.0.7922.34`; the loopback CDP audit
+observed no `Input.*` commands for all 12 non-dispatched cases. Real positive
+controls exercised mouse, text and key auditing. Three deliberately injected
+audit records were rejected by the same negative assertion; these guard checks
+do not inject forbidden input into the browser. Missing-browser configuration
+and invalid executable probes replaced stale passes with fresh failed evidence.
+Replacement fixture SHA-256:
+`3867826ecbae67483f6bb774ce5c3d20b09d2e4fa947e97b60e2163733e5ca99`.
+
+The CI browser job uses `macos-15-intel` and a job-local pinned browser to retain
+the sandbox after the Ubuntu AppArmor startup failure. The package PR owns that
+platform's CI result, replacement exact-head evidence and final review verdict.
 
 Interaction responses do not verify application outcomes. Independent fixture
 assertions qualify the tested outcomes, including successful input and prevented
