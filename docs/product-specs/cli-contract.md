@@ -795,9 +795,17 @@ geometry or identity returns `element_unstable`.
 | Action | Additional preparation |
 | --- | --- |
 | `click` | Requires enabled native controls, including disabled-fieldset semantics, and no ARIA-disabled or inert ancestor. |
-| `type` | Requires enabled, editable text input, textarea or contenteditable content; rejects native/ARIA read-only state; focuses and verifies actual focus. |
-| `key` | Requires enabled and focused target. A selector resolving to `document.body` explicitly sends a global key to the current focus, preserving it and bypassing geometry checks. |
+| `type` | Activates the selected page with `Page.bringToFront`; requires actual document focus and enabled, editable text input, textarea or contenteditable content; rejects native/ARIA read-only state; focuses and verifies the target. |
+| `key` | Activates the selected page and requires actual document focus plus an enabled and focused target. A selector resolving to `document.body` explicitly sends a global key to the current focus, preserving it and bypassing geometry checks. |
 | `hover`, `wheel`, `drag` | Requires stable visible hit geometry; disabled controls remain meaningful pointer targets. Drag checks its start point; the requested endpoint is an explicit offset. |
+
+Page activation shares the original operation deadline. Failed or unacknowledged
+activation prevents input. `document.activeElement` can retain a target even when
+the document lacks focus and focus listeners have not fired; both `type` and
+`key` therefore require `document.hasFocus()` as well. If normal activation cannot
+establish document focus, preparation returns `element_not_focused`. Lantern
+does not emulate focus. Activating the explicitly selected page can deliver its
+pending focus events before target preparation.
 
 Preparation rechecks identity, disabled and editable state after synchronous
 focus/scroll listeners. It retains the latest observed blocker at deadline expiry,

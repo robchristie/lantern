@@ -550,6 +550,14 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
 
     invoke("doctor")
     interaction(
+        "fresh-browser-focus-listener-disables", "focus-disables",
+        [
+            "type", "--selector", "#target", "--text", "lantern text",
+            "--timeout-ms", "1000", "--strict",
+        ],
+        1, False, "element_disabled", "ready",
+    )
+    interaction(
         "unique-click", "unique",
         ["click", "--selector", "#target", "--timeout-ms", "2000", "--strict"],
         0, True, None, "clicked",

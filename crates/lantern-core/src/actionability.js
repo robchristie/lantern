@@ -17,13 +17,17 @@ function(selector, action, previous) {
     if (action === 'type' && !editable())
         return {error: 'element_not_editable', node_name: this.nodeName.slice(0, 64)};
 
+    // Native document focus is distinct from its retained active element.
+    if ((action === 'type' || action === 'key') && !document.hasFocus())
+        return {error: 'element_not_focused', node_name: this.nodeName.slice(0, 64)};
     // body is the explicit global-key route: preserve the current focus.
     if (globalKey) return {node_name: this.nodeName.slice(0, 64), rect: [0, 0, 0, 0]};
     if (!previous) {
         this.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
         if (action === 'type' || action === 'key') this.focus({preventScroll: true});
     }
-    if ((action === 'type' || action === 'key') && document.activeElement !== this)
+    if ((action === 'type' || action === 'key') &&
+        (!document.hasFocus() || document.activeElement !== this))
         return {error: 'element_not_focused', node_name: this.nodeName.slice(0, 64)};
     // Focus/scroll listeners may synchronously replace or disable the target.
     if (!this.isConnected || document.querySelectorAll(selector).length !== 1 ||

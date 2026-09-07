@@ -43,6 +43,12 @@ opt-in strict exit status alongside the additive interaction diagnostics and
 also keeps one legacy non-strict failure case. It deliberately does not make a
 top-level interaction `ok` assertion.
 
+The first mutation in a fresh browser is a text attempt against an input whose
+focus listener disables it. This runs before any click or other interaction can
+activate the initial page and requires `element_disabled`, no dispatch, no
+outgoing `Input.*` method and unchanged fixture state. The later matrix retains
+the same focus-listener case after other interactions as a separate regression.
+
 The fixture also includes two dormant hooks for the later action-and-capture
 package: `case=post-action-failure-hook` produces a fast failed request and a
 runtime exception after a click, while `case=known-canvas-hook` draws known red

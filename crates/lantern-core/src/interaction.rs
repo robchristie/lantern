@@ -457,6 +457,21 @@ pub(crate) fn interact_on_socket(
         immediate_error: None,
         evidence_loss: socket.evidence_loss(),
     };
+    // A retained activeElement alone does not establish document focus or
+    // focus-event delivery in a background/headless page. Activate the exact
+    // selected page before text/key preparation, within the original budget.
+    if matches!(
+        request.action,
+        InteractionAction::Type | InteractionAction::Key
+    ) {
+        if let Err(error) = socket.call("Page.bringToFront", None) {
+            summary.immediate_error = Some(error_code(&error.into()));
+            summary.timed_out = Instant::now() >= budget.end();
+            summary.elapsed_ms = duration_millis(budget.started.elapsed());
+            summary.evidence_loss = socket.evidence_loss();
+            return summary;
+        }
+    }
     let mut last_blocker = None;
     loop {
         if Instant::now() >= budget.end() {
@@ -1032,6 +1047,66 @@ mod tests {
             assert!(started.elapsed() < Duration::from_millis(500));
             drop(socket);
             handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn unavailable_page_activation_prevents_text_and_global_key_input() {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        for action in [InteractionAction::Type, InteractionAction::Key] {
+            for stalled in [false, true] {
+                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+                let address = listener.local_addr().unwrap();
+                let handle = thread::spawn(move || {
+                    let (stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(1)))
+                        .unwrap();
+                    let mut socket = tungstenite::accept(stream).unwrap();
+                    let command: serde_json::Value =
+                        serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                    assert_eq!(command["method"], "Page.bringToFront");
+                    if stalled {
+                        thread::sleep(Duration::from_millis(180));
+                    } else {
+                        socket.send(Message::Text(json!({"id":command["id"],"error":{"code":-32000,"message":"activation unavailable"}}).to_string().into())).unwrap();
+                    }
+                    assert!(
+                        socket.read().is_err(),
+                        "activation failure must not dispatch or prepare input"
+                    );
+                });
+                let budget = OperationDeadline::from(Duration::from_millis(120));
+                let mut socket =
+                    CdpWebSocket::connect_until(&format!("ws://{address}/page"), budget.end())
+                        .unwrap();
+                let summary = interact_on_socket(
+                    &mut socket,
+                    "body",
+                    ActionRequest {
+                        action,
+                        text: Some("synthetic"),
+                        key: Some("Enter"),
+                        ..ActionRequest::default()
+                    },
+                    budget,
+                );
+                assert!(!summary.dispatched);
+                assert_eq!(summary.dispatch_state, DispatchState::NotDispatched);
+                assert_eq!(summary.timed_out, stalled);
+                assert_eq!(
+                    summary.immediate_error,
+                    Some(if stalled {
+                        "cdp_command_uncertain"
+                    } else {
+                        "cdp_command_failed"
+                    })
+                );
+                assert!(budget.started.elapsed() < Duration::from_millis(400));
+                drop(socket);
+                handle.join().unwrap();
+            }
         }
     }
 

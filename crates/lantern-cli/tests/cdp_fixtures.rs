@@ -967,7 +967,7 @@ impl WebSocketFixture {
                 "type fixture should insert requested text: {message:?}"
             );
             socket
-                .send(Message::Text(r#"{"id":5,"result":{}}"#.to_owned().into()))
+                .send(Message::Text(r#"{"id":6,"result":{}}"#.to_owned().into()))
                 .expect("fixture should write insert response");
         });
 
@@ -986,7 +986,7 @@ impl WebSocketFixture {
 
             actionability_ready(&mut socket, "BODY", Some("body"));
 
-            for (id, event_type) in [(5, "keyDown"), (6, "keyUp")] {
+            for (id, event_type) in [(6, "keyDown"), (7, "keyUp")] {
                 let message = read_expect(&mut socket, r#""method":"Input.dispatchKeyEvent""#);
                 assert!(
                     message.contains(&format!(r#""type":"{event_type}""#)),
@@ -1158,8 +1158,16 @@ impl WebSocketFixture {
 
             while let Ok(message) = socket.read() {
                 let message = message.into_text().expect("command should be text");
-                assert!(message.contains(r#""method":"Runtime.evaluate""#));
-                socket.send(Message::Text(format!(r#"{{"id":{id},"result":{{"result":{{"type":"string","value":"selector_not_found"}}}}}}"#).into())).unwrap();
+                if message.contains(r#""method":"Page.bringToFront""#) {
+                    socket
+                        .send(Message::Text(
+                            format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
+                        ))
+                        .unwrap();
+                } else {
+                    assert!(message.contains(r#""method":"Runtime.evaluate""#));
+                    socket.send(Message::Text(format!(r#"{{"id":{id},"result":{{"result":{{"type":"string","value":"selector_not_found"}}}}}}"#).into())).unwrap();
+                }
                 id += 1;
             }
         });
@@ -1184,6 +1192,15 @@ fn actionability_ready(
     node: &str,
     selector: Option<&str>,
 ) {
+    let start_id = if matches!(node, "INPUT" | "BODY") {
+        read_expect(socket, r#""method":"Page.bringToFront""#);
+        socket
+            .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+            .unwrap();
+        2
+    } else {
+        1
+    };
     let request: serde_json::Value =
         serde_json::from_str(&read_expect(socket, r#""method":"Runtime.evaluate""#)).unwrap();
     if let Some(selector) = selector {
@@ -1194,21 +1211,25 @@ fn actionability_ready(
                 .contains(selector)
         );
     }
-    socket.send(Message::Text(r#"{"id":1,"result":{"result":{"type":"object","subtype":"node","objectId":"target"}}}"#.to_owned().into())).unwrap();
-    for id in [2, 3] {
+    socket.send(Message::Text(serde_json::json!({"id":start_id,"result":{"result":{"type":"object","subtype":"node","objectId":"target"}}}).to_string().into())).unwrap();
+    for id in [start_id + 1, start_id + 2] {
         let request: serde_json::Value =
             serde_json::from_str(&read_expect(socket, r#""method":"Runtime.callFunctionOn""#))
                 .unwrap();
         assert_eq!(request["params"]["objectId"], "target");
         assert_eq!(
             request["params"]["arguments"][2]["value"].is_null(),
-            id == 2
+            id == start_id + 1
         );
         socket.send(Message::Text(serde_json::json!({"id":id,"result":{"result":{"value":{"node_name":node,"rect":[10,20,100,40],"point":{"x":60.0,"y":40.0}}}}}).to_string().into())).unwrap();
     }
     read_expect(socket, r#""method":"Runtime.releaseObjectGroup""#);
     socket
-        .send(Message::Text(r#"{"id":4,"result":{}}"#.to_owned().into()))
+        .send(Message::Text(
+            serde_json::json!({"id":start_id + 3,"result":{}})
+                .to_string()
+                .into(),
+        ))
         .unwrap();
 }
 

@@ -78,6 +78,9 @@ Use `+` or `-` only when the repo is clearly between two grades.
   preparation before input. Geometry and hit testing use the same target object;
   the latest blocker survives timeout. `--strict` opts into failed interaction
   exit status; application outcomes remain explicitly unverified.
+- Text/key preparation first activates the selected page and requires actual
+  document focus; a retained active element alone cannot establish focus-event
+  delivery. Failed activation prevents input without focus emulation.
 - Click, key and drag failures attempt one bounded release without input replay.
   Partial or unacknowledged input is reported as uncertain, with no second JSON
   envelope and no raw remote error or entered text.
