@@ -621,9 +621,10 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         timeout_ms=2000,
         extra_arguments=(),
         target_arguments=("--selector", "#target"),
+        navigate_first=True,
     ):
         evidence["active_case"] = case
-        before = navigate(scenario)
+        before = navigate(scenario) if navigate_first else page_title()
         checkpoint = audit.checkpoint()
         command = [
             "action-flow", *target_arguments, "--timeout-ms", str(timeout_ms),
@@ -994,6 +995,126 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         ["--expect-selector", "#status", "--expect-text", "Record saved"],
         0, True, "saved-1", False, True, False, "passed",
         verify=lambda value: verify_text_observed(value, "Record saved"),
+    )
+
+    def seed_baseline_console_error(case, scenario):
+        before = navigate(scenario)
+        checkpoint = audit.checkpoint()
+        value, elapsed_ms, actual_exit, stdout, stderr = invoke_retained(
+            "click", "--selector", "#baseline-error", "--timeout-ms", "2000", "--strict"
+        )
+        summary = value.get("interaction", {})
+        input_commands = audit.commands_since(checkpoint)
+        after = page_title()
+        expected_title = f"{scenario}:baseline-error:" + before.rsplit(":", 1)[1]
+        failures = []
+        if actual_exit != 0:
+            failures.append(f"exit {actual_exit}, expected 0")
+        if summary.get("dispatched") is not True:
+            failures.append(f"dispatched {summary.get('dispatched')!r}, expected true")
+        if summary.get("dispatch_state") != "acknowledged":
+            failures.append(
+                f"dispatch_state {summary.get('dispatch_state')!r}, expected 'acknowledged'"
+            )
+        expected_input = ["Input.dispatchMouseEvent"] * 3
+        if input_commands != expected_input:
+            failures.append(
+                f"audited input commands {input_commands!r}, expected {expected_input!r}"
+            )
+        if after != expected_title:
+            failures.append(f"application state {after!r}, expected {expected_title!r}")
+        case_evidence = {
+            "case": case,
+            "command": "click",
+            "strict": True,
+            "expected_exit_code": 0,
+            "actual_exit_code": actual_exit,
+            "actual_stdout": stdout,
+            "actual_stderr": stderr,
+            "actual_output": value,
+            "audited_input_commands": input_commands,
+            "application_state_before": before,
+            "application_state_after": after,
+            "elapsed_ms": elapsed_ms,
+            "verdict": "fail" if failures else "pass",
+        }
+        if failures:
+            case_evidence["failure"] = "; ".join(failures)
+        evidence["cases"].append(case_evidence)
+        if failures:
+            raise AssertionError(f"{case}: {case_evidence['failure']}")
+
+    def verify_console_attribution(value, expected_action_errors):
+        boundary = value.get("action_boundary_timestamp_ms")
+        assert (
+            isinstance(boundary, (int, float))
+            and not isinstance(boundary, bool)
+            and boundary > 0
+        ), f"action boundary timestamp was absent or invalid: {boundary!r}"
+        attribution = value.get("console_attribution", {})
+        expected_counts = {
+            "baseline_error_count": 1,
+            "action_error_count": expected_action_errors,
+            "unknown_error_count": 0,
+        }
+        for name, expected_count in expected_counts.items():
+            assert attribution.get(name) == expected_count, (
+                f"console attribution {name} was {attribution.get(name)!r}, "
+                f"expected {expected_count!r}: {attribution!r}"
+            )
+        entries = value.get("console", {}).get("entries", [])
+        baseline_entries = [
+            entry for entry in entries
+            if "intentional-baseline-console-error" in entry.get("message", "")
+        ]
+        assert len(baseline_entries) == 1, (
+            f"expected one retained baseline console error: {entries!r}"
+        )
+        expected_entries = [*baseline_entries]
+        assert baseline_entries[0].get("observation_phase") == "baseline", (
+            f"baseline console error had the wrong phase: {baseline_entries[0]!r}"
+        )
+        if expected_action_errors:
+            action_entries = [
+                entry for entry in entries
+                if "intentional-action-console-error" in entry.get("message", "")
+            ]
+            assert len(action_entries) == 1, (
+                f"expected one retained action console error: {entries!r}"
+            )
+            assert action_entries[0].get("observation_phase") == "action", (
+                f"action console error had the wrong phase: {action_entries[0]!r}"
+            )
+            expected_entries.extend(action_entries)
+        for entry in expected_entries:
+            timestamp = entry.get("source_timestamp_ms")
+            assert (
+                isinstance(timestamp, (int, float))
+                and not isinstance(timestamp, bool)
+                and timestamp > 0
+            ), f"console source timestamp was absent or invalid: {entry!r}"
+
+    seed_baseline_console_error(
+        "action-flow-baseline-console-clean-seed", "action-baseline-console-clean"
+    )
+    action_flow(
+        "action-flow-baseline-console-clean", "action-baseline-console-clean",
+        ["--expect-selector", "#status", "--expect-text", "Record saved"],
+        0, True, "saved", False, True, False, "passed",
+        verify=lambda value: verify_console_attribution(value, 0),
+        navigate_first=False,
+    )
+
+    seed_baseline_console_error(
+        "action-flow-baseline-console-new-error-seed",
+        "action-baseline-console-new-error",
+    )
+    action_flow(
+        "action-flow-baseline-console-new-error", "action-baseline-console-new-error",
+        ["--expect-selector", "#status", "--expect-text", "Record saved"],
+        1, True, "saved", False, True, False, "failed",
+        verify=lambda value: verify_console_attribution(value, 1),
+        navigate_first=False,
     )
 
     def verify_failure_observation(value):

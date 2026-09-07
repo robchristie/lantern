@@ -102,13 +102,15 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
         write_json(&output)?;
     } else {
         println!(
-            "action-flow: verdict={:?} dispatch={:?} matched={} baseline={:?} capture={} errors={} http_errors={} network_failures={} evidence_incomplete={} error={}",
+            "action-flow: verdict={:?} dispatch={:?} matched={} baseline={:?} capture={} baseline_errors={} action_errors={} unattributed_errors={} http_errors={} network_failures={} evidence_incomplete={} error={}",
             output.verdict,
             output.interaction.dispatch_state,
             output.postcondition.matched,
             output.postcondition.matched_before_action,
             output.capture.status,
-            output.console.message_count + output.console.exception_count,
+            output.console_attribution.baseline_error_count,
+            output.console_attribution.action_error_count,
+            output.console_attribution.unknown_error_count,
             output.network.http_error_count,
             output.network.failed_count,
             output.console.evidence_loss.incomplete() || output.network.evidence_loss.incomplete(),

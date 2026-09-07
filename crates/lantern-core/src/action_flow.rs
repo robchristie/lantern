@@ -2,7 +2,7 @@
 use crate::semantic::InteractionTarget;
 use crate::{
     cdp::{CdpError, CdpWebSocket, OperationDeadline, TargetInfo},
-    console::{ConsoleCollector, ConsoleSummary},
+    console::{ConsoleAttribution, ConsoleCollector, ConsoleSummary},
     flow::{FlowError, drain_available_events, push_observation_event},
     interaction::{ActionRequest, DispatchState, InteractionSummary, interact_on_socket},
     network::{NetworkCollector, NetworkSummary},
@@ -62,6 +62,9 @@ pub struct ActionFlowOutput {
     pub interaction: InteractionSummary,
     pub postcondition: PostconditionSummary,
     pub console: ConsoleSummary,
+    pub console_attribution: ConsoleAttribution,
+    /// Browser epoch milliseconds sampled before interaction preparation.
+    pub action_boundary_timestamp_ms: f64,
     pub network: NetworkSummary,
     pub capture: CaptureSummary,
     pub verdict: Verdict,
@@ -106,6 +109,28 @@ pub fn run_action_flow_until(
         timed_out: false,
         observed: None,
     };
+    // Flush baseline probe traffic, then sample the browser clock. Events queued
+    // during this call are classified by their source time when drained later.
+    drain_available_events(&mut socket, &mut console, &mut network)?;
+    let clock = socket.call(
+        "Runtime.evaluate",
+        Some(json!({"expression":"Date.now()","returnByValue":true})),
+    )?;
+    if clock.get("exceptionDetails").is_some() {
+        return Err(CdpError::ResponseInvalid {
+            context: "action boundary timestamp unavailable",
+            source: "runtime exception".into(),
+        }
+        .into());
+    }
+    let action_boundary_timestamp_ms = clock["result"]["value"]
+        .as_f64()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| CdpError::ResponseInvalid {
+            context: "action boundary timestamp unavailable",
+            source: "missing browser epoch milliseconds".into(),
+        })?;
+    console.begin_action(action_boundary_timestamp_ms);
     let mut interaction = interact_on_socket(
         &mut socket,
         &selector.into(),
@@ -192,18 +217,20 @@ pub fn run_action_flow_until(
     }
     console.record_evidence_loss(socket.evidence_loss());
     network.record_evidence_loss(socket.evidence_loss());
+    let console_attribution = console.attribution();
     let console =
         console.finish_with_collection_gap(false, "collection_started_before_observed_action");
     let network =
         network.finish_with_collection_gap(false, "collection_started_before_observed_action");
     let incomplete = before
         || error.is_some()
+        || console_attribution.unknown_error_count > 0
+        || console.truncated
         || console.evidence_loss.incomplete()
         || network.evidence_loss.incomplete()
         || interaction.dispatch_state == DispatchState::Uncertain
         || capture.error.is_some();
-    let failed = console.message_count > 0
-        || console.exception_count > 0
+    let failed = console_attribution.action_error_count > 0
         || network.failed_count > 0
         || network.http_error_count > 0
         || interaction.dispatch_state == DispatchState::NotDispatched;
@@ -229,6 +256,8 @@ pub fn run_action_flow_until(
         interaction,
         postcondition,
         console,
+        console_attribution,
+        action_boundary_timestamp_ms,
         network,
         capture,
         verdict,
@@ -318,8 +347,23 @@ mod tests {
                 let c: Value = serde_json::from_str(&text).unwrap();
                 let method = c["method"].as_str().unwrap();
                 let mut result = json!({});
+                if method == "Log.enable" && scenario.starts_with("historical") {
+                    ws.send(Message::Text(json!({"method":"Log.entryAdded","params":{"entry":{"timestamp":900,"level":"error","text":"old error"}}}).to_string().into())).unwrap();
+                }
+                if method == "Input.dispatchMouseEvent"
+                    && c["params"]["type"] == "mouseReleased"
+                    && scenario.starts_with("historical")
+                {
+                    // Replay can arrive after input; source time still owns attribution.
+                    ws.send(Message::Text(json!({"method":"Runtime.consoleAPICalled","params":{"timestamp":950.5,"type":"error","args":[{"type":"string","value":"late old error"}]}}).to_string().into())).unwrap();
+                    if scenario == "historical_new" {
+                        ws.send(Message::Text(json!({"method":"Runtime.exceptionThrown","params":{"timestamp":1001,"exceptionDetails":{"text":"new error"}}}).to_string().into())).unwrap();
+                    }
+                }
                 if method == "Runtime.evaluate" {
-                    if c["params"].get("objectGroup").is_some() {
+                    if c["params"]["expression"] == "Date.now()" {
+                        result = json!({"result":{"value":1000}});
+                    } else if c["params"].get("objectGroup").is_some() {
                         result = json!({"result":{"objectId":"target"}});
                     } else {
                         probes += 1;
@@ -349,7 +393,7 @@ mod tests {
                     if kind == "mouseReleased" && matches!(scenario, "failure" | "loss") {
                         let events = if scenario == "loss" { 1100 } else { 1 };
                         for n in 0..events {
-                            let event = json!({"method":"Runtime.exceptionThrown","params":{"exceptionDetails":{"text":format!("failure {n}"),"lineNumber":1,"columnNumber":1}}});
+                            let event = json!({"method":"Runtime.exceptionThrown","params":{"timestamp":1001,"exceptionDetails":{"text":format!("failure {n}"),"lineNumber":1,"columnNumber":1}}});
                             if ws.send(Message::Text(event.to_string().into())).is_err() {
                                 return inputs;
                             }
@@ -417,6 +461,25 @@ mod tests {
             "operation overran budget and cleanup allowance"
         );
         (output, server.join().unwrap())
+    }
+
+    #[test]
+    fn historical_errors_remain_visible_without_failing_new_action() {
+        for (scenario, expected, action_errors) in [
+            ("historical", Verdict::Passed, 0),
+            ("historical_new", Verdict::Failed, 1),
+        ] {
+            let (output, _) = fixture(scenario, false);
+            assert!(output.postcondition.matched);
+            assert_eq!(output.verdict, expected);
+            assert_eq!(output.console_attribution.baseline_error_count, 2);
+            assert_eq!(output.console_attribution.action_error_count, action_errors);
+            assert!(!output.console.observed_clean);
+            assert_eq!(
+                output.console.entries[1].observation_phase,
+                Some(crate::console::ObservationPhase::Baseline)
+            );
+        }
     }
 
     #[test]

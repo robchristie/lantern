@@ -65,6 +65,10 @@ pub struct ConsoleSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConsoleEntry {
     pub sequence: usize,
+    /// CDP Runtime.Timestamp: milliseconds since the Unix epoch.
+    pub source_timestamp_ms: Option<serde_json::Number>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation_phase: Option<ObservationPhase>,
     pub kind: ConsoleEntryKind,
     pub severity: String,
     pub message: String,
@@ -73,6 +77,21 @@ pub struct ConsoleEntry {
     pub column: Option<i64>,
     pub argument_count: usize,
     pub stack_frame_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationPhase {
+    Baseline,
+    Action,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ConsoleAttribution {
+    pub baseline_error_count: usize,
+    pub action_error_count: usize,
+    pub unknown_error_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -150,6 +169,8 @@ pub(crate) struct ConsoleCollector {
     truncated: bool,
     evidence_loss: EvidenceLoss,
     entries: Vec<ConsoleEntry>,
+    action_boundary_ms: Option<f64>,
+    attribution: ConsoleAttribution,
 }
 
 impl ConsoleCollector {
@@ -162,7 +183,21 @@ impl ConsoleCollector {
             truncated: false,
             evidence_loss: EvidenceLoss::default(),
             entries: Vec::new(),
+            action_boundary_ms: None,
+            attribution: ConsoleAttribution::default(),
         }
+    }
+
+    pub(crate) fn begin_action(&mut self, timestamp_ms: f64) {
+        self.action_boundary_ms = Some(timestamp_ms);
+        self.attribution.baseline_error_count = self.next_sequence - 1;
+        for entry in &mut self.entries {
+            entry.observation_phase = Some(ObservationPhase::Baseline);
+        }
+    }
+
+    pub(crate) fn attribution(&self) -> ConsoleAttribution {
+        self.attribution.clone()
     }
 
     pub(crate) fn record_evidence_loss(&mut self, loss: EvidenceLoss) {
@@ -200,13 +235,34 @@ impl ConsoleCollector {
             return;
         };
 
+        candidate.entry.sequence = self.next_sequence;
+        self.next_sequence += 1;
+        if let Some(boundary) = self.action_boundary_ms {
+            let phase = match candidate
+                .entry
+                .source_timestamp_ms
+                .as_ref()
+                .and_then(|n| n.as_f64())
+            {
+                Some(timestamp) if timestamp < boundary => ObservationPhase::Baseline,
+                // Date.now() has millisecond precision. Do not call a replay
+                // from the same clock tick newly observed action evidence.
+                Some(timestamp) if timestamp >= boundary + 1.0 => ObservationPhase::Action,
+                Some(_) => ObservationPhase::Unknown,
+                None => ObservationPhase::Unknown,
+            };
+            match phase {
+                ObservationPhase::Baseline => self.attribution.baseline_error_count += 1,
+                ObservationPhase::Action => self.attribution.action_error_count += 1,
+                ObservationPhase::Unknown => self.attribution.unknown_error_count += 1,
+            }
+            candidate.entry.observation_phase = Some(phase);
+        }
         if self.entries.len() >= CONSOLE_MAX_ENTRIES {
             self.truncated = true;
             return;
         }
 
-        candidate.entry.sequence = self.next_sequence;
-        self.next_sequence += 1;
         match candidate.entry.kind {
             ConsoleEntryKind::Console => self.message_count += 1,
             ConsoleEntryKind::Exception => self.exception_count += 1,
@@ -271,6 +327,8 @@ fn runtime_console_entry(
         message_truncated: message_was_truncated(&message, mode),
         entry: ConsoleEntry {
             sequence: 0,
+            source_timestamp_ms: event.timestamp,
+            observation_phase: None,
             kind: ConsoleEntryKind::Console,
             severity: "error".to_owned(),
             message: sanitize_console_message(&message, mode),
@@ -300,6 +358,8 @@ fn runtime_exception_entry(
         message_truncated: message_was_truncated(message, mode),
         entry: ConsoleEntry {
             sequence: 0,
+            source_timestamp_ms: event.timestamp,
+            observation_phase: None,
             kind: ConsoleEntryKind::Exception,
             severity: "error".to_owned(),
             message: sanitize_console_message(message, mode),
@@ -327,6 +387,8 @@ fn log_entry(params: serde_json::Value, mode: RedactionMode) -> Option<ConsoleEn
         message_truncated: message_was_truncated(&event.entry.text, mode),
         entry: ConsoleEntry {
             sequence: 0,
+            source_timestamp_ms: event.entry.timestamp,
+            observation_phase: None,
             kind: ConsoleEntryKind::Console,
             severity: event.entry.level,
             message: sanitize_console_message(&event.entry.text, mode),
@@ -407,6 +469,7 @@ struct StackSummary {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeConsoleApiCalled {
+    timestamp: Option<serde_json::Number>,
     #[serde(rename = "type")]
     kind: String,
     args: Vec<RuntimeRemoteObject>,
@@ -416,6 +479,7 @@ struct RuntimeConsoleApiCalled {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeExceptionThrown {
+    timestamp: Option<serde_json::Number>,
     exception_details: RuntimeExceptionDetails,
 }
 
@@ -449,6 +513,7 @@ struct LogEntryAdded {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CdpLogEntry {
+    timestamp: Option<serde_json::Number>,
     level: String,
     text: String,
     url: Option<String>,
@@ -474,6 +539,65 @@ struct CdpCallFrame {
 mod tests {
     use super::*;
     use crate::redaction::RedactionMode;
+
+    #[test]
+    fn action_attribution_retains_replayed_sources_and_counts_beyond_entry_cap() {
+        let mut collector = ConsoleCollector::new(RedactionMode::Redacted);
+        let event = |method: &str, timestamp: serde_json::Value| CdpEvent {
+            method: method.into(),
+            params: serde_json::json!({
+                "timestamp":timestamp, "type":"error", "args":[{"type":"string","value":"error"}],
+                "exceptionDetails":{"text":"error"},
+                "entry":{"timestamp":timestamp,"level":"error","text":"error"}
+            }),
+        };
+        collector.push_event(event("Runtime.consoleAPICalled", serde_json::Value::Null));
+        collector.begin_action(1000.0);
+        for method in [
+            "Runtime.consoleAPICalled",
+            "Runtime.exceptionThrown",
+            "Log.entryAdded",
+        ] {
+            collector.push_event(event(method, serde_json::json!(999.25)));
+            collector.push_event(event(method, serde_json::json!(1001.5)));
+        }
+        collector.push_event(event("Log.entryAdded", serde_json::Value::Null));
+        collector.push_event(event("Log.entryAdded", serde_json::json!(1000)));
+        collector.push_event(event("Log.entryAdded", serde_json::json!(1000.75)));
+        let counts = collector.attribution();
+        assert_eq!(counts.baseline_error_count, 4);
+        assert_eq!(counts.action_error_count, 3);
+        assert_eq!(counts.unknown_error_count, 3);
+        for _ in 0..CONSOLE_MAX_ENTRIES {
+            collector.push_event(event("Runtime.consoleAPICalled", serde_json::json!(1002)));
+        }
+        assert_eq!(
+            collector.attribution().action_error_count,
+            3 + CONSOLE_MAX_ENTRIES
+        );
+        let summary = collector.finish();
+        assert!(summary.truncated);
+        assert_eq!(
+            summary.entries[0].observation_phase,
+            Some(ObservationPhase::Baseline)
+        );
+        assert_eq!(
+            summary.entries[1].source_timestamp_ms,
+            Some(serde_json::Number::from_f64(999.25).unwrap())
+        );
+        assert_eq!(
+            summary.entries[1].observation_phase,
+            Some(ObservationPhase::Baseline)
+        );
+        assert_eq!(
+            summary.entries[2].observation_phase,
+            Some(ObservationPhase::Action)
+        );
+        assert_eq!(
+            summary.entries[7].observation_phase,
+            Some(ObservationPhase::Unknown)
+        );
+    }
 
     #[test]
     fn lost_transport_or_oversized_evidence_cannot_be_observed_clean() {

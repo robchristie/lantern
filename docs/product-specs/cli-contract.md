@@ -1435,6 +1435,26 @@ unredacted and no image data is embedded in the JSON output.
 The schema-version-1 result contains `target_id`, `single_attachment`,
 `observation_started_before_action`, the existing `interaction` summary,
 `postcondition`, `console`, `network`, `capture`, `verdict`, `error` and `elapsed_ms`.
+The result also contains `action_boundary_timestamp_ms` and `console_attribution`
+with `baseline_error_count`, `action_error_count` and `unknown_error_count`.
+Console entries retain CDP `source_timestamp_ms` (Unix epoch milliseconds,
+including fractional precision, or null if unavailable) and an
+`observation_phase` of `baseline`, `action` or `unknown`. The boundary samples
+the browser's `Date.now()` after the baseline probe and drain, before interaction
+preparation; it is an observation boundary, not the physical input timestamp.
+Entries collected before that boundary are baseline evidence. Later arrivals
+with older source timestamps are also baseline, including attachment replay.
+Later timestamps identify the action interval; absent timestamps or timestamps within
+the boundary's millisecond leave attribution unknown and make the verdict
+`incomplete`. Browser epoch time is assumed to remain stable during the attempt.
+Baseline errors remain in `console` and keep its aggregate `observed_clean=false`,
+but do not fail a newly successful action. Phase counts include errors beyond
+the retained entry limit; truncation makes the verdict incomplete. No browser
+console is cleared. Network failures retain their existing conservative
+whole-attachment policy; console phases do not assert network attribution.
+The interval includes preparation, input, polling, capture and final draining;
+temporal attribution does not establish that input caused an error.
+
 `ok: true` describes structured command completion. It does not establish a
 successful application outcome. `--strict` exits 1 unless the verdict is `passed`;
 the structured result remains on stdout. Pre-input setup/baseline errors use the
@@ -1443,7 +1463,7 @@ ordinary stderr error envelope and send no input.
 `postcondition` retains `matched_before_action`, `observed_before_action`, the last post-action `matched`,
 `timed_out` and typed `observed` metadata (null until a post-action probe completes). A passing verdict requires a false
 baseline followed by an observed match, acknowledged input, complete evidence,
-no captured runtime/console/HTTP/network failure, and a successful requested
+no action-interval runtime/console error or captured HTTP/network failure, and a successful requested
 capture. This demonstrates observed order, not causation. A condition already
 true before input produces `postcondition_already_matched` and cannot pass even
 if it remains true. It does not suppress the requested click. Unknown outcomes,
