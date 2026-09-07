@@ -20,7 +20,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
-pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> {
+pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError> {
     let EndpointContext {
         command,
         invocation,
@@ -31,6 +31,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
     let Invocation {
         json,
         no_redact,
+        strict,
         target_id,
         timeout_ms,
         wait_selector,
@@ -41,6 +42,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
         duration_ms,
         ..
     } = invocation;
+    let successful;
     match command {
         Command::Click => {
             let selector = wait_selector
@@ -60,6 +62,11 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         Command::Type => {
@@ -84,6 +91,11 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         Command::Key => {
@@ -106,6 +118,11 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         Command::Hover => {
@@ -126,6 +143,11 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         Command::Wheel => {
@@ -149,6 +171,11 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         Command::Drag => {
@@ -175,11 +202,16 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<(), CliError> 
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
+            successful = output.ok
+                && (!strict
+                    || (output.interaction.dispatched
+                        && !output.interaction.timed_out
+                        && output.interaction.immediate_error.is_none()));
             write_interaction(output, json)?;
         }
         _ => unreachable!("dispatcher routes only interaction commands"),
     }
-    Ok(())
+    Ok(successful)
 }
 
 const TYPE_TEXT_FILE_MAX_BYTES: u64 = 64 * 1024;
@@ -315,13 +347,19 @@ fn write_interaction(output: InteractionCommandOutput, json: bool) -> Result<(),
     write_evidence_loss("interaction", &output.interaction.evidence_loss);
 
     println!(
-        "{}: {} title=\"{}\" url={} selector=\"{}\" dispatched={} timed_out={} elapsed_ms={} timeout_ms={} observed={} error={}",
+        "{}: {} title=\"{}\" url={} selector=\"{}\" dispatched={} dispatch_state={} application_outcome={} timed_out={} elapsed_ms={} timeout_ms={} observed={} error={}",
         output.command,
         short_target_id(&output.page.target_id),
         escape_human(output.page.title.as_deref().unwrap_or("null")),
         output.page.url_shape.as_deref().unwrap_or("null"),
         escape_human(&output.interaction.selector),
         output.interaction.dispatched,
+        match output.interaction.dispatch_state {
+            lantern_core::interaction::DispatchState::NotDispatched => "not_dispatched",
+            lantern_core::interaction::DispatchState::Acknowledged => "acknowledged",
+            lantern_core::interaction::DispatchState::Uncertain => "uncertain",
+        },
+        output.interaction.application_outcome,
         output.interaction.timed_out,
         output.interaction.elapsed_ms,
         output.interaction.timeout_ms,

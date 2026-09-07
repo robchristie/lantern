@@ -138,9 +138,28 @@ remove that historical gap or prove application correctness.
 
 A command sent without a definitive response returns `cdp_command_uncertain`.
 The command may have executed; inspect state before deciding whether another
-action is needed, and never automatically replay it. A drag failure attempts
-one best-effort pointer release, including an unacknowledged press, using an
+action is needed, and never automatically replay it. A click, key or drag failure attempts
+one best-effort button/key release, including an unacknowledged press, using an
 additional budget of at most 100 ms. Release acknowledgement is not guaranteed.
 CPU processing and operating-system scheduling can add bounded-work overhead to
 these I/O deadlines; this is not a hard real-time guarantee. Existing `ok` and
 exit-status semantics for completed condition results remain unchanged.
+
+
+## Interaction verification
+
+Use `--strict` with `click`, `type`, `key`, `hover`, `wheel` and `drag` when an
+undispatched, incomplete or timed-out input should fail the shell command.
+Actionability preparation applies with or without the flag. Legacy completed
+blocker results retain exit 0, so inspect `interaction.dispatched` rather than
+inferring dispatch from `ok`. `dispatch_state=uncertain` means partial or possibly
+executed input; inspect state and never automatically replay it. Every current
+interaction reports `application_outcome=unverified`.
+
+Use explicit application state or visual expectations to establish the intended
+result. A separate `page`, `dom`, `wait` or screenshot inspection can support this
+assessment but cannot recover fast events missed between CLI attachments. The
+[interaction contract](product-specs/cli-contract.md#interaction-preparation-and-result-semantics)
+defines targeting, focus, geometry and diagnostics. The
+[browser contracts](testing/browser-contracts.md) exercise real Chromium with
+independent fixture postconditions and record exact source/build/browser inputs.

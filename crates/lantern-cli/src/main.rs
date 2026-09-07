@@ -24,7 +24,8 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     match run(env::args().skip(1), env::var("LANTERN_CDP_ENDPOINT").ok()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
         Err(error) => {
             error.write_stderr();
             ExitCode::from(error.exit_code)
@@ -35,17 +36,17 @@ fn main() -> ExitCode {
 fn run(
     args: impl IntoIterator<Item = String>,
     env_endpoint: Option<String>,
-) -> Result<(), CliError> {
+) -> Result<bool, CliError> {
     let invocation = Invocation::parse(args)?;
 
     if invocation.help {
         print_help();
-        return Ok(());
+        return Ok(true);
     }
 
     if invocation.version {
         println!("lantern {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
+        return Ok(true);
     }
 
     let command = invocation.command.ok_or_else(|| {
@@ -64,13 +65,31 @@ fn run(
         ));
     }
 
+    if invocation.strict
+        && !matches!(
+            command,
+            Command::Click
+                | Command::Type
+                | Command::Key
+                | Command::Hover
+                | Command::Wheel
+                | Command::Drag
+        )
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "--strict is only supported by interaction commands.",
+            "Use --strict with click, type, key, hover, wheel or drag.",
+        ));
+    }
+
     if matches!(command, Command::Browser) {
-        return run_browser_invocation(invocation);
+        return run_browser_invocation(invocation).map(|()| true);
     }
 
     validate_endpoint_invocation(&invocation, command)?;
     if command == Command::Capabilities {
-        return capabilities::write_capabilities();
+        return capabilities::write_capabilities().map(|()| true);
     }
     let mut invocation = invocation;
     if let Some(path) = invocation.type_text_file.as_deref() {

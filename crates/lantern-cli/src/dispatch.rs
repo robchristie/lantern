@@ -20,7 +20,7 @@ pub(crate) fn run_command(
     command: Command,
     invocation: Invocation,
     endpoint: ResolvedEndpoint,
-) -> Result<(), CliError> {
+) -> Result<bool, CliError> {
     let budget = invocation
         .timeout_ms
         .map(|ms| lantern_core::cdp::OperationDeadline::from(Duration::from_millis(ms)));
@@ -45,14 +45,14 @@ pub(crate) fn run_command(
         | Command::Console
         | Command::Network
         | Command::Flow
-        | Command::Layout => run_inspection(context),
+        | Command::Layout => run_inspection(context).map(|()| true),
         Command::Click
         | Command::Type
         | Command::Key
         | Command::Hover
         | Command::Wheel
         | Command::Drag => run_interaction(context),
-        Command::Screenshot => run_screenshot(context),
+        Command::Screenshot => run_screenshot(context).map(|()| true),
         Command::Browser | Command::Capabilities => {
             unreachable!("browser lifecycle commands bypass endpoint commands")
         }

@@ -23,3 +23,32 @@ jobs:
         run: cargo check --locked --workspace --all-targets
       - name: Test workspace
         run: cargo test --locked --workspace --all-targets
+
+  browser-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Provision pinned Chromium and system dependencies
+        run: npx --yes playwright@1.62.1 install --with-deps chromium
+      - name: Build Lantern
+        run: cargo build --locked --workspace
+      - name: Run real-Chromium browser contracts
+        shell: bash
+        run: |
+          LANTERN_CHROMIUM="$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' -print -quit)"
+          test -n "$LANTERN_CHROMIUM"
+          test -x "$LANTERN_CHROMIUM"
+          export LANTERN_CHROMIUM
+          scripts/test-browser-contracts.py --lantern target/debug/lantern --output-dir .smoogle/browser-contracts
+      - name: Upload browser contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-contract-evidence
+          path: .smoogle/browser-contracts/
+          if-no-files-found: error

@@ -24,7 +24,7 @@ Human output is for quick operator and agent reading, not durable machine parsin
 Rules:
 
 - Write successful human output to stdout.
-- Write errors to stderr.
+- Write pre-result errors to stderr. Once an interaction socket is attached, write its single result to stdout even when dispatch fails; see the interaction result contract in `cli-contract.md`.
 - Prefer one summary line plus a short bounded list.
 - Avoid progress text for commands that perform one bounded inspection.
 - Include only fields that help decide the next frontend-development step.
