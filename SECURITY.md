@@ -83,6 +83,14 @@ Use untracked local configuration, environment variables, or the operator's cred
 - Require explicit configuration for commit, push, mark-done, and auto-landing behavior.
 - Do not make network access a hidden dependency for core local workflows.
 
+## Application evidence boundary
+
+The Polyorama adapter reads only its fixed gallery snapshot hook or explicitly
+selected local fixture files. It never dispatches internal actions or accepts
+arbitrary JavaScript. Input bytes, collection sizes and decoded PNG memory are
+bounded. Owner free text receives snippet redaction; stable identifiers and
+artefact hashes remain exact. Optional screenshots retain visible pixels.
+
 ## Known Security Gaps
 
 - No automated secret scanning is configured yet.

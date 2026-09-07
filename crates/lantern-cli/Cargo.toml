@@ -10,6 +10,9 @@ name = "lantern"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22.1"
+png = "0.17.16"
+sha2 = "0.10.9"
 lantern-core = { path = "../lantern-core" }
 lantern-storage = { path = "../lantern-storage" }
 serde = { version = "1.0.228", features = ["derive"] }

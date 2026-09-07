@@ -14,6 +14,16 @@ pub(crate) fn validate_endpoint_invocation(
     invocation: &Invocation,
     command: Command,
 ) -> Result<(), CliError> {
+    if invocation.evidence_dir.is_some() && command != Command::Polyorama {
+        return Err(CliError::usage(
+            invocation.json,
+            "--evidence-dir requires polyorama.",
+            "Run lantern polyorama --evidence-dir <DIR>.",
+        ));
+    }
+    if command == Command::Polyorama {
+        crate::polyorama::validate_invocation(invocation)?;
+    }
     if let Some(selector) = invocation.container_selector.as_deref() {
         if command != Command::Layout {
             return Err(CliError::usage(
@@ -57,7 +67,8 @@ pub(crate) fn validate_endpoint_invocation(
     if invocation.target_id.is_some()
         && !matches!(
             command,
-            Command::Page
+            Command::Polyorama
+                | Command::Page
                 | Command::Dom
                 | Command::Open
                 | Command::Wait
@@ -77,7 +88,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, and action-flow.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -106,7 +117,8 @@ pub(crate) fn validate_endpoint_invocation(
 
     if !matches!(
         command,
-        Command::Wait
+        Command::Polyorama
+            | Command::Wait
             | Command::Click
             | Command::Type
             | Command::Key
@@ -119,7 +131,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, flow, and action-flow.",
+            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
@@ -224,12 +236,14 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
-    if !matches!(command, Command::Screenshot | Command::ActionFlow)
-        && invocation.has_screenshot_flags()
+    if !matches!(
+        command,
+        Command::Screenshot | Command::ActionFlow | Command::Polyorama
+    ) && invocation.has_screenshot_flags()
     {
         return Err(CliError::usage(
             invocation.json,
-            "Capture output flags are only supported by screenshot and action-flow; region flags require screenshot.",
+            "Capture output flags are only supported by screenshot, action-flow and polyorama; region flags require screenshot.",
             "Run lantern screenshot --output <PATH>, or add --output <PATH> to action-flow.",
         ));
     }

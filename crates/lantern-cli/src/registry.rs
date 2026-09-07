@@ -50,6 +50,7 @@ macro_rules! commands {
 }
 
 commands!(Command, COMMANDS, [
+    Polyorama => ("polyorama", [], &[1], &[]),
     Doctor => ("doctor", [], &[CLI_SCHEMA_VERSION], &[]),
     Targets => ("targets", [], &[CLI_SCHEMA_VERSION], &[]),
     Page => ("page", [], &[CLI_SCHEMA_VERSION], &[]),
