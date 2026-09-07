@@ -364,18 +364,23 @@ def source_revision():
 
 
 def command_json(command, expected_exit=0):
-    result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
-    if result.returncode != expected_exit:
+    value, actual_exit, stdout, stderr = command_json_result(command)
+    if actual_exit != expected_exit:
         raise AssertionError(
-            f"unexpected exit {result.returncode}, expected {expected_exit}: {' '.join(command)}; "
-            f"stdout={result.stdout!r}; stderr={result.stderr!r}"
+            f"unexpected exit {actual_exit}, expected {expected_exit}: {' '.join(command)}; "
+            f"stdout={stdout!r}; stderr={stderr!r}"
         )
+    return value
+
+
+def command_json_result(command):
+    result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
     stream = result.stdout if result.stdout.strip() else result.stderr
     try:
         value = json.loads(stream)
     except json.JSONDecodeError as error:
         raise AssertionError(f"non-JSON output from {' '.join(command)}: {stream!r}") from error
-    return value
+    return value, result.returncode, result.stdout, result.stderr
 
 
 def await_endpoint(browser, profile, timeout_seconds):
@@ -452,6 +457,21 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
         )
         return value, round((time.monotonic() - started) * 1000)
 
+    def invoke_retained(*arguments):
+        if time.monotonic() - suite_started > SUITE_TIMEOUT_SECONDS:
+            raise TimeoutError(f"browser contract suite exceeded {SUITE_TIMEOUT_SECONDS} seconds")
+        started = time.monotonic()
+        value, actual_exit, stdout, stderr = command_json_result(
+            [str(lantern), *arguments, "--endpoint", endpoint, "--json"]
+        )
+        return (
+            value,
+            round((time.monotonic() - started) * 1000),
+            actual_exit,
+            stdout,
+            stderr,
+        )
+
     def page_title():
         page, _ = invoke("page")
         return page["page"]["title"]
@@ -479,36 +499,54 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
         evidence["active_case"] = case
         before = navigate(scenario)
         checkpoint = audit.checkpoint()
-        value, elapsed_ms = invoke(*command, expected_exit=expected_exit)
+        value, elapsed_ms, actual_exit, stdout, stderr = invoke_retained(*command)
         summary = value.get("interaction", {})
-        if summary.get("dispatched") is not dispatched:
-            raise AssertionError(f"{case}: unexpected dispatch state: {value}")
-        if summary.get("immediate_error") != error:
-            raise AssertionError(f"{case}: unexpected immediate error: {value}")
         input_commands = audit.commands_since(checkpoint)
-        assert_input_contract(case, command[0], dispatched, input_commands)
         after = page_title()
         expected_title = f"{scenario}:{expected_state}:" + before.rsplit(":", 1)[1]
+        failures = []
+        if actual_exit != expected_exit:
+            failures.append(f"exit {actual_exit}, expected {expected_exit}")
+        if summary.get("dispatched") is not dispatched:
+            failures.append(
+                f"dispatched {summary.get('dispatched')!r}, expected {dispatched!r}"
+            )
+        if summary.get("immediate_error") != error:
+            failures.append(
+                f"immediate_error {summary.get('immediate_error')!r}, expected {error!r}"
+            )
+        try:
+            assert_input_contract(case, command[0], dispatched, input_commands)
+        except AssertionError as audit_error:
+            failures.append(str(audit_error))
         if after != expected_title:
-            raise AssertionError(f"{case}: application state {after!r}, expected {expected_title!r}")
-        evidence["cases"].append(
-            {
-                "case": case,
-                "command": command[0],
-                "strict": "--strict" in command,
-                "exit_code": expected_exit,
-                "dispatched": summary.get("dispatched"),
-                "dispatch_state": summary.get("dispatch_state"),
-                "timed_out": summary.get("timed_out"),
-                "immediate_error": summary.get("immediate_error"),
-                "audited_input_commands": input_commands,
-                "application_state_before": before,
-                "application_state_after": after,
-                "elapsed_ms": elapsed_ms,
-                "verdict": "pass",
-            }
-        )
+            failures.append(f"application state {after!r}, expected {expected_title!r}")
+        case_evidence = {
+            "case": case,
+            "command": command[0],
+            "strict": "--strict" in command,
+            "exit_code": actual_exit,
+            "expected_exit_code": expected_exit,
+            "actual_exit_code": actual_exit,
+            "actual_stdout": stdout,
+            "actual_stderr": stderr,
+            "actual_output": value,
+            "dispatched": summary.get("dispatched"),
+            "dispatch_state": summary.get("dispatch_state"),
+            "timed_out": summary.get("timed_out"),
+            "immediate_error": summary.get("immediate_error"),
+            "audited_input_commands": input_commands,
+            "application_state_before": before,
+            "application_state_after": after,
+            "elapsed_ms": elapsed_ms,
+            "verdict": "fail" if failures else "pass",
+        }
+        if failures:
+            case_evidence["failure"] = "; ".join(failures)
+        evidence["cases"].append(case_evidence)
         evidence.pop("active_case")
+        if failures:
+            raise AssertionError(f"{case}: {case_evidence['failure']}")
 
     invoke("doctor")
     interaction(
@@ -600,23 +638,40 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
     evidence["active_case"] = "focused-key-body-shortcut"
     before_key = page_title()
     key_checkpoint = audit.checkpoint()
-    key_value, key_ms = invoke(
+    key_value, key_ms, key_exit, key_stdout, key_stderr = invoke_retained(
         "key", "--selector", "body", "--key", "ArrowDown",
         "--timeout-ms", "2000", "--strict",
     )
     key_summary = key_value.get("interaction", {})
     key_input_commands = audit.commands_since(key_checkpoint)
-    assert_input_contract(
-        "focused-key-body-shortcut", "key", True, key_input_commands
-    )
     after_key = page_title()
-    if not key_summary.get("dispatched") or after_key.split(":")[1] != "key-focused":
-        raise AssertionError(f"key was not delivered to the focused input: {key_value}")
-    evidence["cases"].append({
+    key_failures = []
+    if key_exit != 0:
+        key_failures.append(f"exit {key_exit}, expected 0")
+    if not key_summary.get("dispatched"):
+        key_failures.append(
+            f"dispatched {key_summary.get('dispatched')!r}, expected true"
+        )
+    try:
+        assert_input_contract(
+            "focused-key-body-shortcut", "key", True, key_input_commands
+        )
+    except AssertionError as audit_error:
+        key_failures.append(str(audit_error))
+    if after_key.split(":")[1] != "key-focused":
+        key_failures.append(
+            f"application state {after_key!r}, expected focused key delivery"
+        )
+    key_evidence = {
         "case": "focused-key-body-shortcut",
         "command": "key",
         "strict": True,
-        "exit_code": 0,
+        "exit_code": key_exit,
+        "expected_exit_code": 0,
+        "actual_exit_code": key_exit,
+        "actual_stdout": key_stdout,
+        "actual_stderr": key_stderr,
+        "actual_output": key_value,
         "dispatched": key_summary.get("dispatched"),
         "dispatch_state": key_summary.get("dispatch_state"),
         "timed_out": key_summary.get("timed_out"),
@@ -625,9 +680,16 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
         "application_state_before": before_key,
         "application_state_after": after_key,
         "elapsed_ms": key_ms,
-        "verdict": "pass",
-    })
+        "verdict": "fail" if key_failures else "pass",
+    }
+    if key_failures:
+        key_evidence["failure"] = "; ".join(key_failures)
+    evidence["cases"].append(key_evidence)
     evidence.pop("active_case")
+    if key_failures:
+        raise AssertionError(
+            f"focused-key-body-shortcut: {key_evidence['failure']}"
+        )
 
     interaction(
         "pointer-hover", "pointer",

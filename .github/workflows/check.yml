@@ -46,6 +46,7 @@ jobs:
           test -n "$LANTERN_CHROMIUM"
           test -x "$LANTERN_CHROMIUM"
           export LANTERN_CHROMIUM
+          node scripts/probe-browser-focus.mjs
           scripts/test-browser-contracts.py --lantern target/debug/lantern --output-dir .smoogle/browser-contracts
       - name: Upload browser contract evidence
         if: always()

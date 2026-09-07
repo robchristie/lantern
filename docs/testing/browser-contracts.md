@@ -53,6 +53,10 @@ Each run first replaces any previous verdict with a fresh failing record, then
 writes `evidence.json` and the Chromium log under the selected output directory.
 This happens before checking `LANTERN_CHROMIUM` or either executable path, so a
 preflight failure cannot leave a previous pass as the apparent current result.
+When an interaction returns an unexpected exit status, the runner still retains
+its actual JSON output and exit status, audits the outgoing input methods and
+performs one independent read-only page-title observation before failing the
+same contract. It does not replay the interaction.
 Evidence names the run UUID and UTC bounds, source revision and dirty state,
 fixture SHA-256, Lantern build capabilities, actual browser product and protocol
 version, requested window and actual fixture viewport, per-case command and

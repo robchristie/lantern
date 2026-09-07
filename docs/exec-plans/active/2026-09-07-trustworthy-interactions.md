@@ -1,9 +1,10 @@
 # Trustworthy interactions
 
-Status: completed
+Status: active
 
-Implementation and local qualification are complete. Final independent review,
-CI and landing evidence belong to the package pull request.
+Implementation is under renewed focus-delivery calibration after a macOS CI
+failure. This record remains the package evidence owner; final qualification,
+independent review, CI and landing evidence belong to the package pull request.
 
 ## Outcome and ownership
 
@@ -90,3 +91,37 @@ reference is <https://playwright.dev/docs/actionability>, checked 7 September 20
 Native disabled state includes fieldset semantics; hover can target disabled
 controls. Existing font/zero-content probe notes are retained under ignored
 `.smoogle/qualification-tools/interaction-probe-notes.md`.
+
+
+## Focus-delivery calibration
+
+CI run `34079568084` on source merge reference
+`971bcd5a442066c10c0ce043b621e8801e219363` acknowledged text dispatch for the
+focus-disables fixture rather than observing its disabling focus listener.
+That acknowledgement alone does not establish text delivery. Browser product
+was Chrome `151.0.7922.34`, Darwin x86_64; fixture SHA-256 was
+`3867826ecbae67483f6bb774ce5c3d20b09d2e4fa947e97b60e2163733e5ca99`.
+
+Question: does native document focus or focus-event delivery differ from the
+retained `activeElement` on the hosted macOS browser? The smallest probe uses a
+fresh synthetic focus-disables fixture and fresh browser for each baseline,
+`Page.bringToFront`, `DOM.focus` and diagnostic focus-emulation arm. It records
+actual document focus, visibility, active element, focus events and disabled
+state before and after each operation. No application input is replayed.
+
+The package owns `focus-calibration.json` beside CI browser evidence. A fresh
+browser comparison on local Linux Chrome at source
+`3e30617b6de8bfd4c094bc386b64ccb4ef3cf692` reproduced the focus distinction:
+baseline and `DOM.focus` changed the retained active element without document
+focus, a focus event or disabled state. `Page.bringToFront` restored actual
+document focus and delivered the disabling listener. The diagnostic emulation
+arm did likewise. An earlier preactivated Linux probe did not reproduce the
+failure and was rejected as the baseline comparison.
+
+Retain real tab activation as the candidate mechanism; macOS observations are
+still required. The runner now preserves actual exit/output, audited input
+methods and independent post-action title even on an unexpected exit. Exit
+calibration only after macOS observations confirm a mechanism, a coherent fix
+preserves all blocked-input contracts, and the representative cohort passes on
+both platforms. Focus emulation is a diagnostic arm, not an adopted product
+policy.
