@@ -20,6 +20,7 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Current Active Plans
 
+- `docs/exec-plans/active/2026-09-07-observable-ui-programme.md`
 
 - `docs/exec-plans/active/2026-08-16-persistent-authenticated-browser-profiles.md`
 
