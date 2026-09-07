@@ -34,6 +34,8 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/intentional-fast-failure"):
             body, status, content_type = b"intentional failure\n", 500, "text/plain"
+        elif self.path.startswith("/polyorama"):
+            body, status, content_type = FIXTURE.with_name("polyorama.html").read_bytes(), 200, "text/html; charset=utf-8"
         elif self.path.startswith("/layout"):
             body, status, content_type = LAYOUT_FIXTURE.read_bytes(), 200, "text/html; charset=utf-8"
         elif self.path.startswith("/favicon.ico"):
@@ -1137,6 +1139,38 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
     assert actual_exit != 0 and value.get("error", {}).get("code") == "layout_container_selector_invalid", value
     record["verdict"] = "pass"
     evidence.pop("active_case")
+
+    for mode in ["stable", "differing", "missing", "oversized", "malformed"]:
+        case = f"polyorama-{mode}"
+        evidence["active_case"] = case
+        invoke("open", f"{fixture_base}/polyorama?mode={mode}")
+        invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
+        checkpoint = audit.checkpoint()
+        path = output / f"{case}.png"
+        value, elapsed, actual_exit, stdout, stderr = invoke_retained(
+            "polyorama", "--timeout-ms", "2000", "--output", str(path), "--overwrite")
+        record = {"case": case, "actual_output": value, "actual_exit_code": actual_exit,
+                  "actual_stdout": stdout, "actual_stderr": stderr, "elapsed_ms": elapsed,
+                  "input_commands": audit.commands_since(checkpoint), "verdict": "fail"}
+        evidence["cases"].append(record)
+        assert record["input_commands"] == [], record
+        if mode == "malformed":
+            assert actual_exit != 0, value
+        elif mode in ["missing", "oversized"]:
+            assert actual_exit == 0 and value["ok"] is False, value
+            assert value["snapshot"]["status"] == "unavailable", value
+            assert not path.exists(), path
+        else:
+            assert actual_exit == 0 and value["ok"] is True, value
+            expected = "same_observed_frame" if mode == "stable" else "differing"
+            assert value["frame_correlation"]["status"] == expected, value
+            assert value["frame_correlation"]["pixel_frame"] is None, value
+            assert value["source_revision"]["status"] == "unavailable", value
+            assert value["readiness"]["application_ready"] is None, value
+            assert value["coverage"]["value"]["native_text_controls"] == 1, value
+            assert value["screenshot"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest(), value
+        record["verdict"] = "pass"
+        evidence.pop("active_case")
 
     evidence["visual_captures"] = []
     with fixture_cdp_session(endpoint) as capture_cdp:

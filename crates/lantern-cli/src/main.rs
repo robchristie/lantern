@@ -7,6 +7,7 @@ mod error;
 mod inspection;
 mod interaction;
 mod output;
+mod polyorama;
 mod registry;
 mod screenshot;
 mod selection;
@@ -85,6 +86,14 @@ fn run(
         ));
     }
 
+    if invocation.evidence_dir.is_some() && command != Command::Polyorama {
+        return Err(CliError::usage(
+            invocation.json,
+            "--evidence-dir requires polyorama.",
+            "Run lantern polyorama --evidence-dir <DIR>.",
+        ));
+    }
+
     if matches!(command, Command::Browser) {
         return run_browser_invocation(invocation).map(|()| true);
     }
@@ -92,6 +101,9 @@ fn run(
     validate_endpoint_invocation(&invocation, command)?;
     if command == Command::Capabilities {
         return capabilities::write_capabilities().map(|()| true);
+    }
+    if command == Command::Polyorama && invocation.evidence_dir.is_some() {
+        return polyorama::run_offline(&invocation).map(|()| true);
     }
     let mut invocation = invocation;
     if let Some(path) = invocation.type_text_file.as_deref() {

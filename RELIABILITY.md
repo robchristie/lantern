@@ -44,6 +44,14 @@ not usability verdicts. A successful capture or zero layout findings cannot
 establish appearance: visual tasks require opening images at relevant viewports
 and judging the task's explicit expectations.
 
+## Application evidence
+
+Polyorama evidence validates bounded owner data without implying application
+acceptance. Text failures/exclusions, unavailable revisions/readiness and differing
+frames remain explicit. Captured pixels survive an unavailable trailing snapshot;
+equal snapshot counters do not establish atomic pixel correlation. Owner graphics
+qualification remains separate from synthetic adapter/browser contracts.
+
 ## Operational Expectations
 
 - Keep runtime state under `.smoogle/` and out of Git.

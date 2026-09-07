@@ -64,6 +64,7 @@ fn discovery_lists_the_existing_command_surface_and_schema_owners() {
     assert_eq!(
         names,
         [
+            "polyorama",
             "doctor",
             "targets",
             "page",

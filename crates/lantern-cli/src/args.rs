@@ -16,6 +16,8 @@ use std::path::PathBuf;
 pub(crate) fn print_help() {
     println!(
         "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|hover|wheel|drag|flow|action-flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+       lantern polyorama --evidence-dir <DIR> [--json]
+       lantern polyorama --endpoint <URL> --timeout-ms <MS> [--output <PNG>] [--json]
        lantern capabilities [--json]
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern browser profile <create|list|status|delete> [NAME] [--yes] [--json]
@@ -87,6 +89,7 @@ Browser lifecycle flags:
 pub(crate) struct Invocation {
     pub(crate) command: Option<Command>,
     pub(crate) endpoint: Option<String>,
+    pub(crate) evidence_dir: Option<PathBuf>,
     pub(crate) json: bool,
     pub(crate) no_redact: bool,
     pub(crate) strict: bool,
@@ -169,6 +172,7 @@ impl Invocation {
         let mut invocation = Self {
             command: None,
             endpoint: None,
+            evidence_dir: None,
             json: false,
             no_redact: false,
             strict: false,
@@ -234,6 +238,19 @@ impl Invocation {
                         "--expect-text" => invocation.expect_text = Some(value),
                         _ => invocation.expect_url = Some(value),
                     }
+                }
+                "--evidence-dir" => {
+                    invocation.evidence_dir = Some(
+                        args.next()
+                            .ok_or_else(|| {
+                                CliError::usage(
+                                    invocation.json,
+                                    "Missing evidence directory.",
+                                    "Pass --evidence-dir <PATH>.",
+                                )
+                            })?
+                            .into(),
+                    );
                 }
                 "--endpoint" => {
                     let Some(endpoint) = args.next() else {

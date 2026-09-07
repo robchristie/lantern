@@ -2251,3 +2251,22 @@ lantern type --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_12345678
 lantern key --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --selector body --key ArrowUp --timeout-ms 1000 --json
 lantern dom --endpoint http://127.0.0.1:9222 --target-id PAGE_ATTACHED_1234567890 --json
 ```
+
+## Polyorama application evidence
+
+`lantern polyorama --evidence-dir <DIR>` is endpoint-independent and consumes the
+owner's version 1 metadata/semantic/text bundle and optional visual PNG. Without
+that flag, `--timeout-ms` is required and the command reads the fixed gallery
+snapshot hook on the selected page. `--output <PNG>` opts into a bracketed live
+capture; `--overwrite` follows the existing screenshot policy. Region flags are
+unsupported. Output is always JSON, schema version 1. Discovery lists this
+additive command.
+
+`ok=true` establishes bounded schema, geometry, coverage and optional PNG
+validation, not an application/audit/visual pass. Valid owner findings are retained.
+Missing hooks/oversized live snapshots produce `ok=false` and explicit unavailable
+evidence (successful command completion); malformed evidence returns a usage error.
+Missing source/application revision, coverage, runtime readiness, outstanding work
+and frame correlation remain explicit. See the
+[adapter reference](../skills/lantern-ui-inspection/references/polyorama.md) for
+limits, coordinate units, text redaction and non-atomic screenshot sequencing.

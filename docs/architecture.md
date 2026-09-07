@@ -145,3 +145,11 @@ interaction actionability engine and bounded console/network collectors. The CLI
 `action_flow` module owns validation and explicit regular-file persistence; its
 persistence callback reports errors into the same result after input. Existing
 `flow`, wait and interaction commands retain their independent contracts.
+
+### Application-owned evidence
+
+The CLI's `polyorama` module adapts Polyorama version 1 fixture files and its fixed
+gallery snapshot hook. It owns schema/geometry/coverage validation and bounded
+PNG decoding, and uses the general CDP transport without adding application
+hooks to `lantern-core`. It does not mirror application state or dispatch internal
+application actions. Source and frame gaps remain data in the result.

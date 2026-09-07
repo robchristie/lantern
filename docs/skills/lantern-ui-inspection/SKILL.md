@@ -96,7 +96,8 @@ For canvas work, also require application readiness and visibly useful,
 nonblank pixels. Check the expected canvas content, overlays, controls and
 loading/empty/error state as applicable, plus console and network evidence.
 Read [gpu-canvas.md](references/gpu-canvas.md) before selecting a graphics mode
-or interpreting GPU coverage.
+or interpreting GPU coverage. For Polyorama, consume its existing semantic/text
+bundles or fixed live snapshot using [polyorama.md](references/polyorama.md).
 
 ## Report the result
 

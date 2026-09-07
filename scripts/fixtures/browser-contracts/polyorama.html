@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Synthetic Polyorama adapter contract</title>
+<style>body{background:#17242d;color:#fff;font:20px sans-serif}button{font:inherit}canvas{display:block}</style>
+<body class="ready"><h1>Synthetic owner hook</h1><button id="physical">Physical input</button><canvas width="300" height="90"></canvas>
+<script>
+const mode = new URLSearchParams(location.search).get('mode');
+const rect = {min_x:0,min_y:0,max_x:300,max_y:90};
+let frame = 7;
+let inputCount = 0;
+document.querySelector('button').onclick = () => {inputCount++;frame++;};
+const ctx=document.querySelector('canvas').getContext('2d');ctx.fillStyle='#37a8b0';ctx.fillRect(0,0,300,90);ctx.fillStyle='#17242d';ctx.fillText('Owner fixture',20,40);
+if(mode !== 'missing') window.__POLYORAMA_GALLERY_HANDLE = {
+ snapshot() {
+  if(mode === 'oversized') return {padding:'x'.repeat(2097153)};
+  if(mode === 'differing')frame++;
+  const coverage={measured_components:0,attempted_components:0,successful_components:0,failed_components:0,native_text_controls:1,observed_native_controls:0,excluded_categories:['ordinary_egui_labels','native_button_text']};
+  const ui_snapshot={frame,pixels_per_point:1,root:'application',nodes:[{id:'application',parent:null,role:'application',name:'Observed fixture',rect,enabled:true,focused:false,selected:false,actions:[]}],text:[],text_audit:[],text_audit_coverage:coverage,semantic_audit:[]};
+  if(mode === 'malformed')ui_snapshot.nodes[0].rect={...rect,max_x:-1};
+  return {frame,story:'synthetic/test',configuration:{},text:[],text_audit:[],text_audit_coverage:coverage,ui_snapshot};
+ },
+ select_story(){throw new Error('Internal actions must not be called');},
+ request_test_repaint(){throw new Error('Internal repaint must not be called');}
+};
+</script>
