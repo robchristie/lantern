@@ -75,6 +75,37 @@ pub(crate) fn run_inspection(context: EndpointContext) -> Result<(), CliError> {
                 .map_err(|error| error.with_json(json))?;
             write_page(page, json, no_redact)?;
         }
+        Command::Accessibility => {
+            let targets = client.targets().map_err(|e| CliError::from_cdp(e, json))?;
+            let page =
+                select_page_target(targets, target_id.as_deref()).map_err(|e| e.with_json(json))?;
+            let options = build_dom_summary_options(dom_depth, dom_max_nodes, json)?;
+            let output = lantern_core::accessibility::read_accessibility(
+                &page,
+                RedactionMode::from_no_redact(no_redact),
+                options.max_depth,
+                options.max_nodes,
+                budget.expect("accessibility deadline"),
+            )
+            .map_err(|e| CliError::from_cdp(e, json))?;
+            if json {
+                write_json(&output)?;
+            } else {
+                println!(
+                    "accessibility: scope={} nodes={} truncated={}",
+                    output.scope,
+                    output.nodes.len(),
+                    output.truncated
+                );
+                for node in output.nodes {
+                    println!(
+                        "  {}: {}",
+                        escape_human(&node.role),
+                        escape_human(&node.name)
+                    );
+                }
+            }
+        }
         Command::Dom => {
             let targets = client
                 .targets()

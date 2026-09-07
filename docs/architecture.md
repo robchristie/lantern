@@ -153,3 +153,12 @@ gallery snapshot hook. It owns schema/geometry/coverage validation and bounded
 PNG decoding, and uses the general CDP transport without adding application
 hooks to `lantern-core`. It does not mirror application state or dispatch internal
 application actions. Source and frame gaps remain data in the result.
+
+### Computed accessibility boundary
+
+`lantern-core::accessibility` owns the bounded computed role/name view;
+`semantic` owns typed CSS, role/name and exact test-ID resolution. Both resolve
+backend DOM identities to operation-scoped main-document Element wrappers.
+`interaction` owns actionability and all physical input; semantic strategies
+reuse it, including through `action_flow`. No JS accessible-name approximation,
+retained snapshot reference registry or alternate input engine is involved.

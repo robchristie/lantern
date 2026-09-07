@@ -43,3 +43,22 @@ partly executed. Inspect current state first. Preserve the distinction between
 pre-input setup failure, not-dispatched input, uncertain dispatch, failed or
 timed-out postcondition, observed runtime/network failure, incomplete evidence
 and capture failure when reporting the result.
+
+## Computed DOM semantics
+
+For ordinary DOM controls, inspect `lantern accessibility --endpoint "$ENDPOINT"
+--json` and use the browser-computed exact role/name or a literal test ID:
+
+```bash
+lantern click --role button --name 'Save' --timeout-ms 2000 --strict --endpoint "$ENDPOINT" --json
+lantern type --test-id account --text-file /private/input --timeout-ms 2000 --strict --endpoint "$ENDPOINT" --json
+```
+
+Choose exactly one of CSS, role/name or test ID. These target strategies also
+apply to key, pointer commands and the click in action-flow; wait and explicit
+postconditions remain CSS-based. The accessibility list is bounded and filters
+ignored/non-element, child-document and shadow content. Inspect `truncated` and
+evidence loss; unsupported browser methods fail explicitly. No input values or
+reusable node references appear. Duplicate semantic matches send no input;
+missing matches can poll within the supplied timeout. The normal actionability,
+strict outcome and no-replay rules still apply.

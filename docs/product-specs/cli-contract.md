@@ -2270,3 +2270,49 @@ Missing source/application revision, coverage, runtime readiness, outstanding wo
 and frame correlation remain explicit. See the
 [adapter reference](../skills/lantern-ui-inspection/references/polyorama.md) for
 limits, coordinate units, text redaction and non-atomic screenshot sequencing.
+
+## Computed accessibility and semantic targets
+
+`lantern accessibility [--depth <N>] [--max-nodes <N>] [--timeout-ms <MS>]`
+uses Chromium's computed accessibility tree. It returns schema version 1 with
+`scope: ordinary_main_document_elements`, `target_id`, `depth_limit`,
+`node_limit`, `truncated`, `nodes: [{role, name}]` and optional transport
+`evidence_loss`. Defaults are depth 4, 80 nodes and a 5000 ms total operation
+budget including endpoint selection. Limits are depth 1–12, nodes 1–500 and
+optional timeout 1–30000 ms. Missing descendants or additional eligible elements
+set `truncated`; filtering ignored and non-element nodes is part of the scope.
+This compact list is evidence, not a complete accessibility audit or hierarchy.
+It exposes no AX IDs, DOM IDs, input values, raw properties or hidden reasons.
+Names use ordinary snippet redaction and remain bounded to 500 scalars plus an
+ellipsis even with `--no-redact`. No fallback DOM approximation replaces a failed
+or unsupported Accessibility domain; a missing CDP method returns
+`cdp_method_unsupported`. The existing `dom` output remains unchanged.
+
+`click`, `type`, `key`, `hover`, `wheel`, `drag` and the click in `action-flow`
+accept exactly one target strategy:
+
+- `--selector <CSS>` preserves the existing CSS contract.
+- `--role <ROLE> --name <EXACT_NAME>` matches both Chromium-computed fields
+  exactly and case-sensitively. An explicitly empty name is allowed.
+- `--test-id <EXACT_ID>` compares the literal `data-testid` attribute value,
+  including punctuation; it does not parse the value as CSS.
+
+Semantic interaction JSON adds `interaction.target` with `kind: role`, `role`
+and `name`, or `kind: test_id` and `test_id`; its legacy `selector` is empty.
+Semantic request strings are bounded and redacted by default. CSS output keeps
+its existing selector and omits `target`. Input text is never repeated in target
+metadata. `--name` without `--role`, partial role/name pairs and mixed strategies
+are usage errors before endpoint access. `wait` and action-flow postconditions
+remain CSS-based; semantic flags do not extend their contract.
+
+Role/name candidates exclude ignored AX nodes, non-elements, child documents
+and shadow descendants. `backendDOMNodeId` is resolved using `DOM.resolveNode`,
+never joined numerically to a frontend DOM node ID. Wrappers are scoped to one
+preparation attempt and released within the original deadline; socket teardown
+ends the operation when cleanup has no budget. Semantic target identity is
+requeried around actionability samples, including after focus/scroll listeners.
+Missing targets may poll; duplicates fail immediately with `ambiguous_selector`
+and zero input. Disabled, editability, focus, geometry, hit-test and stability
+checks still apply. Each command preserves the same absolute budget, strict
+exit rules and prohibition on automatically replaying possibly dispatched input.
+No frame/shadow traversal or reusable snapshot references are introduced.

@@ -35,6 +35,9 @@ lantern doctor --endpoint "$ENDPOINT" --json
 Use command help to confirm task-specific flags when revisions may differ. A
 package version alone does not identify a local build.
 
+For ordinary DOM controls, `accessibility` provides bounded computed roles and
+names; use exact semantic targets as described in the functional-actions reference.
+
 ## Choose evidence for the task
 
 - For a fresh navigation, use `flow --open` so console and network collection

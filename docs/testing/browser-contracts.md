@@ -148,3 +148,11 @@ snapshot exception, and absence of input dispatch. They do not render
 Polyorama or establish GPU coverage. Actual owner application-shell qualification
 and its source/browser/render provenance belong to the application evidence
 package plan and PR evidence.
+
+Computed accessibility contracts cover implicit/explicit roles, associated labels
+and aria-labelledby, exact punctuation-bearing test IDs, duplicate rejection
+with zero audited input, delayed targets, disabled/occluded controls, focus-time
+replacement and new ambiguity, semantic type/key/hover/action-flow, output bounds
+and redaction, omitted input values, and excluded frame/shadow content. Protocol
+fixtures separately prove backend IDs are resolved rather than joined to frontend
+IDs, and an unsupported Accessibility method fails without input or fallback.

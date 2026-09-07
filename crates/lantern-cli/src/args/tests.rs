@@ -160,3 +160,72 @@ fn validates_layout_container_configuration_without_an_endpoint() {
     assert!(validate_endpoint_invocation(&invocation, Command::Capabilities).is_err());
     assert!(Invocation::parse(["layout", "--container-selector"].map(str::to_owned)).is_err());
 }
+
+#[test]
+fn semantic_targets_are_exactly_one_strategy_and_never_extend_wait() {
+    use crate::validation::validate_endpoint_invocation;
+    for args in [
+        vec![
+            "click",
+            "--role",
+            "button",
+            "--name",
+            "Save",
+            "--timeout-ms",
+            "1000",
+        ],
+        vec![
+            "type",
+            "--role",
+            "textbox",
+            "--name",
+            "",
+            "--text",
+            "abc",
+            "--timeout-ms",
+            "1000",
+        ],
+        vec![
+            "key",
+            "--test-id",
+            "exact\"value",
+            "--key",
+            "Enter",
+            "--timeout-ms",
+            "1000",
+        ],
+    ] {
+        let i = Invocation::parse(args.into_iter().map(str::to_owned)).unwrap();
+        assert!(validate_endpoint_invocation(&i, i.command.unwrap()).is_ok());
+    }
+    for args in [
+        vec!["click", "--role", "button"],
+        vec!["click", "--name", "Save"],
+        vec![
+            "click",
+            "--role",
+            "button",
+            "--name",
+            "Save",
+            "--test-id",
+            "save",
+        ],
+        vec!["click", "--selector", "#save", "--test-id", "save"],
+        vec!["click", "--test-id", ""],
+        vec![
+            "wait",
+            "selector",
+            "--role",
+            "button",
+            "--name",
+            "Save",
+            "--timeout-ms",
+            "1000",
+        ],
+        vec!["capabilities", "--test-id", "save"],
+        vec!["dom", "--role", "button", "--name", "Save"],
+    ] {
+        let i = Invocation::parse(args.into_iter().map(str::to_owned)).unwrap();
+        assert!(validate_endpoint_invocation(&i, i.command.unwrap()).is_err());
+    }
+}

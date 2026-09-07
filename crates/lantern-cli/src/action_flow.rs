@@ -59,6 +59,7 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
         .map_err(|e| CliError::from_cdp(e, i.json))?;
     let page =
         select_page_target(targets, i.target_id.as_deref()).map_err(|e| e.with_json(i.json))?;
+    let target = i.interaction_target();
     let condition = if let Some(url) = i.expect_url {
         Postcondition::Url { url }
     } else if let Some(text) = i.expect_text {
@@ -73,7 +74,7 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
     };
     let output = run_action_flow_until(
         &page,
-        i.wait_selector.as_deref().unwrap(),
+        &target,
         condition,
         RedactionMode::from_no_redact(i.no_redact),
         budget.unwrap(),

@@ -28,13 +28,13 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
         budget,
         ..
     } = context;
+    let selector = invocation.interaction_target();
     let Invocation {
         json,
         no_redact,
         strict,
         target_id,
         timeout_ms,
-        wait_selector,
         wait_text,
         key,
         delta_x,
@@ -45,9 +45,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
     let successful;
     match command {
         Command::Click => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
             validate_interaction_timeout(timeout_ms, json)?;
             let targets = client
@@ -57,7 +54,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = click_element(
                 &page,
-                selector,
+                &selector,
                 budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
@@ -70,9 +67,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
             write_interaction(output, json)?;
         }
         Command::Type => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let text = wait_text
                 .as_deref()
                 .expect("type text checked before endpoint");
@@ -85,7 +79,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = type_text(
                 &page,
-                selector,
+                &selector,
                 text,
                 budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
@@ -99,9 +93,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
             write_interaction(output, json)?;
         }
         Command::Key => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let key = key.as_deref().expect("key checked before endpoint");
             let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
             validate_interaction_timeout(timeout_ms, json)?;
@@ -112,7 +103,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = press_key(
                 &page,
-                selector,
+                &selector,
                 key,
                 budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
@@ -126,9 +117,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
             write_interaction(output, json)?;
         }
         Command::Hover => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
             validate_interaction_timeout(timeout_ms, json)?;
             let targets = client
@@ -138,7 +126,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = hover_element(
                 &page,
-                selector,
+                &selector,
                 budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
@@ -151,9 +139,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
             write_interaction(output, json)?;
         }
         Command::Wheel => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
             validate_interaction_timeout(timeout_ms, json)?;
             validate_wheel_delta(delta_x, delta_y, json)?;
@@ -164,7 +149,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = wheel_element(
                 &page,
-                selector,
+                &selector,
                 delta_x.unwrap_or(0.0),
                 delta_y.unwrap_or(0.0),
                 budget.expect("bounded command budget"),
@@ -179,9 +164,6 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
             write_interaction(output, json)?;
         }
         Command::Drag => {
-            let selector = wait_selector
-                .as_deref()
-                .expect("interaction selector checked before endpoint");
             let timeout_ms = timeout_ms.expect("interaction timeout checked before endpoint");
             let duration_ms = duration_ms.expect("drag duration checked before endpoint");
             validate_interaction_timeout(timeout_ms, json)?;
@@ -194,7 +176,7 @@ pub(crate) fn run_interaction(context: EndpointContext) -> Result<bool, CliError
                 .map_err(|error| error.with_json(json))?;
             let output = drag_element(
                 &page,
-                selector,
+                &selector,
                 delta_x.unwrap_or(0.0),
                 delta_y.unwrap_or(0.0),
                 Duration::from_millis(duration_ms),
@@ -345,6 +327,12 @@ fn write_interaction(output: InteractionCommandOutput, json: bool) -> Result<(),
     }
 
     write_evidence_loss("interaction", &output.interaction.evidence_loss);
+    if let Some(target) = &output.interaction.target {
+        println!(
+            "target={}",
+            escape_human(&serde_json::to_string(target).expect("serialisable target"))
+        );
+    }
 
     println!(
         "{}: {} title=\"{}\" url={} selector=\"{}\" dispatched={} dispatch_state={} application_outcome={} timed_out={} elapsed_ms={} timeout_ms={} observed={} error={}",

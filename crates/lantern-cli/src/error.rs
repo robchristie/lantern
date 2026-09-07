@@ -273,6 +273,12 @@ impl CliError {
 
     pub(crate) fn from_cdp(error: CdpError, json: bool) -> Self {
         match error {
+            CdpError::Command { code: -32601, .. } => Self::runtime(
+                json,
+                "cdp_method_unsupported",
+                "The selected browser does not support a required CDP method.",
+                "Use a Chromium endpoint supporting this command; no fallback evidence was substituted.",
+            ),
             CdpError::CommandUncertain { .. } => Self::runtime(
                 json,
                 "cdp_command_uncertain",

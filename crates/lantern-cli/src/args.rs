@@ -22,6 +22,7 @@ pub(crate) fn print_help() {
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern browser profile <create|list|status|delete> [NAME] [--yes] [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+       lantern accessibility [--depth <N>] [--max-nodes <N>] [--timeout-ms <MS>]
        lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
        lantern action-flow --selector <CSS> --timeout-ms <MS> (--expect-selector <CSS> [--expect-text <TEXT>] | --expect-url <URL>) [--output <PATH>] [--strict]
        lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
@@ -46,6 +47,8 @@ Navigation and wait flags:
   --state <STATE>   ready state: loading, interactive, or complete
   --url-shape <URL> Expected URL shape for wait url
   --selector <CSS>  CSS selector for wait selector/text and interactions
+  --role <ROLE> --name <EXACT_NAME>  Computed role and exact name for interactions
+  --test-id <EXACT_ID>  Exact data-testid for interactions; exclusive with CSS/role
   --text <TEXT>     Text substring for wait text, or inserted text for type
   --text-file <PATH>
                      Owner-private UTF-8 input for type; never reported
@@ -103,6 +106,9 @@ pub(crate) struct Invocation {
     pub(crate) wait_state: Option<String>,
     pub(crate) wait_url_shape: Option<String>,
     pub(crate) wait_selector: Option<String>,
+    pub(crate) role: Option<String>,
+    pub(crate) accessible_name: Option<String>,
+    pub(crate) test_id: Option<String>,
     pub(crate) wait_text: Option<String>,
     pub(crate) type_text_file: Option<PathBuf>,
     pub(crate) key: Option<String>,
@@ -186,6 +192,9 @@ impl Invocation {
             wait_state: None,
             wait_url_shape: None,
             wait_selector: None,
+            role: None,
+            accessible_name: None,
+            test_id: None,
             wait_text: None,
             type_text_file: None,
             key: None,
@@ -310,6 +319,20 @@ impl Invocation {
                             "Pass a CSS selector for layout containers.",
                         )
                     })?);
+                }
+                flag @ ("--role" | "--name" | "--test-id") => {
+                    let value = args.next().ok_or_else(|| {
+                        CliError::usage(
+                            invocation.json,
+                            "Missing semantic target value.",
+                            "Use --role <ROLE> --name <EXACT_NAME> or --test-id <EXACT_ID>.",
+                        )
+                    })?;
+                    match flag {
+                        "--role" => invocation.role = Some(value),
+                        "--name" => invocation.accessible_name = Some(value),
+                        _ => invocation.test_id = Some(value),
+                    }
                 }
                 "--selector" => {
                     let Some(selector) = args.next() else {
@@ -776,3 +799,24 @@ fn parse_wait_condition(value: &str, json: bool) -> Result<WaitConditionName, Cl
 
 #[cfg(test)]
 mod tests;
+
+impl Invocation {
+    pub(crate) fn interaction_target(&self) -> lantern_core::semantic::InteractionTarget {
+        use lantern_core::semantic::InteractionTarget;
+        if let Some(role) = &self.role {
+            InteractionTarget::Role {
+                role: role.clone(),
+                name: self.accessible_name.clone().expect("validated name"),
+            }
+        } else if let Some(test_id) = &self.test_id {
+            InteractionTarget::TestId {
+                test_id: test_id.clone(),
+            }
+        } else {
+            self.wait_selector
+                .as_deref()
+                .expect("validated selector")
+                .into()
+        }
+    }
+}

@@ -6,7 +6,7 @@ This file records the repository's current security contract. It is scoped to lo
 
 Overall grade: **C**
 
-Last reviewed: **2026-08-20**
+Last reviewed: **2026-09-07**
 
 Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git,
 conservative harness profiles, a documented secrets policy, redacted and
@@ -119,3 +119,11 @@ artefact hashes remain exact. Optional screenshots retain visible pixels.
 ## Maintenance Rules
 
 Update this file when the threat model, secrets policy, sandbox posture, automation boundaries, or security-relevant known gaps change. Track deferred security work in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
+
+## Computed accessibility evidence
+
+The accessibility view selects computed role/name fields only; it excludes AX
+values, hidden reasons, raw properties and reusable node identities. Names and
+semantic request metadata use snippet redaction and fixed text bounds. Exact
+role/name and test-ID input are data, not executable JavaScript or CSS fragments.
+Semantic targeting preserves the ordinary DOM actionability and no-replay checks.

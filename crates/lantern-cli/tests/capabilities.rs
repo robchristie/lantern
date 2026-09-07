@@ -68,6 +68,7 @@ fn discovery_lists_the_existing_command_surface_and_schema_owners() {
             "doctor",
             "targets",
             "page",
+            "accessibility",
             "dom",
             "open",
             "wait",

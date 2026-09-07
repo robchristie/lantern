@@ -1,5 +1,5 @@
 function(selector, action, previous) {
-    const matches = document.querySelectorAll(selector);
+    const matches = selector === null ? [this] : document.querySelectorAll(selector);
     if (matches.length > 1) return {error: 'ambiguous_selector'};
     if (matches.length === 0) return {error: 'selector_not_found'};
     if (matches[0] !== this || !this.isConnected) return {error: 'element_unstable'};
@@ -30,8 +30,8 @@ function(selector, action, previous) {
         (!document.hasFocus() || document.activeElement !== this))
         return {error: 'element_not_focused', node_name: this.nodeName.slice(0, 64)};
     // Focus/scroll listeners may synchronously replace or disable the target.
-    if (!this.isConnected || document.querySelectorAll(selector).length !== 1 ||
-        document.querySelector(selector) !== this) return {error: 'element_unstable'};
+    if (!this.isConnected || (selector !== null && (document.querySelectorAll(selector).length !== 1 ||
+        document.querySelector(selector) !== this))) return {error: 'element_unstable'};
     if (requiresEnabled && (this.matches(':disabled') || this.closest('[aria-disabled="true" i], [inert]')))
         return {error: 'element_disabled', node_name: this.nodeName.slice(0, 64)};
     if (action === 'type' && !editable())
