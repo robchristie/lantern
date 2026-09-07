@@ -210,3 +210,13 @@ assessment but cannot recover fast events missed between CLI attachments. The
 defines targeting, focus, geometry and diagnostics. The
 [browser contracts](testing/browser-contracts.md) exercise real Chromium with
 independent fixture postconditions and record exact source/build/browser inputs.
+
+## Representative agent qualification
+
+The [paired CLI case study](qualification/comparative-ui.md) separates actual
+agent verification from fixture truth, records incomplete/incorrect conclusions
+and conductor interventions, and retains exact inputs and opened-image evidence.
+Its five synthetic tasks and software-renderer results do not establish broad
+website or hardware support. The canonical validation entrypoint also runs four
+independent-adjudication contracts; the external agent case study is not a
+deterministic CI benchmark.

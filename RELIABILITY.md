@@ -4,17 +4,18 @@ This file records the repository's current reliability contract. Keep it focused
 
 ## Current Grade
 
-Overall grade: **C**
+Overall grade: **B-**
 
 Last reviewed: **2026-09-07**
 
-Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates,
-validation profile scripts, conservative harness defaults, fixture coverage for
-the implemented frontend feedback loop, bounded click/type/key and pointer interaction
-commands, screenshot region capture, session-oriented flow observation, and explicit managed browser
-lifecycles for disposable containers and dedicated persistent profiles. The
-grade remains `C` until broader real-browser/container smoke coverage, recovery
-behaviour, and landing behaviour are proven across representative local setups.
+Rationale: Bounded deadlines, explicit evidence loss, guarded input and typed
+postconditions are covered by canonical and 64 real-Chromium contracts. The
+paired CLI case study verifies ordinary form, failure, layout, canvas and
+owned-browser reset journeys while retaining an unattributed owner interruption,
+agent observation gaps and a conductor-directed rerun. A source-correlated
+Polyorama shell is repeatable on its declared software renderer. Broader hardware,
+host/container coverage and app-wide readiness remain outside this qualification;
+see `docs/qualification/comparative-ui.md`.
 
 ## Grade Scale
 

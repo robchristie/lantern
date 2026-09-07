@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "qualification_source": {
+    "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+    "dirty": false
+  },
+  "canonical": {
+    "result": "passed",
+    "rust_tests": 231,
+    "adjudication_tests": 4,
+    "current_compiler_check": "passed",
+    "msrv_1_85_check": "passed",
+    "docs_check": "passed",
+    "log_sha256": "9031a2dfc0405213042d8db01ca065b9c523abbb1f70920bff921f9b2e3ab7bc"
+  },
+  "browser_contracts": {
+    "result": "pass",
+    "case_count": 64,
+    "run_id": "c8de80e8-0f84-4132-bb67-ee3749bd1705",
+    "browser": {
+      "executable": "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome",
+      "headless": "new",
+      "product": "Chrome/151.0.7922.34",
+      "profile": "fresh-temporary-directory",
+      "protocol_version": "1.3",
+      "requested_window_size": {
+        "height": 700,
+        "width": 1000
+      }
+    },
+    "build": {
+      "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "dirty": false,
+      "provenance": "git"
+    },
+    "evidence_sha256": "5b05b7baa3ae0743e79086728d2afb863c78611b89fb6bae2919b14384c5e58a",
+    "opened_visual_captures": [
+      {
+        "fixture_url": "http://127.0.0.1:33685/layout",
+        "path": "/nvme/development/lantern/.smoogle/comparison/aggregate-browser-contracts/layout-1000x800.png",
+        "png_dimensions": {
+          "height": 800,
+          "width": 1000
+        },
+        "sha256": "df57abc9b391fbbff6e2ce72c8b0d953ec27827eaa3e94e12d2e357f174515a6",
+        "viewport": {
+          "device_scale_factor": 1,
+          "height": 800,
+          "width": 1000
+        },
+        "visual_review": "opened; expected layout, scroll/ellipsis and clipping fixtures confirmed"
+      },
+      {
+        "fixture_url": "http://127.0.0.1:33685/layout",
+        "path": "/nvme/development/lantern/.smoogle/comparison/aggregate-browser-contracts/layout-390x844.png",
+        "png_dimensions": {
+          "height": 844,
+          "width": 390
+        },
+        "sha256": "fa99d90421494fbcab3e7120765ef70d9e8ccf513a7f4c917d6a9325b89cba92",
+        "viewport": {
+          "device_scale_factor": 1,
+          "height": 844,
+          "width": 390
+        },
+        "visual_review": "opened; expected layout, scroll/ellipsis and clipping fixtures confirmed"
+      }
+    ]
+  },
+  "hardened_owner": {
+    "result": "passed",
+    "source_revision": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+    "owner_sha256": "ac18853ccf93529d156868a6623cac182cd46f3da4a3aa6c344c885910fdf83f",
+    "build": {
+      "provenance": "git",
+      "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "dirty": false
+    },
+    "initial_pid": 1607675,
+    "restarted_pid": 1608074,
+    "viewport": {
+      "width": 1280,
+      "height": 900,
+      "dpr": 1
+    },
+    "actual_png_dimensions": [
+      1280,
+      900
+    ],
+    "trusted_single_form_submit": true,
+    "fresh_profile_restart": true,
+    "owner_separate_process_session": true,
+    "signal_and_exit_records": true,
+    "profile_and_browser_cleanup": true,
+    "png_sha256": "769d1f0ea2602039f3e2fc102d5e10a9b37e180c83332a7d73b3bd868b4818e0"
+  },
+  "polyorama": {
+    "owner_revision": "db534693a36157e04323f0acec6a1a34e4c08994",
+    "owner_checkout_revision": "db534693a36157e04323f0acec6a1a34e4c08994",
+    "owner_status": "",
+    "lantern_build": {
+      "provenance": "git",
+      "commit": "da22ab409d53a9fe6084c13fe04addc1d65cd090",
+      "dirty": false
+    },
+    "browser": "151.0.7922.34",
+    "materialisations": {
+      "/nvme/development/polyorama/target/wasm32-unknown-unknown/release/polyorama_gallery.wasm": {
+        "bytes": 12151196,
+        "sha256": "d9860b0e5bf1e35c877a940322d9caed032d5ed127596d4a87a5e9af29fe47db"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/pkg/polyorama_gallery_bg.wasm": {
+        "bytes": 10452019,
+        "sha256": "ee84f55d41532acc739e56ae046e9b1160433d44b3565e1f1982fefe126b7a1d"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/pkg/polyorama_gallery.js": {
+        "bytes": 158309,
+        "sha256": "d960cafe247679b9278eb68b94a8fe9f1b1650ef5c14fdd9900e8d0158f53aed"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/bootstrap.js": {
+        "bytes": 511,
+        "sha256": "58e3042adc4f3c4b73b9851081453c30ee47eb1852d0f8596edb48cbbb3e49cf"
+      },
+      "/nvme/development/lantern/target/debug/lantern": {
+        "bytes": 37225032,
+        "sha256": "7ccb16f696d230d182a83cfcc434e55057acee77a6b4b12793cc250ab6a21d4d"
+      },
+      "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome": {
+        "bytes": 290614600,
+        "sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71"
+      }
+    },
+    "identity_sha256": "eeebe932c79daeca0f0386aa376b1dfc842fd390633bd68a09b66ae9592d505d",
+    "live_result_sha256": "0e50eeaedea66fc209131021311576427649d1b5398b636695128f69e78f0fae",
+    "screenshot": {
+      "bytes": 80421,
+      "format": "png",
+      "height": 900,
+      "overwritten": true,
+      "path": "/nvme/development/lantern/.smoogle/qualification-tools/polyorama/live-shell.png",
+      "pixel_frame": null,
+      "redaction_caveat": "screenshot_contains_visible_page_pixels",
+      "sha256": "f503313263c2a8dc83e3bc1a2a3926428b2542dd7fbec20dd67b51f2504299e7",
+      "viewport_correlation": "same_dimensions",
+      "width": 1440
+    },
+    "opened_by": "programme conductor",
+    "visual_result": "Expected nonblank dark application shell, two panes and intentional tab ellipsis",
+    "repeatability": "PNG SHA-256 identical to prior reviewed owner capture",
+    "frame_correlation": {
+      "after": 10,
+      "atomicity": "not_established",
+      "before": 10,
+      "pixel_frame": null,
+      "status": "same_observed_frame"
+    },
+    "readiness": {
+      "application_ready": null,
+      "bootstrap_ready": true,
+      "frame_observed": 10,
+      "status": "partial"
+    },
+    "coverage": {
+      "status": "known",
+      "value": {
+        "attempted_components": 6,
+        "excluded_categories": [
+          "ordinary_egui_labels",
+          "native_combo_box_text",
+          "native_button_text",
+          "native_selectable_text"
+        ],
+        "failed_components": 0,
+        "measured_components": 6,
+        "native_text_controls": 26,
+        "observed_native_controls": 0,
+        "successful_components": 6
+      }
+    },
+    "hardware_qualification": false,
+    "retained_artefacts": {
+      "identity.json": {
+        "path": "/nvme/development/lantern/.smoogle/comparison/polyorama-da22ab4/identity.json",
+        "sha256": "eeebe932c79daeca0f0386aa376b1dfc842fd390633bd68a09b66ae9592d505d"
+      },
+      "live-shell.json": {
+        "path": "/nvme/development/lantern/.smoogle/comparison/polyorama-da22ab4/live-shell.json",
+        "sha256": "0e50eeaedea66fc209131021311576427649d1b5398b636695128f69e78f0fae"
+      },
+      "live-shell.png": {
+        "path": "/nvme/development/lantern/.smoogle/comparison/polyorama-da22ab4/live-shell.png",
+        "sha256": "f503313263c2a8dc83e3bc1a2a3926428b2542dd7fbec20dd67b51f2504299e7"
+      },
+      "owner-build-provenance.json": {
+        "path": "/nvme/development/lantern/.smoogle/comparison/polyorama-da22ab4/owner-build-provenance.json",
+        "sha256": "25fbe565d79e0e53b8799219b7bdf2cc410509983c554a1c1c3787df579fab7e"
+      },
+      "probe.mjs": {
+        "path": "/nvme/development/lantern/.smoogle/comparison/polyorama-da22ab4/probe.mjs",
+        "sha256": "c6368437ba815e7c53a983f64420400b2c7a671a978f65f0b5d46a6643ed7694"
+      }
+    },
+    "retention_note": "Raw capture metadata preserves its original output paths; use retained_artefacts for the versioned copies.",
+    "supersedes": {
+      "lantern_commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "raw_json_retained": false,
+      "reason": "The earlier identity.json and live-shell.json were overwritten after their observations were recorded. This retained da22 capture supersedes that Polyorama record; the earlier raw JSON has not been reconstructed."
+    },
+    "product_source_equivalence": {
+      "compared_to": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "changed_paths": [
+        "PLANS.md",
+        "QUALITY_SCORE.md",
+        "README.md",
+        "RELIABILITY.md",
+        "docs/exec-plans/completed/2026-09-07-observable-ui-programme.md",
+        "docs/qualification/aggregate-ui-evidence.json",
+        "docs/qualification/comparative-ui-evidence.json",
+        "docs/qualification/comparative-ui.md",
+        "docs/qualification/observable-ui-assessment.md",
+        "docs/workflows.md"
+      ],
+      "result": "Documentation and evidence changes only; product source and qualification harness unchanged. Build provenance and executable hash differ and are recorded separately."
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Computed accessibility and semantic DOM targets
 
-Status: active
+Status: completed
 
 ## Outcome and boundaries
 
@@ -29,7 +29,7 @@ Candidate selected and locally qualified: canonical verification passes (231
 tests, current compiler and MSRV, documentation), the tracked skill validates,
 and 64 audited real-Chromium cases pass (44 inherited, 20 added). Exact build and
 fixture identities are recorded by the browser harness. Final clean-head evidence
-location: `.smoogle/semantic-dom-clean/evidence.json`; conductor landing remains.
+location: `.smoogle/semantic-dom-clean/evidence.json`; terminal landing evidence is recorded below.
 Reuse the unique target,
 two-sample actionability, absolute deadline, cleanup and no-replay engine.
 Computed names are browser outputs; never recompute ARIA naming in JavaScript.
@@ -57,11 +57,15 @@ Selected-candidate development evidence: `.smoogle/semantic-dom-selected/evidenc
 representative disabled and occluded semantic controls returned their existing
 blockers with zero Input, while replacement typing succeeded with one insertText.
 
-## Remaining delivery
+## Terminal delivery
 
-The conductor must review the exact clean candidate, repair any findings, run CI,
-land the same pull request and reconcile this package. Package A does not close
-programme Q/B or the unrelated persistent-profile plan.
+Landed as [PR #14](https://github.com/robchristie/lantern/pull/14#issuecomment-5565904470)
+at `bb9fdd6cd868571ab99a9d77fe83ff7834f0321d`. Reviewed head
+`d99cd4a7524d073e0c0144a5cc743b0756d5e62a` and merge share tree
+`3afb194c94c61b2300b817d9d821d3a609beed97`. Canonical 231 tests, 64 audited
+browser cases, PR CI 34089430775 and post-merge CI 34089762431 passed.
+Installed skill reconciliation and task Git cleanup completed. Programme Q/B
+remains separate from this completed outcome and the persistent-profile plan.
 
 Calibration probe SHA-256:
 `5dea1435c6e41bebecfb43847c864af45c203818e5fb6036c4299a1681cf88a5`.
