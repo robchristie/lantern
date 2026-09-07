@@ -1062,37 +1062,27 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
                 f"console attribution {name} was {attribution.get(name)!r}, "
                 f"expected {expected_count!r}: {attribution!r}"
             )
-        entries = value.get("console", {}).get("entries", [])
-        baseline_entries = [
-            entry for entry in entries
-            if "intentional-baseline-console-error" in entry.get("message", "")
+        error_entries = [
+            entry for entry in value.get("console", {}).get("entries", [])
+            if entry.get("severity") == "error"
         ]
-        assert len(baseline_entries) == 1, (
-            f"expected one retained baseline console error: {entries!r}"
+        expected_phases = ["baseline"] + (["action"] if expected_action_errors else [])
+        actual_phases = [entry.get("observation_phase") for entry in error_entries]
+        assert actual_phases == expected_phases, (
+            f"console error phases were {actual_phases!r}, expected {expected_phases!r}: "
+            f"{error_entries!r}"
         )
-        expected_entries = [*baseline_entries]
-        assert baseline_entries[0].get("observation_phase") == "baseline", (
-            f"baseline console error had the wrong phase: {baseline_entries[0]!r}"
-        )
-        if expected_action_errors:
-            action_entries = [
-                entry for entry in entries
-                if "intentional-action-console-error" in entry.get("message", "")
-            ]
-            assert len(action_entries) == 1, (
-                f"expected one retained action console error: {entries!r}"
-            )
-            assert action_entries[0].get("observation_phase") == "action", (
-                f"action console error had the wrong phase: {action_entries[0]!r}"
-            )
-            expected_entries.extend(action_entries)
-        for entry in expected_entries:
+        for entry in error_entries:
             timestamp = entry.get("source_timestamp_ms")
             assert (
                 isinstance(timestamp, (int, float))
                 and not isinstance(timestamp, bool)
                 and timestamp > 0
             ), f"console source timestamp was absent or invalid: {entry!r}"
+            if entry["observation_phase"] == "baseline":
+                assert timestamp < boundary, f"baseline source time crossed boundary: {entry!r}"
+            else:
+                assert timestamp >= boundary + 1, f"action source time preceded boundary: {entry!r}"
 
     seed_baseline_console_error(
         "action-flow-baseline-console-clean-seed", "action-baseline-console-clean"
