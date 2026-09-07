@@ -23,6 +23,7 @@ pub(crate) fn run_command(
 ) -> Result<bool, CliError> {
     let budget = invocation
         .timeout_ms
+        .or((command == Command::Accessibility).then_some(5000))
         .map(|ms| lantern_core::cdp::OperationDeadline::from(Duration::from_millis(ms)));
     let mut client = CdpClient::new(endpoint.clone());
     if let Some(budget) = budget {
@@ -39,6 +40,7 @@ pub(crate) fn run_command(
         Command::Doctor
         | Command::Targets
         | Command::Page
+        | Command::Accessibility
         | Command::Dom
         | Command::Open
         | Command::Wait

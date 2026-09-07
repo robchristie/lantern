@@ -26,3 +26,7 @@ pub fn bootstrap_summary() -> ProjectSummary {
         summary: "Rust-first local CLI shim over Chromium CDP for agentic frontend development.",
     }
 }
+
+pub mod semantic;
+
+pub mod accessibility;

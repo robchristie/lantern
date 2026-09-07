@@ -14,12 +14,47 @@ pub(crate) fn validate_endpoint_invocation(
     invocation: &Invocation,
     command: Command,
 ) -> Result<(), CliError> {
+    let semantic = invocation.role.is_some()
+        || invocation.accessible_name.is_some()
+        || invocation.test_id.is_some();
+    if semantic {
+        let actions = matches!(
+            command,
+            Command::Click
+                | Command::Type
+                | Command::Key
+                | Command::Hover
+                | Command::Wheel
+                | Command::Drag
+                | Command::ActionFlow
+        );
+        let valid = matches!((&invocation.role, &invocation.accessible_name, &invocation.test_id, &invocation.wait_selector),
+            (Some(role), Some(_), None, None) if !role.is_empty())
+            || matches!((&invocation.role, &invocation.accessible_name, &invocation.test_id, &invocation.wait_selector), (None, None, Some(id), None) if !id.is_empty());
+        if !actions || !valid {
+            return Err(CliError::usage(
+                invocation.json,
+                "Invalid or conflicting semantic target flags.",
+                "Interactions accept exactly one of --selector <CSS>, --role <ROLE> --name <EXACT_NAME>, or --test-id <EXACT_ID>; wait remains CSS-only.",
+            ));
+        }
+    }
     if invocation.evidence_dir.is_some() && command != Command::Polyorama {
         return Err(CliError::usage(
             invocation.json,
             "--evidence-dir requires polyorama.",
             "Run lantern polyorama --evidence-dir <DIR>.",
         ));
+    }
+    if command == Command::Accessibility {
+        build_dom_summary_options(
+            invocation.dom_depth,
+            invocation.dom_max_nodes,
+            invocation.json,
+        )?;
+        if let Some(timeout) = invocation.timeout_ms {
+            validate_interaction_timeout(timeout, invocation.json)?;
+        }
     }
     if command == Command::Polyorama {
         crate::polyorama::validate_invocation(invocation)?;
@@ -69,6 +104,7 @@ pub(crate) fn validate_endpoint_invocation(
             command,
             Command::Polyorama
                 | Command::Page
+                | Command::Accessibility
                 | Command::Dom
                 | Command::Open
                 | Command::Wait
@@ -88,7 +124,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
+            "--target-id is only supported by page, dom, accessibility, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -118,6 +154,7 @@ pub(crate) fn validate_endpoint_invocation(
     if !matches!(
         command,
         Command::Polyorama
+            | Command::Accessibility
             | Command::Wait
             | Command::Click
             | Command::Type
@@ -131,7 +168,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
+            "--timeout-ms is only supported by accessibility, wait, click, type, key, hover, wheel, drag, flow, action-flow, and polyorama.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
@@ -228,11 +265,11 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
-    if command != Command::Dom && invocation.has_dom_flags() {
+    if !matches!(command, Command::Dom | Command::Accessibility) && invocation.has_dom_flags() {
         return Err(CliError::usage(
             invocation.json,
-            "DOM limit flags are only supported by dom.",
-            "Run lantern dom with --depth <N> or --max-nodes <N>.",
+            "DOM limit flags are only supported by dom and accessibility.",
+            "Run lantern dom or accessibility with --depth <N> or --max-nodes <N>.",
         ));
     }
 
@@ -276,6 +313,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Drag
             | Command::ActionFlow
     ) && invocation.wait_selector.is_none()
+        && !semantic
     {
         return Err(CliError::usage(
             invocation.json,

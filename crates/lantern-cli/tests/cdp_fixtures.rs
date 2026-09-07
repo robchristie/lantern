@@ -2125,7 +2125,7 @@ fn dom_flags_are_rejected_for_non_dom_commands() {
     assert_eq!(json["error"]["code"], "usage");
     assert_eq!(
         json["error"]["message"],
-        "DOM limit flags are only supported by dom."
+        "DOM limit flags are only supported by dom and accessibility."
     );
 }
 

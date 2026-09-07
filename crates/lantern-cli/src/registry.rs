@@ -54,6 +54,7 @@ commands!(Command, COMMANDS, [
     Doctor => ("doctor", [], &[CLI_SCHEMA_VERSION], &[]),
     Targets => ("targets", [], &[CLI_SCHEMA_VERSION], &[]),
     Page => ("page", [], &[CLI_SCHEMA_VERSION], &[]),
+    Accessibility => ("accessibility", [], &[1], &[]),
     Dom => ("dom", [], &[DOM_SCHEMA_VERSION], &[]),
     Open => ("open", [], &[NAVIGATION_SCHEMA_VERSION], &[]),
     Wait => ("wait", [], &[WAIT_SCHEMA_VERSION], WAIT_COMMANDS),

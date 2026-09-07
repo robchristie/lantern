@@ -620,12 +620,13 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         verify=None,
         timeout_ms=2000,
         extra_arguments=(),
+        target_arguments=("--selector", "#target"),
     ):
         evidence["active_case"] = case
         before = navigate(scenario)
         checkpoint = audit.checkpoint()
         command = [
-            "action-flow", "--selector", "#target", "--timeout-ms", str(timeout_ms),
+            "action-flow", *target_arguments, "--timeout-ms", str(timeout_ms),
             *condition, *extra_arguments, "--strict",
         ]
         value, elapsed_ms, actual_exit, stdout, stderr = invoke_retained(*command)
@@ -650,7 +651,7 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
                 "observation_started_before_action "
                 f"{value.get('observation_started_before_action')!r}, expected true"
             )
-        if summary.get("action") != "click" or summary.get("selector") != "#target":
+        if summary.get("action") != "click" or summary.get("selector") != ("#target" if target_arguments[0] == "--selector" else ""):
             failures.append(
                 f"interaction identity {(summary.get('action'), summary.get('selector'))!r}"
             )
@@ -916,6 +917,50 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         ],
         0, True, None, "dragged",
     )
+
+    semantic_cases = [
+        ("semantic-implicit-role", "unique", ["click", "--role", "button", "--name", "Act"], True, None, "clicked"),
+        ("semantic-explicit-name", "semantic-explicit", ["click", "--role", "button", "--name", "Computed action"], True, None, "clicked"),
+        ("semantic-duplicate-role", "semantic-duplicate", ["click", "--role", "button", "--name", "Duplicate"], False, "ambiguous_selector", "ready"),
+        ("semantic-exact-testid", "semantic-testid", ["click", "--test-id", 'exact" ] #special'], True, None, "clicked"),
+        ("semantic-duplicate-testid", "semantic-duplicate", ["click", "--test-id", "duplicate"], False, "ambiguous_selector", "ready"),
+        ("semantic-delayed", "delayed", ["click", "--role", "button", "--name", "Act"], True, None, "clicked"),
+        ("semantic-disabled", "native-disabled", ["click", "--role", "button", "--name", "Act"], False, "element_disabled", "ready"),
+        ("semantic-occluded", "occluded", ["click", "--role", "button", "--name", "Covered"], False, "element_occluded", "ready"),
+        ("semantic-labelled-type", "semantic-labelled", ["type", "--role", "textbox", "--name", "Account", "--text", "lantern text"], True, None, "typed"),
+        ("semantic-replacement-type", "semantic-replacement", ["type", "--role", "textbox", "--name", "Account", "--text", "lantern text"], True, None, "typed"),
+        ("semantic-focus-duplicate", "semantic-focus-duplicate", ["type", "--role", "textbox", "--name", "Account", "--text", "lantern text"], False, "ambiguous_selector", "ready"),
+        ("semantic-key", "text-focus-key", ["key", "--role", "textbox", "--name", "Contract input", "--key", "ArrowDown"], True, None, "key-focused"),
+        ("semantic-focus-disabled", "focus-disables", ["type", "--role", "textbox", "--name", "", "--text", "lantern text"], False, "element_disabled", "ready"),
+        ("semantic-hover", "hover-disabled", ["hover", "--role", "button", "--name", "Act"], True, None, "hovered"),
+        ("semantic-shadow-excluded", "semantic-inspection", ["click", "--role", "button", "--name", "Shadow excluded"], False, "selector_not_found", "ready"),
+        ("semantic-frame-excluded", "semantic-inspection", ["click", "--role", "button", "--name", "Frame excluded"], False, "selector_not_found", "ready"),
+    ]
+    for case, scenario, command, dispatched, error, state in semantic_cases:
+        interaction(case, scenario, [*command, "--timeout-ms", "2000" if dispatched else "700", "--strict"], 0 if dispatched else 1, dispatched, error, state)
+
+    interaction("semantic-request-redaction", "semantic-inspection", ["click", "--role", "button", "--name", "token=secret-token-value", "--timeout-ms", "2000", "--strict"], 0, True, None, "clicked")
+    assert "secret-token-value" not in evidence["cases"][-1]["actual_stdout"]
+    assert evidence["cases"][-1]["actual_output"]["interaction"]["target"]["kind"] == "role"
+
+    navigate("semantic-inspection")
+    checkpoint = audit.checkpoint()
+    value, elapsed = invoke("accessibility", "--depth", "12", "--max-nodes", "80")
+    names = {(node["role"], node["name"]) for node in value["nodes"]}
+    assert ("textbox", "Account") in names and ("button", "Computed save") in names and ("button", "Explicit action") in names, names
+    encoded = json.dumps(value)
+    for excluded in ("input-value-must-not-leak", "hidden-state-must-not-leak", "secret-token-value", "Shadow excluded", "Frame excluded", "backendDOMNodeId", "objectId"):
+        assert excluded not in encoded, (excluded, value)
+    assert not audit.commands_since(checkpoint)
+    evidence["cases"].append({"case":"computed-accessibility-filtered-redacted", "actual_output":value, "elapsed_ms":elapsed, "verdict":"pass"})
+    unredacted, _ = invoke("accessibility", "--depth", "12", "--max-nodes", "80", "--no-redact")
+    assert "input-value-must-not-leak" not in json.dumps(unredacted)
+    assert "hidden-state-must-not-leak" not in json.dumps(unredacted)
+    limited, _ = invoke("accessibility", "--depth", "12", "--max-nodes", "1")
+    assert len(limited["nodes"]) == 1 and limited["truncated"]
+    evidence["cases"].append({"case":"computed-accessibility-bounded", "actual_output":limited, "verdict":"pass"})
+
+    action_flow("semantic-action-flow", "action-async-saved", ["--expect-selector", "#status", "--expect-text", "Record saved"], 0, True, "saved-1", False, True, False, "passed", target_arguments=("--role", "button", "--name", "Save"))
 
     def verify_text_observed(value, expected_text):
         observed = value["postcondition"]["observed"]

@@ -62,3 +62,9 @@ for unknown or modified source identities.
 8. Use `lantern layout --container-selector <CSS>` for heuristic layout evidence. For visual, responsive or canvas work, capture each relevant viewport and open the PNG before judging appearance.
 9. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
 10. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
+
+For ordinary DOM applications, `lantern accessibility --json` shows a compact
+browser-computed role/name list. Interactions also accept `--role button --name
+'Save'` or `--test-id save` in place of CSS. These exact targets retain the usual
+uniqueness, actionability and strict checks; see the
+[CLI contract](docs/product-specs/cli-contract.md#computed-accessibility-and-semantic-targets).

@@ -1,4 +1,5 @@
 //! One observed click and an explicit postcondition; never replay uncertain input.
+use crate::semantic::InteractionTarget;
 use crate::{
     cdp::{CdpError, CdpWebSocket, OperationDeadline, TargetInfo},
     console::{ConsoleCollector, ConsoleSummary},
@@ -73,7 +74,7 @@ pub struct ActionFlowOutput {
 /// use a local regular-file sink; it must not introduce an unbounded stream.
 pub fn run_action_flow_until(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     condition: Postcondition,
     mode: RedactionMode,
     budget: OperationDeadline,
@@ -105,7 +106,13 @@ pub fn run_action_flow_until(
         timed_out: false,
         observed: None,
     };
-    let interaction = interact_on_socket(&mut socket, selector, ActionRequest::default(), budget);
+    let mut interaction = interact_on_socket(
+        &mut socket,
+        &selector.into(),
+        ActionRequest::default(),
+        budget,
+    );
+    interaction.target = interaction.target.map(|t| t.summary(mode));
     // Best-effort input release may have used the separate cleanup allowance.
     socket.restore_deadline(budget.end());
     let mut error = None;

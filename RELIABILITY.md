@@ -134,3 +134,12 @@ qualification remains separate from synthetic adapter/browser contracts.
 ## Maintenance Rules
 
 Update this file when reliability expectations, validation budgets, recovery paths, landing confidence, or known flaky surfaces change. Do not use it as a run log.
+
+## Computed DOM semantics
+
+Computed role/name and exact test-ID targets share the existing interaction
+budget and no-replay engine. Candidate replacement and new ambiguity are checked
+around actionability, and missing browser methods fail explicitly. The compact
+accessibility view reports truncation and omits child-document/shadow content;
+it is not a complete accessibility audit. Real-Chromium contracts cover these
+boundaries as well as labelled typing, key dispatch and observed semantic clicks.

@@ -55,7 +55,39 @@
     document.addEventListener('keydown', () => mark('forbidden-key'), true);
   }
 
-  if (scenario === 'unique') {
+  if (scenario === 'semantic-inspection') {
+    fixture.innerHTML = '<label for="account">Account</label><input id="account" value="input-value-must-not-leak"><span id="save-name">Computed save</span><button aria-labelledby="save-name">Visual label</button><div role="button" aria-label="Explicit action" tabindex="0">Explicit</div><button aria-hidden="true">hidden-state-must-not-leak</button><button aria-label="token=secret-token-value">Redacted name</button>';
+    fixture.querySelector('[aria-label^="token"]').addEventListener('click', () => mark('clicked'));
+    const shadow = document.createElement('div');
+    shadow.attachShadow({mode:'open'}).innerHTML = '<button>Shadow excluded</button>';
+    fixture.append(shadow);
+    const frame = document.createElement('iframe');
+    frame.srcdoc = '<button>Frame excluded</button>';
+    fixture.append(frame);
+  } else if (scenario === 'semantic-duplicate') {
+    fixture.append(button('.target', 'Duplicate'), button('.target', 'Duplicate'));
+    for (const node of fixture.children) node.setAttribute('data-testid', 'duplicate');
+  } else if (scenario === 'semantic-testid') {
+    const node = button('#target');
+    node.setAttribute('data-testid', 'exact" ] #special');
+    fixture.append(node, button('#other', 'Other'));
+    document.querySelector('#other').setAttribute('data-testid', 'exact" ] #special-more');
+  } else if (scenario === 'semantic-explicit') {
+    fixture.innerHTML = '<div role="button" aria-labelledby="name" tabindex="0">Visual</div><span id="name">Computed action</span>';
+    fixture.firstElementChild.addEventListener('click', () => mark('clicked'));
+  } else if (scenario === 'semantic-labelled' || scenario === 'semantic-replacement' || scenario === 'semantic-focus-duplicate') {
+    fixture.innerHTML = '<label for="target">Account</label>';
+    const make = () => {
+      const input = document.createElement('input'); input.id = 'target';
+      input.addEventListener('input', () => mark(input.value === 'lantern text' ? 'typed' : 'unexpected-input'));
+      return input;
+    };
+    const input = make(); fixture.append(input);
+    if (scenario === 'semantic-replacement') input.addEventListener('focus', () => input.replaceWith(make()), {once:true});
+    if (scenario === 'semantic-focus-duplicate') input.addEventListener('focus', () => {
+      const duplicate = make(); duplicate.id = 'second'; duplicate.setAttribute('aria-label', 'Account'); fixture.append(duplicate);
+    }, {once:true});
+  } else if (scenario === 'unique') {
     fixture.append(button('#target'));
   } else if (scenario === 'duplicate') {
     fixture.append(button('.target', 'First'), button('.target', 'Second'));

@@ -94,6 +94,17 @@ fn run(
         ));
     }
 
+    if command == Command::Browser
+        && (invocation.role.is_some()
+            || invocation.accessible_name.is_some()
+            || invocation.test_id.is_some())
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Semantic target flags require an interaction.",
+            "Use --role/--name or --test-id with an interaction command.",
+        ));
+    }
     if matches!(command, Command::Browser) {
         return run_browser_invocation(invocation).map(|()| true);
     }

@@ -1,3 +1,4 @@
+use crate::semantic::{self, InteractionTarget};
 use std::{
     thread,
     time::{Duration, Instant},
@@ -55,6 +56,8 @@ pub struct InteractionPageSummary {
 pub struct InteractionSummary {
     pub action: InteractionAction,
     pub selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<InteractionTarget>,
     pub dispatched: bool,
     pub dispatch_state: DispatchState,
     pub application_outcome: &'static str,
@@ -218,13 +221,13 @@ impl From<CdpError> for InteractionError {
 
 pub fn click_element(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Click,
             ..ActionRequest::default()
@@ -236,14 +239,14 @@ pub fn click_element(
 
 pub fn type_text(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     text: &str,
     timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Type,
             text: Some(text),
@@ -256,14 +259,14 @@ pub fn type_text(
 
 pub fn press_key(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     key: &str,
     timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Key,
             key: Some(key),
@@ -276,13 +279,13 @@ pub fn press_key(
 
 pub fn hover_element(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Hover,
             ..ActionRequest::default()
@@ -294,7 +297,7 @@ pub fn hover_element(
 
 pub fn wheel_element(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     delta_x: f64,
     delta_y: f64,
     timeout: impl Into<OperationDeadline>,
@@ -302,7 +305,7 @@ pub fn wheel_element(
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Wheel,
             delta_x,
@@ -316,7 +319,7 @@ pub fn wheel_element(
 
 pub fn drag_element(
     target: &TargetInfo,
-    selector: &str,
+    selector: impl Into<InteractionTarget>,
     delta_x: f64,
     delta_y: f64,
     duration: Duration,
@@ -325,7 +328,7 @@ pub fn drag_element(
 ) -> Result<InteractionCommandOutput, InteractionError> {
     run_interaction(
         target,
-        selector,
+        &selector.into(),
         ActionRequest {
             action: InteractionAction::Drag,
             delta_x,
@@ -420,7 +423,7 @@ impl ActionRequest<'_> {
 
 fn run_interaction(
     target: &TargetInfo,
-    selector: &str,
+    selector: &InteractionTarget,
     request: ActionRequest<'_>,
     budget: OperationDeadline,
     mode: RedactionMode,
@@ -430,7 +433,8 @@ fn run_interaction(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
     let mut socket = CdpWebSocket::connect_until(url, budget.end())?;
-    let summary = interact_on_socket(&mut socket, selector, request, budget);
+    let mut summary = interact_on_socket(&mut socket, selector, request, budget);
+    summary.target = summary.target.map(|t| t.summary(mode));
     Ok(InteractionCommandOutput::completed(
         request.command(),
         page_summary(target, mode),
@@ -440,13 +444,14 @@ fn run_interaction(
 
 pub(crate) fn interact_on_socket(
     socket: &mut CdpWebSocket,
-    selector: &str,
+    selector: &InteractionTarget,
     request: ActionRequest<'_>,
     budget: OperationDeadline,
 ) -> InteractionSummary {
     let mut summary = InteractionSummary {
         action: request.action,
-        selector: selector.to_owned(),
+        selector: selector.css().unwrap_or("").to_owned(),
+        target: selector.css().is_none().then(|| selector.clone()),
         dispatched: false,
         dispatch_state: DispatchState::NotDispatched,
         application_outcome: "unverified",
@@ -532,6 +537,7 @@ pub(crate) fn interact_on_socket(
 fn error_code(error: &InteractionError) -> &'static str {
     match error {
         InteractionError::Cdp(CdpError::CommandUncertain { .. }) => "cdp_command_uncertain",
+        InteractionError::Cdp(CdpError::Command { code: -32601, .. }) => "cdp_method_unsupported",
         InteractionError::Cdp(CdpError::Command { .. }) => "cdp_command_failed",
         InteractionError::Cdp(CdpError::ResponseInvalid { .. }) => "cdp_response_invalid",
         _ => "cdp_transport_failed",
@@ -569,19 +575,32 @@ fn blocker(code: &str) -> Result<&'static str, InteractionError> {
 
 fn prepare_target(
     socket: &mut CdpWebSocket,
-    selector: &str,
+    selector: &InteractionTarget,
     request: ActionRequest<'_>,
     last_blocker: &mut Option<&'static str>,
 ) -> Result<Option<ActionabilityProbe>, InteractionError> {
-    // Encode the selector as JSON data, never executable source supplied by the caller.
-    let expression = format!(
-        "(() => {{ try {{ const nodes = document.querySelectorAll({}); return nodes.length === 1 ? nodes[0] : nodes.length ? 'ambiguous_selector' : 'selector_not_found'; }} catch (_) {{ return 'selector_invalid'; }} }})()",
-        json!(selector)
-    );
-    let resolved = socket.call(
-        "Runtime.evaluate",
-        Some(json!({"expression": expression, "objectGroup": "lantern-interaction"})),
-    )?;
+    let mut has_objects = selector.css().is_none();
+    let result = (|| {
+        let resolved = semantic::resolve(socket, selector)?;
+        has_objects |= resolved["result"]["objectId"].is_string();
+        prepare_resolved_target(socket, selector, request, last_blocker, &resolved)
+    })();
+    if has_objects && socket.deadline().is_some_and(|d| Instant::now() < d) {
+        let _ = socket.call(
+            "Runtime.releaseObjectGroup",
+            Some(json!({"objectGroup": semantic::GROUP})),
+        );
+    }
+    result
+}
+
+fn prepare_resolved_target(
+    socket: &mut CdpWebSocket,
+    selector: &InteractionTarget,
+    request: ActionRequest<'_>,
+    last_blocker: &mut Option<&'static str>,
+    resolved: &serde_json::Value,
+) -> Result<Option<ActionabilityProbe>, InteractionError> {
     if let Some(code) = resolved["result"]["value"].as_str() {
         *last_blocker = Some(blocker(code)?);
         return Ok(None);
@@ -616,29 +635,31 @@ fn prepare_target(
         }
         Ok(Some(second))
     })();
-    // Handles belong only to this operation. Cleanup stays inside the shared
-    // deadline and cannot mask the last observed blocker or extend the budget.
-    if socket.deadline().is_some_and(|d| Instant::now() < d) {
-        let _ = socket.call(
-            "Runtime.releaseObjectGroup",
-            Some(json!({"objectGroup": "lantern-interaction"})),
-        );
-    }
     result
 }
 
 fn probe_target(
     socket: &mut CdpWebSocket,
     object_id: &str,
-    selector: &str,
+    selector: &InteractionTarget,
     request: ActionRequest<'_>,
     previous: Option<[f64; 4]>,
 ) -> Result<ActionabilityProbe, InteractionError> {
+    if selector.css().is_none() {
+        if let Some(error) = semantic::same_target(socket, selector, object_id)? {
+            return Ok(ActionabilityProbe {
+                error: Some(error.into()),
+                node_name: None,
+                rect: None,
+                point: None,
+            });
+        }
+    }
     let result = socket.call(
         "Runtime.callFunctionOn",
         Some(json!({
             "objectId": object_id, "functionDeclaration": include_str!("actionability.js"),
-            "arguments": [{"value": selector}, {"value": request.command()}, {"value": previous}],
+            "arguments": [{"value": selector.css()}, {"value": request.command()}, {"value": previous}],
             "returnByValue": true,
         })),
     )?;
@@ -663,6 +684,14 @@ fn probe_target(
             source: "missing geometry".to_owned(),
         }
         .into());
+    }
+    if probe.error.is_none() && selector.css().is_none() {
+        if let Some(error) = semantic::same_target(socket, selector, object_id)? {
+            return Ok(ActionabilityProbe {
+                error: Some(error.into()),
+                ..probe
+            });
+        }
     }
     Ok(probe)
 }
@@ -991,6 +1020,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unsupported_accessibility_is_terminal_cleans_up_and_sends_no_input() {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            for method in [
+                "DOM.getDocument",
+                "Accessibility.queryAXTree",
+                "Runtime.releaseObjectGroup",
+            ] {
+                let request: serde_json::Value =
+                    serde_json::from_str(&ws.read().unwrap().into_text().unwrap()).unwrap();
+                assert_eq!(request["method"], method);
+                let response = if method == "Accessibility.queryAXTree" {
+                    json!({"id":request["id"],"error":{"code":-32601,"message":"unsupported"}})
+                } else {
+                    json!({"id":request["id"],"result":{"root":{"nodeId":1}}})
+                };
+                ws.send(Message::Text(response.to_string().into())).unwrap();
+            }
+        });
+        let budget = OperationDeadline::from(Duration::from_secs(2));
+        let mut socket =
+            CdpWebSocket::connect_until(&format!("ws://{address}"), budget.end()).unwrap();
+        let target = InteractionTarget::Role {
+            role: "button".into(),
+            name: "Save".into(),
+        };
+        let summary = interact_on_socket(&mut socket, &target, ActionRequest::default(), budget);
+        assert_eq!(summary.immediate_error, Some("cdp_method_unsupported"));
+        assert_eq!(summary.dispatch_state, DispatchState::NotDispatched);
+        assert!(!summary.timed_out);
+        server.join().unwrap();
+    }
+
+    #[test]
     fn last_actionability_blocker_survives_deadline_without_input() {
         use std::net::TcpListener;
         use tungstenite::Message;
@@ -1036,7 +1104,7 @@ mod tests {
             .unwrap();
             let summary = interact_on_socket(
                 &mut socket,
-                "#target",
+                &"#target".into(),
                 ActionRequest::default(),
                 OperationDeadline::from(Duration::from_millis(120)),
             );
@@ -1083,7 +1151,7 @@ mod tests {
                         .unwrap();
                 let summary = interact_on_socket(
                     &mut socket,
-                    "body",
+                    &"body".into(),
                     ActionRequest {
                         action,
                         text: Some("synthetic"),
@@ -1154,7 +1222,12 @@ mod tests {
         let budget = OperationDeadline::from(Duration::from_millis(350));
         let mut socket =
             CdpWebSocket::connect_until(&format!("ws://{address}/page"), budget.end()).unwrap();
-        let summary = interact_on_socket(&mut socket, "#target", ActionRequest::default(), budget);
+        let summary = interact_on_socket(
+            &mut socket,
+            &"#target".into(),
+            ActionRequest::default(),
+            budget,
+        );
         assert!(!summary.dispatched);
         assert!(summary.timed_out);
         assert_eq!(summary.immediate_error, Some("element_disabled"));
