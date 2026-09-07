@@ -23,6 +23,8 @@ jobs:
         run: cargo check --locked --workspace --all-targets
       - name: Test workspace
         run: cargo test --locked --workspace --all-targets
+      - name: Check comparison adjudication contracts
+        run: python3 scripts/test-comparison-adjudicator.py
 
   browser-contracts:
     runs-on: macos-15-intel

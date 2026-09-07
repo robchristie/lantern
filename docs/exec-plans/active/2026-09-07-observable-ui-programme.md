@@ -77,12 +77,14 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | P: application evidence | Polyorama `db534693a36157e04323f0acec6a1a34e4c08994` / Lantern `c61fe1169538444feae0f40a7ccd7baed2f3a93a` | Version 1 owner bundle and fixed read-only live hook; 227 tests and 44 browser cases | [PR #13 landing evidence](https://github.com/robchristie/lantern/pull/13#issuecomment-5565670734); `../completed/2026-09-07-application-evidence.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
 | A: semantic DOM inspection | Lantern `bb9fdd6cd868571ab99a9d77fe83ff7834f0321d` / Q/B uses this base | Computed AX view and exact semantic targets; 231 tests and 64 browser cases | [PR #14 landing evidence](https://github.com/robchristie/lantern/pull/14#issuecomment-5565904470); `../completed/2026-09-07-semantic-dom.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
 
-Current phase: bounded Q/B calibration. Question: can identical submitted-form
-and fast-failure fixtures establish fair real-CLI input, observation and browser
-ownership evidence for all three tools? The smallest probe uses fresh sandboxed
-Chromium and independently recorded fixture events. Evidence owner:
-`docs/qualification/comparative-ui.md`; exit after all tools have real agent
-calibration results and attach/detach PID checks, then run five paired tasks.
+Current phase: Q/B comparison candidate selected at
+`32a32be21a2e2d8311153925a0c84ea7cd341076`. Calibration established equivalent
+real CLI input and owned attachment lifecycles, corrected actual PNG viewport
+alignment, and selected private observer reporting. Detailed decisions and
+provisional observations are in `../../qualification/comparative-ui.md`.
+Fresh five-task agents now use identical frozen fixture/browser/tool inputs;
+complete their independent adjudication, aggregate checks and owner journey
+before selecting the final report candidate.
 P reviewed head `655e4f4acb80adb7667dd5d348e3fbd0793d248f` and landed revision
 share tree `781fbca4b58d60fbee2f56ab5e674f8cb9d48431`; PR CI 34087614365 and
 post-merge CI 34087942651 passed. Q remains partial until aggregate qualification and comparison are recorded.

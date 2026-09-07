@@ -32,6 +32,16 @@ def real_input(case):
     return any(i['trusted'] and i.get('inputType') == 'insertText' for e in inputs for i in e['inputEvents'])
 
 
+def trusted_text(case, value, generation=None):
+    return any(i['trusted'] and i.get('inputType') == 'insertText' and i.get('value') == value
+               for e in events(case, 'input', generation) for i in e['inputEvents'])
+
+
+def trusted_submit(case, value, generation=None):
+    submissions = events(case, 'submit', generation)
+    return len(submissions) == 1 and submissions[0].get('trusted') is True and submissions[0]['value'] == value
+
+
 form = events('form', 'saved')
 failure = events('failure', 'failure')
 canvas = events('canvas', 'frame')
@@ -44,7 +54,7 @@ summary = {
         'trusted_text_values': sorted({i['value'] for e in events('form', 'input') for i in e['inputEvents'] if i['trusted'] and 'value' in i}),
         'submit_events': events('form', 'submit'),
         'saved_names': [e['saved'] for e in form],
-        'truth_pass': len(events('form', 'submit')) == 1 and real_input('form') and len(form) == 1 and form[0]['saved'] == 'Casey Example',
+        'truth_pass': trusted_submit('form', 'Casey Example') and trusted_text('form', 'Casey Example') and len(form) == 1 and form[0]['saved'] == 'Casey Example',
     },
     'failure': {
         'submit_count': len(events('failure', 'submit')),
@@ -52,6 +62,7 @@ summary = {
         'trusted_text_values': sorted({i['value'] for e in events('failure', 'input') for i in e['inputEvents'] if i['trusted'] and 'value' in i}),
         'submit_events': events('failure', 'submit'),
         'saved_count': len(events('failure', 'saved')),
+        'trusted_intended_text_and_submit': trusted_text('failure', 'Casey Example') and trusted_submit('failure', 'Casey Example'),
         'http_statuses': [e['httpStatus'] for e in failure],
         'runtime_messages': [e['message'] for e in events('failure', 'runtime-error')],
         'independent_http': [e for e in observer if e['kind'] == 'http-error'],
@@ -62,7 +73,7 @@ summary = {
         'frames': [{'revision': e['revision'], 'frame': e['frame'], 'pixel': e['centrePixel'], 'pointers': e['pointerEvents']} for e in canvas],
         'truth_pass': len(canvas) == 2 and canvas[0]['revision'] == 0 and canvas[0]['centrePixel'] == [32, 95, 200, 255]
         and canvas[1]['revision'] == 1 and canvas[1]['frame'] == 2 and canvas[1]['centrePixel'] == [22, 128, 60, 255]
-        and [p['type'] for p in canvas[1]['pointerEvents']] == ['pointerdown', 'click'] and all(p['trusted'] for p in canvas[1]['pointerEvents']),
+        and [p['type'] for p in canvas[1]['pointerEvents']] == ['pointerdown', 'click'] and all(p['trusted'] and abs(p['x'] - 160) <= 1 and abs(p['y'] - 90) <= 1 for p in canvas[1]['pointerEvents']),
         'visual_adjudication': 'Requires opening agent before/after PNGs',
     },
     'recovery': {
@@ -71,6 +82,7 @@ summary = {
         'before_restart_saved_names': [e['saved'] for e in events('recovery', 'saved', 1)],
         'after_restart_saved_names': [e['saved'] for e in events('recovery', 'saved', 2)],
         'restarts': [e for e in lifecycle if e['kind'] == 'restarted'],
+        'trusted_intended_text_and_submits': trusted_text('recovery', 'Morgan Draft', 1) and trusted_text('recovery', 'Morgan Recovered', 2) and trusted_submit('recovery', 'Morgan Draft', 1) and trusted_submit('recovery', 'Morgan Recovered', 2),
     },
     'metrics': {
         'cli_invocations': len(commands),

@@ -55,6 +55,7 @@ case "$profile" in
     run cargo check --workspace --all-targets
     run rustup run 1.85.0 cargo check --locked --workspace --all-targets
     run_tests
+    run python3 scripts/test-comparison-adjudicator.py
     run_docs_check
     ;;
   *)

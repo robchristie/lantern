@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {createServer} from 'node:http';
 import {spawn,execFileSync} from 'node:child_process';
 import {readFile,writeFile,appendFile,mkdir,rm} from 'node:fs/promises';
+import {appendFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
@@ -50,6 +51,8 @@ if(mode!=='serve'){
   await mkdir(profile);
   const args=['--headless=new','--remote-debugging-address=127.0.0.1','--remote-debugging-port=0','--user-data-dir='+profile,'--window-size=1280,900','--force-device-scale-factor=1','--hide-scrollbars','--no-first-run','--no-default-browser-check','about:blank'];
   proc=spawn(executable,args,{stdio:['ignore','ignore','pipe'],env:process.env});
+  const launchedPid=proc.pid;
+  proc.on('exit',(code,signal)=>log('lifecycle',{kind:'browser-exit',pid:launchedPid,code,signal}));
   proc.stderr.on('data',data=>appendFile(out+'/chromium-'+generation+'.log',data));
   let port;
   for(let n=0;n<100;n++){try{port=(await readFile(profile+'/DevToolsActivePort','utf8')).split('\n')[0];break;}catch{}if(proc.exitCode!==null||proc.signalCode!==null)throw Error('Chromium exited '+proc.exitCode);await new Promise(r=>setTimeout(r,100));}
@@ -93,6 +96,7 @@ if(mode!=='serve'){
  await new Promise(r=>control.listen(0,'127.0.0.1',r));
  await writeFile(out+'/owner.json',JSON.stringify({pid:process.pid,control:'http://127.0.0.1:'+control.address().port,fixtureUrl},null,2));
  console.log(JSON.stringify(identity));
- const shutdown=async()=>{if(stopping)return;stopping=true;await stopBrowser();control.close();fixtureServer.close();};
- process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
+ const shutdown=async signal=>{if(stopping)return;stopping=true;await log('lifecycle',{kind:'owner-signal',signal,pid:process.pid});await stopBrowser();control.close();fixtureServer.close();for(let n=1;n<=generation;n++)await rm(out+'/profile-'+n,{recursive:true,force:true,maxRetries:5,retryDelay:100});};
+ process.on('SIGTERM',()=>shutdown('SIGTERM'));process.on('SIGINT',()=>shutdown('SIGINT'));
+ process.on('exit',code=>appendFileSync(out+'/lifecycle.jsonl',JSON.stringify({utc:new Date().toISOString(),kind:'owner-exit',pid:process.pid,code})+'\n'));
 }

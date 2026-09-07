@@ -122,3 +122,32 @@ normal CLI choices.
 Calibration selects the common private reporting binding, retained visible-
 surface alignment and owned-process lifecycle. The five-task comparison uses
 fresh agents, browsers and profiles; calibration timings are excluded.
+
+## Interrupted agent-browser run and lifetime probe
+
+The first full agent-browser run verified form, failed-save diagnosis and layout,
+then ended with canvas incomplete and recovery unexecuted. Its unsupported
+`mouse click` command dispatched no pointer. The following wait lost CDP; both
+the Chromium endpoint and the separate owner endpoint were gone. The owner
+process completed with exit 0, without an exception or recorded stop request.
+No evaluator close, restart, process signal or shell cleanup was found. This is
+an **unattributed owner/browser interruption**, not a demonstrated CLI failure.
+Its report and all invocation metrics are retained separately.
+
+A bounded reproduction used the same canvas navigation, observation, unsupported
+command, wait and later reads. It returned the expected command error and
+25-second wait timeout, with both owner and browser still healthy. The loss was
+not reproduced. Owner instrumentation now records received signals and browser
+and owner exit status; signal cleanup also removes the owned profiles. The
+replacement run launches that owner in a detached process session to separate
+its lifetime from the command runner. A disposable readiness probe proved fresh
+about:blank state, 1280 × 900 CSS and actual PNG dimensions, new PID/profile on
+restart, and clean recorded SIGTERM teardown of both browser and profiles.
+
+One fresh five-task agent-browser run uses the same model, outcome capsule and
+application/tool/browser materials without command hints. The owner diagnostic
+and lifetime-isolation delta is explicit: owner implementations are not claimed
+byte-identical across all runs. Earlier completed Lantern/Playwright runs retain
+their successful lifecycle evidence. Local evidence owners are
+`.smoogle/comparison/eval-agent-browser/`, `lifetime-probe/`, and
+`detached-lifetime-probe/` beneath the same comparison directory.
