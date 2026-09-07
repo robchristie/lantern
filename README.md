@@ -36,6 +36,11 @@ Agents need concise browser feedback during frontend work, but broad DevTools in
 
 ## Quick Start
 
+Run `lantern capabilities --json` to discover this executable's package/build
+identity, commands, aliases and output schemas without starting or connecting to
+a browser. See the [capability contract](docs/product-specs/cli-contract.md#capability-discovery)
+for unknown or modified source identities.
+
 1. Read the generated docs contract before changing code.
 2. Review the seeded `.smoogle/` tasks.
 3. Tune `smoogle.toml` before long unattended runs.

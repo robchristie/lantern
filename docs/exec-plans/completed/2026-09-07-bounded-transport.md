@@ -2,8 +2,7 @@
 
 Status: completed
 
-Programme package T; implementation and local qualification complete.
-Independent review and landing remain with the programme coordinator.
+Programme package T; implemented, qualified and landed through PR #8.
 
 ## Outcome and boundary
 
@@ -62,13 +61,17 @@ that collector-only oversized payloads and correlation exhaustion clear the
 match without transport queue overflow, while preserving completed-command
 `ok` and timeout semantics. Focused flow tests passed (5/5), followed by the
 canonical verification above. The [BLOCK record](https://github.com/robchristie/lantern/pull/8#issuecomment-5564049707)
-owns the review finding; the coordinator owns re-review and landing.
+owns the review finding; the repaired head passed independent re-review and landed.
 
-## Next action
+## Landing evidence
 
-The coordinator obtains independent review of the committed candidate, applies
-any repairs on the same branch, and lands after CI and review gates pass.
-The programme then selects the separate CLI foundation package.
+PR #8 squash-merged as `0f4b87815e968b0bafea3d35b86c0273009d066d`.
+Independent review passed for `53396b111a6e305b8efb10a9a7106494f168f935`;
+reviewed and landed tree: `94b63d581b5b416956a14b27dfcfd91c6a50b44d`.
+PR CI `34075754362` and post-merge CI `34075820982` passed alongside the
+195-test canonical acceptance. Task branch, worktree, remote-tracking reference
+and live remote head were cleaned. The [landing record](https://github.com/robchristie/lantern/pull/8#issuecomment-5564132394)
+owns detailed reconciliation. The separate CLI foundation package is next.
 
 Residual limits: no hard real-time scheduling guarantee; oversized results
 (including screenshots over 16 MiB) fail; cleanup acknowledgement is best effort;

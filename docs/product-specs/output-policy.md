@@ -4,6 +4,11 @@ This policy defines how Lantern writes human and JSON output, and how it redacts
 
 Lantern implements `lantern doctor`, `lantern targets`, `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern layout`, `lantern screenshot`, `lantern click`, `lantern type`, and `lantern key`. Future commands must reuse this policy unless a later design explicitly changes it with a `schema_version` bump where needed.
 
+`lantern capabilities` always emits the standard JSON envelope, including when
+`--json` is omitted. Its package/build metadata and command registry contain no
+browser-derived data; its nullable source identity is defined by the capability
+discovery section of `cli-contract.md`.
+
 ## Goals
 
 - Keep human output short enough for agent transcripts.
