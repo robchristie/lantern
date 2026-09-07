@@ -24,7 +24,7 @@ The existing persistent-profile plan is unrelated and must be preserved.
 | F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Implemented and qualified (PR #11) |
 | V | Task-dependent visual review requiring actual image inspection and explicit visual expectations | Tracked inspection skill privileges text and screenshots as supporting evidence | 4: inspection workflow | Implemented and qualified (PR #12) |
 | P | Consume existing Polyorama versioned semantic/text/visual evidence; narrow on-demand adapter where live inspection needs it; explicit revision/coverage correlation | Polyorama `docs/ui-snapshots/README.md`, `docs/ui-guides/ui-review.md`; existing artefacts and browser accessibility limitation | 5: application evidence | Implemented and qualified (PR #13) |
-| A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Candidate selected; locally qualified |
+| A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Implemented and qualified (PR #14) |
 | L | Escaped, unique generated selectors; explicit container configuration; heuristic layout findings and intentional overflow distinction | `layout.rs`: raw identifiers and application-specific container classes | 4: inspection workflow | Implemented and qualified (PR #12) |
 | Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Partial: interaction and action-flow fixtures qualified; final qualification pending |
 | C | Discover package/build identity, commands and schemas; split CLI by command family before broader interface expansion | CLI version is package-only; large `main.rs` | 2: CLI foundation (separate package) | Implemented and qualified (PR #9) |
@@ -75,12 +75,17 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | F: action/assertion/capture | Lantern `b1527dd47e832e3dfe1bb1fee5b4d90119920491` / V/L/S uses this base | Explicit false-to-true condition, single observed click, retained failure/capture result; 217 tests and 31 Linux/macOS browser contracts | [PR #11 landing evidence](https://github.com/robchristie/lantern/pull/11#issuecomment-5565022068); `../completed/2026-09-07-action-assertion-flow.md` | Landed; PR/post-merge CI passed; task Git state cleaned |
 | V/L/S: inspection workflow | Lantern `8b5bf0b822c05935ff656ff1a627cf241899b200` / P uses this base | Task-dependent evidence, heuristic layout, progressive skill; 218 tests and 38 Linux/macOS browser contracts | [PR #12 landing evidence](https://github.com/robchristie/lantern/pull/12#issuecomment-5565237257); `../completed/2026-09-07-inspection-workflow.md` | Landed; PR/post-merge CI passed; task Git cleanup and installed skill reconciliation complete |
 | P: application evidence | Polyorama `db534693a36157e04323f0acec6a1a34e4c08994` / Lantern `c61fe1169538444feae0f40a7ccd7baed2f3a93a` | Version 1 owner bundle and fixed read-only live hook; 227 tests and 44 browser cases | [PR #13 landing evidence](https://github.com/robchristie/lantern/pull/13#issuecomment-5565670734); `../completed/2026-09-07-application-evidence.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
-| A: semantic DOM inspection | Lantern candidate on P base above / no downstream consumer yet | Computed AX view and exact semantic targets; 231 tests and 64 browser cases | `2026-09-07-semantic-dom.md` | Locally qualified; conductor review and landing pending |
+| A: semantic DOM inspection | Lantern `bb9fdd6cd868571ab99a9d77fe83ff7834f0321d` / Q/B uses this base | Computed AX view and exact semantic targets; 231 tests and 64 browser cases | [PR #14 landing evidence](https://github.com/robchristie/lantern/pull/14#issuecomment-5565904470); `../completed/2026-09-07-semantic-dom.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
 
-Next: independently review and land the qualified A candidate.
+Current phase: bounded Q/B calibration. Question: can identical submitted-form
+and fast-failure fixtures establish fair real-CLI input, observation and browser
+ownership evidence for all three tools? The smallest probe uses fresh sandboxed
+Chromium and independently recorded fixture events. Evidence owner:
+`docs/qualification/comparative-ui.md`; exit after all tools have real agent
+calibration results and attach/detach PID checks, then run five paired tasks.
 P reviewed head `655e4f4acb80adb7667dd5d348e3fbd0793d248f` and landed revision
 share tree `781fbca4b58d60fbee2f56ab5e674f8cb9d48431`; PR CI 34087614365 and
-post-merge CI 34087942651 passed. Q remains partial; Q/B selection follows A.
+post-merge CI 34087942651 passed. Q remains partial until aggregate qualification and comparison are recorded.
 
 ## Terminal rule
 

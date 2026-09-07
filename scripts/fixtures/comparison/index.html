@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en-AU">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI qualification workshop</title>
+<style>
+body{font:18px/1.5 sans-serif;margin:40px;background:#f4f6f8;color:#162434}main{max-width:900px}nav{display:flex;gap:24px;margin-bottom:32px}input,button{font:inherit;padding:10px;margin:8px}label{display:block}section{padding:24px;background:white;border:1px solid #ccd4dc}canvas{display:block;border:2px solid #162434;margin:20px 0}#label-box{width:220px;overflow:hidden;border:2px solid #c44536;padding:8px}#delivery-label{white-space:nowrap;font-size:24px}output{display:block;margin:16px 0}
+</style>
+<main><h1>UI qualification workshop</h1><nav><a href="/form">Form</a><a href="/failure">Failure</a><a href="/layout">Layout</a><a href="/canvas">Canvas</a><a href="/recovery">Recovery</a></nav><section id="task"></section></main>
+<script>
+const task=document.querySelector('#task');
+const route=location.pathname.slice(1)||'form';
+const state={case:route,submits:0,inputEvents:[],pointerEvents:[],saved:null,revision:0,frame:0};
+function report(kind,extra={}){fetch('/truth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,...state,...extra,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio}})}).catch(()=>{});}
+if(route==='form'||route==='failure'||route==='recovery'){
+ const recovery=route==='recovery';
+ task.innerHTML=`<h2>${recovery?'Disposable draft':route==='failure'?'Service failure investigation':'Contact form'}</h2><p>${recovery?'A fresh disposable browser starts with no draft. A draft survives reloads in the same browser only.':'Enter the synthetic contact name and save once.'}</p><form><label for="contact-name">Contact name</label><input id="contact-name" autocomplete="off" required><button type="submit">Save contact</button></form><output id="save-status" role="status"></output>`;
+ const input=document.querySelector('input'),status=document.querySelector('output');
+ state.saved=recovery?localStorage.getItem('draft'):null;status.textContent=state.saved?`Saved contact: ${state.saved}`:'No saved contact';
+ input.addEventListener('input',e=>{state.inputEvents.push({trusted:e.isTrusted,inputType:e.inputType});report('input');});
+ document.querySelector('form').addEventListener('submit',async e=>{
+  e.preventDefault();state.submits++;report('submit',{trusted:e.isTrusted,value:input.value});
+  status.textContent='Saving…';
+  if(route==='failure'){
+   const response=await fetch('/intentional-fast-failure');
+   status.textContent='Save failed — contact not saved';report('failure',{httpStatus:response.status});
+   setTimeout(()=>{throw new Error('Qualification save handler failed after HTTP 503');},0);return;
+  }
+  await new Promise(r=>setTimeout(r,180));state.saved=input.value;if(recovery)localStorage.setItem('draft',state.saved);status.textContent=`Saved contact: ${state.saved}`;report('saved');
+ });
+}else if(route==='layout'){
+ task.innerHTML='<h2>Delivery summary</h2><p>The complete destination label should be readable inside its bordered card at this viewport.</p><div id="label-box" data-layout-container><span id="delivery-label">Express delivery to regional Australia</span></div>';
+}else if(route==='canvas'){
+ task.innerHTML='<h2>Signal canvas</h2><p>Click the centre of the blue canvas once to turn it green. The status reports the committed state and rendered frame.</p><canvas id="signal" width="320" height="180" role="img" aria-label="Signal canvas"></canvas><output id="canvas-status" role="status"></output>';
+ const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+ function paint(){ctx.fillStyle=state.revision?'#16803c':'#205fc8';ctx.fillRect(0,0,320,180);state.frame++;document.querySelector('output').textContent=`Signal ${state.revision?'green':'blue'}; revision ${state.revision}; frame ${state.frame}`;report('frame',{centrePixel:[...ctx.getImageData(160,90,1,1).data]});}
+ canvas.addEventListener('pointerdown',e=>{state.pointerEvents.push({type:e.type,trusted:e.isTrusted,x:e.offsetX,y:e.offsetY});report('pointer');});
+ canvas.addEventListener('click',e=>{state.pointerEvents.push({type:e.type,trusted:e.isTrusted,x:e.offsetX,y:e.offsetY});state.revision++;requestAnimationFrame(paint);});paint();
+}else task.textContent='Unknown workshop task';
+report('loaded');
+window.addEventListener('error',e=>report('runtime-error',{message:e.message}));
+</script>
+</html>
