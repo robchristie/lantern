@@ -4302,3 +4302,40 @@ fn bounded_action_flow_includes_http_target_selection_in_its_deadline() {
     assert!(started.elapsed() < Duration::from_millis(400));
     handle.join().unwrap();
 }
+
+#[test]
+fn unsupported_keys_fail_before_browser_access() {
+    for key in [
+        "",
+        "enter",
+        "a",
+        "Control+Enter",
+        "Shift",
+        "F12",
+        "Spacebar",
+    ] {
+        let output = lantern(
+            [
+                "--json",
+                "--endpoint",
+                "http://127.0.0.1:1",
+                "key",
+                "--selector",
+                "body",
+                "--key",
+                key,
+                "--timeout-ms",
+                "1000",
+            ],
+            None,
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{key:?}: {}",
+            stderr(&output)
+        );
+        assert!(stderr(&output).contains("Unsupported key."));
+        assert!(stderr(&output).contains("Use type for ordinary text."));
+    }
+}

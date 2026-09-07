@@ -52,7 +52,7 @@ Navigation and wait flags:
   --text <TEXT>     Text substring for wait text, or inserted text for type
   --text-file <PATH>
                      Owner-private UTF-8 input for type; never reported
-  --key <KEY>       Single key value for key
+  --key <KEY>       Supported named key (Enter, Space, Tab, arrows, editing/navigation keys)
   --dx <PX>         Horizontal wheel or drag delta
   --dy <PX>         Vertical wheel or drag delta
   --duration-ms <MS> Drag duration from 0 through 30000

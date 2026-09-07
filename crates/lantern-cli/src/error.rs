@@ -599,6 +599,11 @@ impl CliError {
 
     pub(crate) fn from_interaction(error: InteractionError, json: bool) -> Self {
         match error {
+            InteractionError::UnsupportedKey => Self::usage(
+                json,
+                "Unsupported key.",
+                lantern_core::interaction::SUPPORTED_KEY_HINT,
+            ),
             InteractionError::TargetWebSocketMissing => Self::runtime(
                 json,
                 "target_websocket_missing",

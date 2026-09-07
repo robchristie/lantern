@@ -210,6 +210,7 @@ impl InteractionObservedState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InteractionError {
     TargetWebSocketMissing,
+    UnsupportedKey,
     Cdp(CdpError),
 }
 
@@ -428,6 +429,9 @@ fn run_interaction(
     budget: OperationDeadline,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
+    if request.action == InteractionAction::Key {
+        key_definition(request.key.unwrap_or(""))?;
+    }
     let url = target
         .web_socket_debugger_url
         .as_deref()
@@ -941,31 +945,87 @@ fn dispatch_drag_release(
     Ok(())
 }
 
+/// Supported unmodified keys. Ordinary text belongs on the separate type path.
+pub const SUPPORTED_KEY_HINT: &str = "Supported keys: Enter, Space (or a literal space), Tab, Backspace, Delete, Escape, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home, End, PageUp, PageDown. Use type for ordinary text.";
+
+pub fn is_supported_key(key: &str) -> bool {
+    key_definition(key).is_ok()
+}
+
+struct KeyDefinition {
+    key: &'static str,
+    code: &'static str,
+    windows_virtual_key_code: u32,
+    text: &'static str,
+}
+
+fn key_definition(key: &str) -> Result<KeyDefinition, InteractionError> {
+    let (key, code, windows_virtual_key_code, text) = match key {
+        "Enter" => ("Enter", "Enter", 13, "\r"),
+        "Space" | " " => (" ", "Space", 32, " "),
+        "Tab" => ("Tab", "Tab", 9, ""),
+        "Backspace" => ("Backspace", "Backspace", 8, ""),
+        "Delete" => ("Delete", "Delete", 46, ""),
+        "Escape" => ("Escape", "Escape", 27, ""),
+        "ArrowLeft" => ("ArrowLeft", "ArrowLeft", 37, ""),
+        "ArrowUp" => ("ArrowUp", "ArrowUp", 38, ""),
+        "ArrowRight" => ("ArrowRight", "ArrowRight", 39, ""),
+        "ArrowDown" => ("ArrowDown", "ArrowDown", 40, ""),
+        "Home" => ("Home", "Home", 36, ""),
+        "End" => ("End", "End", 35, ""),
+        "PageUp" => ("PageUp", "PageUp", 33, ""),
+        "PageDown" => ("PageDown", "PageDown", 34, ""),
+        _ => return Err(InteractionError::UnsupportedKey),
+    };
+    Ok(KeyDefinition {
+        key,
+        code,
+        windows_virtual_key_code,
+        text,
+    })
+}
+
+impl KeyDefinition {
+    fn event(&self, event_type: &str) -> serde_json::Value {
+        // CDP's Windows virtual code is portable. Native codes are platform-specific,
+        // so leave those unset rather than sending Windows values on Linux/macOS.
+        let mut event = json!({
+            "type": event_type,
+            "key": self.key,
+            "code": self.code,
+            "windowsVirtualKeyCode": self.windows_virtual_key_code,
+        });
+        if event_type == "keyDown" && !self.text.is_empty() {
+            event["text"] = json!(self.text);
+            event["unmodifiedText"] = json!(self.text);
+        }
+        event
+    }
+}
+
 fn dispatch_key(
     socket: &mut CdpWebSocket,
     key: &str,
     progress: &mut InputProgress,
 ) -> Result<(), InteractionError> {
+    let key = key_definition(key)?;
     let result = (|| {
         input_call(
             socket,
             progress,
             "Input.dispatchKeyEvent",
-            json!({"type": "keyDown", "key": key}),
+            key.event("keyDown"),
         )?;
         input_call(
             socket,
             progress,
             "Input.dispatchKeyEvent",
-            json!({"type": "keyUp", "key": key}),
+            key.event("keyUp"),
         )
     })();
     if let Err(error) = result {
         socket.begin_cleanup();
-        let _ = socket.call(
-            "Input.dispatchKeyEvent",
-            Some(json!({"type": "keyUp", "key": key})),
-        );
+        let _ = socket.call("Input.dispatchKeyEvent", Some(key.event("keyUp")));
         return Err(error);
     }
 
@@ -1258,6 +1318,19 @@ mod tests {
                     let command: serde_json::Value =
                         serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
                     assert_eq!(command["params"]["type"], *expected);
+                    if key {
+                        assert_eq!(command["params"]["key"], "Enter");
+                        assert_eq!(command["params"]["code"], "Enter");
+                        assert_eq!(command["params"]["windowsVirtualKeyCode"], 13);
+                        if *expected == "keyDown" {
+                            assert_eq!(command["params"]["text"], "\r");
+                            assert_eq!(command["params"]["unmodifiedText"], "\r");
+                        } else {
+                            assert!(command["params"].get("text").is_none());
+                            assert!(command["params"].get("unmodifiedText").is_none());
+                        }
+                    }
+
                     if *expected == "mouseMoved" {
                         socket
                             .send(Message::Text(

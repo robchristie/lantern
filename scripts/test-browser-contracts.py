@@ -899,6 +899,21 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             f"focused-key-body-shortcut: {key_evidence['failure']}"
         )
 
+    # Observe native editing, activation and focus changes; these fixtures have
+    # no keyboard handlers that could implement the expected browser behaviour.
+    for case, scenario, key, state in [
+        ("native-backspace-deletion", "native-key-backspace", "Backspace", "value-ab"),
+        ("native-enter-submission", "native-key-enter", "Enter", "clicks-1-submissions-1"),
+        ("native-space-activation", "native-key-space", "Space", "clicks-1"),
+        ("native-literal-space-activation", "native-key-space", " ", "clicks-1"),
+        ("native-tab-focus", "native-key-tab", "Tab", "focus-next"),
+    ]:
+        interaction(
+            case, scenario,
+            ["key", "--selector", "#target", "--key", key, "--timeout-ms", "2000", "--strict"],
+            0, True, None, state,
+        )
+
     interaction(
         "pointer-hover", "pointer",
         ["hover", "--selector", "#surface", "--timeout-ms", "2000", "--strict"],
