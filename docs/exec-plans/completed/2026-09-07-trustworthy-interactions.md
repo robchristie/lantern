@@ -1,8 +1,9 @@
 # Trustworthy interactions
 
-Status: active
+Status: completed
 
-Current phase: locally qualified candidate; independent review pending.
+Implementation and local qualification are complete. Final independent review,
+CI and landing evidence belong to the package pull request.
 
 ## Outcome and ownership
 
@@ -19,11 +20,11 @@ head review, publication and landing.
 
 ## Calibration
 
-Question: can one bounded same-socket target/scroll/stability/hit-test path give
-truthful results on real Chromium? The smallest probe is a unique button, an
-offscreen button and an occluded button. Package I and the browser fixture own
-evidence. Exit calibration when actual hits, prevented hits and retained bounded
-diagnostics agree, then qualify the complete candidate. The source baseline is
+Calibration asked whether one bounded same-socket target/scroll/stability/hit-test
+path gives truthful results on real Chromium. The smallest probe used a unique
+button, an offscreen button and an occluded button. Package I and the browser
+fixture own evidence. Actual hits, prevented hits and retained bounded diagnostics
+agreed, completing calibration and selecting the candidate. The source baseline is
 `e6171f136e2418eb1d52eb146fb8eb445862d1fe`; provisional iterations are not separate
 landing candidates.
 
@@ -33,30 +34,34 @@ landing candidates.
   scrolling, occlusion, moving/delayed controls, focus/editability and global keys.
 - Rust/fake-CDP checks preserve exact dispatch/error/secret-redaction contracts,
   shared deadlines, bounded cleanup and no automatic replay.
-- Canonical standard validation plus the browser runner pass on the committed
-  candidate; record source, fixture and browser identities with results.
-- The conductor independently reviews and lands the exact candidate.
+- Canonical standard validation and the browser runner passed on the committed
+  implementation, with source, fixture and browser identities in the evidence.
+- The package pull request owns final independent review and landing evidence.
 
-## Evidence and next action
+## Qualification evidence and limits
 
 Calibration passed on Chrome `151.0.7922.34`: unique and offscreen controls
 received clicks and changed the independently inspected fixture title; the
 occluded target received no input and retained `element_occluded` at expiry.
-Retain the same-socket target-handle mechanism. The expanded working-tree suite
-passed all 22 cases at viewport `1000x557`, including disabled hover, read-only
+The same-socket target-handle mechanism was retained. The committed implementation
+`a4cadb95b38d102e6ec54c60d94358e3ca5c7fae` passed all 22 cases at viewport `1000x557`, including disabled hover, read-only
 and non-editable input, focus-listener state changes, global keys preserving
 focus, and an empty padded control. Fixture SHA-256:
 `bbb0c718bb5b77a507b9f050cb05105417e47590b2b24e537adbeafbe461cdeb`.
 
 The runner records exact source/build identities and fixture/browser inputs in
-ignored `.smoogle/browser-contracts/evidence.json`; copy the final candidate
-identity and summary to the package PR. Canonical Rust verification passed:
-formatting, workspace/all-target checks,
-locked Rust 1.85 compatibility and all 206 tests. The docs checker passed. The exact committed-head browser
-rerun precedes independent review. No application outcome,
-shadow-root/frame targeting, continuous-motion proof, visual acceptance or
-hardware coverage is claimed by this package. Q is partial until F and final
-programme qualification.
+ignored `.smoogle/browser-contracts/evidence.json`. The package pull request owns
+the final reviewed candidate identity and qualification summary. Canonical
+validation passed formatting, workspace/all-target checks, locked Rust 1.85
+compatibility, all 206 tests and docs hygiene. Exact committed-head browser run
+`f33d8c04-e8b8-41ea-a5b8-a6c055d4071e` passed in 12.272 seconds with matching
+clean source/build identities.
+
+Interaction responses do not verify application outcomes. Independent fixture
+assertions qualify the tested outcomes, including successful input and prevented
+input on blocked controls. Shadow-root/frame targeting, continuous-motion proof,
+visual acceptance and hardware coverage remain outside this package. Q is partial
+until F and final programme qualification.
 
 The official actionability
 reference is <https://playwright.dev/docs/actionability>, checked 7 September 2026.
