@@ -127,8 +127,10 @@ App classes acquire container meaning only when explicitly configured. The
 fixture's repeated rows share a punctuation ID below seven identical ancestors.
 
 The runner captures `layout.html` at 1000×800 and 390×844 CSS pixels with device
-scale factor 1. It records fixture and image SHA-256 identities and viewport
-configuration. These captures remain marked as awaiting image inspection: a
+scale factor 1. The owning CDP harness aligns emulated layout and visible
+surface size and stays attached through capture; the runner independently checks
+both measured viewport and decoded PNG dimensions. It records fixture and image
+SHA-256 identities and viewport configuration. These captures remain marked as awaiting image inspection: a
 reviewer must open them. At desktop width, expect two aligned columns, readable
 headings and ready state, and consistent card gaps; at narrow width, expect one
 column and ordinary vertical scrolling. The yellow scroll row must expose a

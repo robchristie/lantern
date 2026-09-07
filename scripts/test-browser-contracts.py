@@ -13,6 +13,7 @@ from pathlib import Path
 import platform
 import select
 import socket
+import struct
 import subprocess
 import tempfile
 import threading
@@ -219,7 +220,7 @@ def fixture_cdp_session(endpoint):
 
         def call(method, params):
             nonlocal sequence
-            assert method in ("Runtime.evaluate", "Emulation.setDeviceMetricsOverride")
+            assert method in ("Runtime.evaluate", "Emulation.setDeviceMetricsOverride", "Emulation.setVisibleSize")
             sequence += 1
             payload = json.dumps({"id": sequence, "method": method, "params": params}).encode()
             mask = os.urandom(4)
@@ -1145,6 +1146,9 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             })
             invoke("open", f"{fixture_base}/layout")
             invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
+            # Navigation can reset the physical surface while retaining emulated
+            # layout metrics. Align it after navigation for separate capture CDP.
+            capture_cdp("Emulation.setVisibleSize", {"width": width, "height": height})
             actual_viewport = capture_cdp("Runtime.evaluate", {
                 "expression": "({width: innerWidth, height: innerHeight, device_scale_factor: devicePixelRatio})",
                 "returnByValue": True,
@@ -1153,9 +1157,12 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             capture_path = output / f"layout-{width}x{height}.png"
             captured, _ = invoke("screenshot", "--output", str(capture_path), "--overwrite")
             assert captured.get("ok") is True and capture_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), captured
+            png_dimensions = struct.unpack(">II", capture_path.read_bytes()[16:24])
+            assert png_dimensions == (width, height), (actual_viewport, png_dimensions)
             evidence["visual_captures"].append({
                 "path": str(capture_path), "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
                 "viewport": actual_viewport,
+                "png_dimensions": {"width": png_dimensions[0], "height": png_dimensions[1]},
                 "fixture_url": f"{fixture_base}/layout", "visual_review": "pending image inspection",
             })
 

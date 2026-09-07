@@ -77,7 +77,8 @@ overflow, and intentional scrolling, wrapping or ellipsis.
 
 Use both desktop and narrow viewports for responsive work unless the task
 defines a different set. Arrange each through the available browser or
-application harness, record the actual capture dimensions, and collect both
+application harness, record actual PNG dimensions (screenshot metadata reports
+best-effort viewport dimensions), and collect both
 `layout --container-selector <CSS> --json` and `screenshot --output <PNG>
 --json` evidence.
 

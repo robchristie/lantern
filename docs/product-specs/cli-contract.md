@@ -1836,6 +1836,12 @@ Viewport assumptions:
 - The command does not resize the browser, alter device emulation, scroll, capture a full page, or stitch multiple images.
 - `width` and `height` are best-effort viewport dimensions from `Page.getLayoutMetrics` when Chromium provides them; they may be `null`.
 
+Reported screenshot width and height are best-effort viewport metrics, not
+decoded PNG dimensions. An external CDP emulation session can change the layout
+viewport while a separate capture session retains a different physical surface.
+The owning viewport harness must align both when this matters; inspect the actual
+PNG dimensions and pixels rather than treating viewport metadata as proof.
+
 Human output should include:
 
 - selected target id short form
