@@ -295,7 +295,7 @@ fn wait_for_flow_quiet(
     }
 }
 
-fn drain_available_events(
+pub(crate) fn drain_available_events(
     socket: &mut CdpWebSocket,
     console: &mut ConsoleCollector,
     network: &mut NetworkCollector,
@@ -319,7 +319,7 @@ fn drain_available_events(
     Ok(())
 }
 
-fn push_observation_event(
+pub(crate) fn push_observation_event(
     event: CdpEvent,
     console: &mut ConsoleCollector,
     network: &mut NetworkCollector,

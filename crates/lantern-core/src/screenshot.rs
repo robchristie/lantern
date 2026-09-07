@@ -92,7 +92,16 @@ pub fn capture_visible_viewport_screenshot(
         .ok_or(ScreenshotError::TargetWebSocketMissing)?;
 
     let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let viewport = viewport_metrics(&mut socket)?;
+    capture_on_socket(target, mode, region, &mut socket)
+}
+
+pub(crate) fn capture_on_socket(
+    target: &TargetInfo,
+    mode: RedactionMode,
+    region: Option<ScreenshotRegion>,
+    socket: &mut CdpWebSocket,
+) -> Result<CapturedScreenshot, ScreenshotError> {
+    let viewport = viewport_metrics(socket)?;
     let width = viewport
         .client_width
         .and_then(non_negative_finite_dimension);

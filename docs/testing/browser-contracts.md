@@ -32,6 +32,8 @@ for every non-dispatched result. Positive controls prove that the same proxy
 detects mouse, text and key commands, while deliberately injected audit records
 exercise the same assertion and prove that it fails closed. The runner invokes
 each mutation once and never automatically retries a possibly dispatched action.
+For `action-flow`, an acknowledged click must produce exactly the three expected
+mouse dispatch commands; a blocked action must produce none.
 
 The suite covers unique and duplicate selectors, native, disabled-fieldset and
 ARIA disabled controls, disabled pointer hover, read-only and non-editable text
@@ -49,11 +51,48 @@ activate the initial page and requires `element_disabled`, no dispatch, no
 outgoing `Input.*` method and unchanged fixture state. The later matrix retains
 the same focus-listener case after other interactions as a separate regression.
 
-The fixture also includes two dormant hooks for the later action-and-capture
-package: `case=post-action-failure-hook` produces a fast failed request and a
-runtime exception after a click, while `case=known-canvas-hook` draws known red
-and green canvas regions. This suite does not claim those future flow or visual
-contracts.
+The suite extends the 23 interaction cases with action-flow contracts. Each
+action flow starts console and network collection before one click, records the
+pre-action condition state, awaits one explicit condition and returns the
+interaction, postcondition, observation, capture and verdict in one structured
+result. The cases cover all supported condition forms:
+
+- selector and text substring matching after an asynchronous save;
+- selector presence that becomes true only after an HTTP 500 response is
+  observable, alongside the click handler's runtime exception;
+- an exact URL transition;
+- an acknowledged assertion timeout with collection-deadline evidence and one
+  audited click;
+- a condition that was already true before the action and therefore cannot
+  produce a passing verdict;
+- a disabled action with no outgoing input;
+- screenshot persistence failure after acknowledged dispatch; and
+- a canvas transition followed by a persisted PNG capture.
+
+The HTTP failure marker is created only after the fixture receives the 500
+response, preventing a matched condition from racing ahead of the network
+evidence. The capture-write failure uses a missing parent directory so path
+persistence fails after the action without relying on platform-specific device
+files. The canvas fixture draws fixed red and green halves only after the click;
+the runner verifies the capture summary and PNG signature. These checks establish
+the capture sequence and persisted file contract, not pixel repeatability or a
+visual judgement.
+
+Every action-flow command supplies exactly one of `--expect-selector`,
+`--expect-selector` with `--expect-text`, or `--expect-url`. Capture remains
+opt-in through `--output`, with `--overwrite` used for the repeatable successful
+case. `--strict` exits 1 for `failed` and `incomplete`, while `ok=true` continues
+to mean that Lantern completed and returned the structured observation. The
+runner checks `matched_before_action`, `matched`, `timed_out`, the final observed
+value, console and network collection gaps, capture status and error, and the
+top-level verdict and error.
+
+The audit proxy intentionally observes frames without delaying, dropping or
+rewriting CDP traffic. Real browser cases therefore cover acknowledged and
+blocked dispatch plus a genuine collection deadline. Deterministic protocol
+tests own lost acknowledgements and other injected transport uncertainty; adding
+those faults to this proxy would make the same run's independent input audit
+ambiguous.
 
 Each run first replaces any previous verdict with a fresh failing record, then
 writes `evidence.json` and the Chromium log under the selected output directory.

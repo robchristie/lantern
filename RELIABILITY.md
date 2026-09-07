@@ -26,6 +26,15 @@ behaviour, and landing behaviour are proven across representative local setups.
 
 Use `+` or `-` only when the repo is clearly between two grades.
 
+## Observed action outcomes
+
+`action-flow` retains acknowledged or uncertain dispatch through later assertion,
+capture and observation failures. A pass requires an explicit false-to-true
+postcondition, complete collection and no observed runtime/network failure; an
+already matched baseline remains incomplete. Capture follows the assertion and
+does not claim visual correctness or an atomic frame. Independent browser input
+audits and fake-CDP deadline/loss regressions cover the no-replay contract.
+
 ## Operational Expectations
 
 - Keep runtime state under `.smoogle/` and out of Git.

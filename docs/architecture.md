@@ -136,3 +136,12 @@ The exact command contract is maintained in `docs/product-specs/cli-contract.md`
 - Stable JSON field ordering expectations
 - SQLite local state boundary
 - Future seams for DOM, layout, console, network, screenshots, and interactions
+
+## Observed action boundary
+
+`lantern-core::action_flow` owns one click, a typed postcondition and optional
+viewport capture on a continuously observed CDP socket. It composes the existing
+interaction actionability engine and bounded console/network collectors. The CLI
+`action_flow` module owns validation and explicit regular-file persistence; its
+persistence callback reports errors into the same result after input. Existing
+`flow`, wait and interaction commands retain their independent contracts.

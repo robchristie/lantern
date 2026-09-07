@@ -149,7 +149,7 @@ fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), C
     Ok(())
 }
 
-fn validate_screenshot_output_path(
+pub(crate) fn validate_screenshot_output_path(
     output_path: &str,
     overwrite: bool,
     json: bool,
@@ -167,7 +167,7 @@ fn validate_screenshot_output_path(
     Ok(())
 }
 
-fn write_screenshot_file(
+pub(crate) fn write_screenshot_file(
     output_path: &str,
     bytes: &[u8],
     overwrite: bool,

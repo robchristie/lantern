@@ -1,3 +1,4 @@
+mod action_flow;
 mod args;
 mod browser;
 mod capabilities;
@@ -68,7 +69,8 @@ fn run(
     if invocation.strict
         && !matches!(
             command,
-            Command::Click
+            Command::ActionFlow
+                | Command::Click
                 | Command::Type
                 | Command::Key
                 | Command::Hover

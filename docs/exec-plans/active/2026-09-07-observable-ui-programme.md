@@ -20,8 +20,8 @@ The existing persistent-profile plan is unrelated and must be preserved.
 | ID | Required outcome | Baseline evidence and gap | Candidate package | State |
 | --- | --- | --- | --- | --- |
 | T | Absolute transport/operation deadlines; bounded event counts and bytes; explicit lost evidence | `crates/lantern-core/src/cdp.rs`, `flow.rs`: socket timeouts and unbounded pending queue/drains | 1: bounded transport | Implemented and qualified (PR #8) |
-| I | Unique, scrolled, enabled, stable, hit-tested interactions; diagnostic failures; compatible opt-in strict exit semantics | `interaction.rs` and CLI contract: dispatch does not establish outcome; timeouts can succeed | 2: trustworthy interactions | Activation repair qualified locally; final review and CI pending |
-| F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Pending |
+| I | Unique, scrolled, enabled, stable, hit-tested interactions; diagnostic failures; compatible opt-in strict exit semantics | `interaction.rs` and CLI contract: dispatch does not establish outcome; timeouts can succeed | 2: trustworthy interactions | Implemented and qualified (PR #10) |
+| F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Candidate implemented; final review and qualification pending |
 | V | Task-dependent visual review requiring actual image inspection and explicit visual expectations | Tracked inspection skill privileges text and screenshots as supporting evidence | 4: inspection workflow | Pending |
 | P | Consume existing Polyorama versioned semantic/text/visual evidence; narrow on-demand adapter where live inspection needs it; explicit revision/coverage correlation | Polyorama `docs/ui-snapshots/README.md`, `docs/ui-guides/ui-review.md`; existing artefacts and browser accessibility limitation | 5: application evidence | Pending |
 | A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Pending |
@@ -71,10 +71,13 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | Baseline | Lantern `901e419579fbcc3f6ac65df8f0fcd2c7d9cced94` / Polyorama baseline above | Reviewed baseline landed; existing Polyorama evidence reusable | PR #7 | Landed |
 | T: bounded transport | Lantern `0f4b87815e968b0bafea3d35b86c0273009d066d` / no downstream consumers yet | Shared deadlines and bounded evidence; 195 canonical tests and PR/post-merge CI passed | [PR #8 landing evidence](https://github.com/robchristie/lantern/pull/8#issuecomment-5564132394); `../completed/2026-09-07-bounded-transport.md` | Landed; task Git state cleaned |
 | C: CLI foundation | Lantern `e6171f136e2418eb1d52eb146fb8eb445862d1fe` / I uses this base | Command-family ownership and discovery; 201 tests and PR/post-merge CI passed | [PR #9 landing evidence](https://github.com/robchristie/lantern/pull/9#issuecomment-5564283462); `../completed/2026-09-07-cli-foundation.md` | Landed; task Git state cleaned |
-| I: trustworthy interactions | Candidate identified by package PR / no downstream consumers yet | Unique, scrolled, stable hit-tested input; strict exits; 23 real-Chromium contracts with CDP input audit and a fresh-browser focus regression | `../completed/2026-09-07-trustworthy-interactions.md`; `../../testing/browser-contracts.md` | Activation mechanism selected; final exact-head review and CI pending |
+| I: trustworthy interactions | Lantern `c5c8f82b1f15a56a3ced080e4c809ad87eea3feb` / F uses this base | Unique, scrolled, stable hit-tested input; strict exits; 23 real-Chromium contracts with CDP input audit and a fresh-browser focus regression | [PR #10 landing evidence](https://github.com/robchristie/lantern/pull/10#issuecomment-5564795233); `../completed/2026-09-07-trustworthy-interactions.md` | Landed; 209 tests, 23 Linux/macOS browser cases, PR/post-merge CI passed; task Git state cleaned |
+| F: action/assertion/capture | Candidate identified by package PR / no downstream consumers yet | Explicit false-to-true condition, single observed click, retained failure/capture result; 31 real-browser contracts including input audit | `../completed/2026-09-07-action-assertion-flow.md`; `../../testing/browser-contracts.md` | Candidate selected; final exact-head review and CI pending |
 
-Next: independently review and land I after canonical and exact committed browser
-verification. Then select F on the landed interaction and transport contracts.
+Next: independently review and qualify the implemented F candidate; see
+`../completed/2026-09-07-action-assertion-flow.md`. I reviewed head was `2aa8f00`, landed
+tree `e5556415fef7e368709c0d1fdaf4cb51aa3ead3e`; CI runs 34080821072 and
+34081061859 passed.
 Q remains partial until action-flow contracts and final qualification pass; other
 capability rows remain pending.
 

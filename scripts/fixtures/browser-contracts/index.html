@@ -143,20 +143,66 @@
     surface.addEventListener('pointerdown', () => { pressed = true; });
     surface.addEventListener('pointermove', event => { if (pressed && event.buttons) moved = true; });
     surface.addEventListener('pointerup', () => { if (pressed && moved) mark('dragged'); pressed = false; });
-  } else if (scenario === 'post-action-failure-hook') {
-    fixture.append(button('#target'));
+  } else if (scenario === 'action-async-saved') {
+    fixture.innerHTML = '<button id="target">Save</button><p id="status">Idle</p>';
+    let clicks = 0;
     document.querySelector('#target').addEventListener('click', () => {
-      fetch('/intentional-fast-failure');
+      clicks += 1;
+      mark(`clicked-${clicks}`);
+      setTimeout(() => {
+        document.querySelector('#status').textContent = 'Record saved';
+        mark(`saved-${clicks}`);
+      }, 150);
+    });
+  } else if (scenario === 'action-url-transition') {
+    fixture.innerHTML = '<button id="target">Continue</button>';
+    document.querySelector('#target').addEventListener('click', () => {
+      history.pushState({}, '', `${location.pathname}?case=action-url-transition&step=complete`);
+      mark('navigated');
+    });
+  } else if (scenario === 'action-timeout') {
+    fixture.innerHTML = '<button id="target">Try once</button><p id="status">Pending</p>';
+    let clicks = 0;
+    document.querySelector('#target').addEventListener('click', () => {
+      clicks += 1;
+      mark(`clicked-${clicks}`);
+    });
+  } else if (scenario === 'action-preexisting') {
+    fixture.innerHTML = '<button id="target">Save</button><p id="status">Record saved</p>';
+    let clicks = 0;
+    document.querySelector('#target').addEventListener('click', () => {
+      clicks += 1;
+      mark(`clicked-${clicks}`);
+    });
+  } else if (scenario === 'action-blocked') {
+    fixture.innerHTML = '<button id="target" disabled>Save</button><p id="status">Idle</p>';
+    document.addEventListener('pointerdown', () => mark('forbidden-pointer'), true);
+    document.addEventListener('mousedown', () => mark('forbidden-pointer'), true);
+  } else if (scenario === 'post-action-failure-hook') {
+    fixture.innerHTML = '<button id="target">Load</button><p id="status">Waiting</p>';
+    document.querySelector('#target').addEventListener('click', () => {
+      mark('clicked');
+      fetch('/intentional-fast-failure').then(response => {
+        if (response.status === 500) {
+          const status = document.querySelector('#status');
+          status.id = 'failure-observed';
+          status.textContent = 'Failure observed';
+          mark('failure-observed');
+        }
+      });
       queueMicrotask(() => { throw new Error('intentional-post-action-error'); });
     });
   } else if (scenario === 'known-canvas-hook') {
-    fixture.innerHTML = '<canvas id="known-canvas" width="64" height="64"></canvas>';
-    const context = document.querySelector('#known-canvas').getContext('2d');
-    context.fillStyle = '#d00';
-    context.fillRect(0, 0, 32, 64);
-    context.fillStyle = '#0b0';
-    context.fillRect(32, 0, 32, 64);
-    mark('canvas-ready');
+    fixture.innerHTML = '<button id="target">Render</button><p id="status">Idle</p><canvas id="known-canvas" width="64" height="64"></canvas>';
+    document.querySelector('#target').addEventListener('click', () => {
+      const context = document.querySelector('#known-canvas').getContext('2d');
+      context.fillStyle = '#d00';
+      context.fillRect(0, 0, 32, 64);
+      context.fillStyle = '#0b0';
+      context.fillRect(32, 0, 32, 64);
+      document.querySelector('#status').textContent = 'Canvas ready';
+      mark('canvas-ready');
+    });
   } else {
     fixture.textContent = 'Unknown fixture case';
     mark('unknown');

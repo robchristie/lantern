@@ -1404,6 +1404,64 @@ Error cases:
 
 Default output follows the flow, console, network, wait, and URL policies in `docs/product-specs/output-policy.md`.
 
+### `lantern action-flow`
+
+Observe one click and verify an explicit postcondition on one selected page:
+
+```sh
+lantern action-flow --selector '#save' --expect-selector '#status' --expect-text 'Saved' --timeout-ms 3000 --strict --json
+lantern action-flow --selector '#draw' --expect-selector '[data-state="drawn"]' --timeout-ms 3000 --output .smoogle/drawn.png --json
+lantern action-flow --selector '#next' --expect-url 'http://localhost:5173/done' --timeout-ms 3000 --json
+```
+
+Pass exactly one condition: `--expect-selector` for presence, that selector plus
+`--expect-text` for a substring in exactly one matching element, or `--expect-url`
+for an exact current URL (including query and fragment). Text and URL matching
+use the original values; reported metadata follows ordinary redaction. Empty
+expectations are rejected. There is no quietness, navigation, generic evaluation,
+input-text or multi-action language in this command.
+
+The explicit 1–30000 ms budget covers target selection, attachment, enabling
+Runtime/Log/Network/Page, baseline observation, ordinary click actionability,
+input, condition polling, optional viewport capture and final event draining.
+Input cleanup retains the existing separate 100 ms best-effort allowance and
+then restores the original observation deadline. Local file I/O and OS scheduling
+have the same non-real-time qualification as other local operations. Use a regular
+local file sink. Existing output paths require `--overwrite`; capture pixels are
+unredacted and no image data is embedded in the JSON output.
+
+The schema-version-1 result contains `target_id`, `single_attachment`,
+`observation_started_before_action`, the existing `interaction` summary,
+`postcondition`, `console`, `network`, `capture`, `verdict`, `error` and `elapsed_ms`.
+`ok: true` describes structured command completion. It does not establish a
+successful application outcome. `--strict` exits 1 unless the verdict is `passed`;
+the structured result remains on stdout. Pre-input setup/baseline errors use the
+ordinary stderr error envelope and send no input.
+
+`postcondition` retains `matched_before_action`, `observed_before_action`, the last post-action `matched`,
+`timed_out` and typed `observed` metadata (null until a post-action probe completes). A passing verdict requires a false
+baseline followed by an observed match, acknowledged input, complete evidence,
+no captured runtime/console/HTTP/network failure, and a successful requested
+capture. This demonstrates observed order, not causation. A condition already
+true before input produces `postcondition_already_matched` and cannot pass even
+if it remains true. It does not suppress the requested click. Unknown outcomes,
+uncertain dispatch, evidence loss, observation errors, deadline exhaustion or
+capture/persistence failure yield `incomplete`; otherwise known failure yields
+`failed`. Known failures remain present even alongside a match or incomplete
+verdict. Collection includes setup and preparation events and is not a causal
+attribution of every observed error to the click. It ends at finalisation and
+cannot promise detection of errors occurring afterwards.
+
+`capture` records `requested`, `status` (`not_requested`, `captured`, `failed`),
+nullable screenshot metadata and an error code. It is attempted after assertion
+success or failure while the original budget permits. A write failure retains
+the interaction, condition and failure observations with `screenshot_write_failed`;
+a capture failure uses `screenshot_capture_failed`; expiry before persistence uses
+`screenshot_deadline_reached`. Its correlation is explicitly
+`sequenced_after_postcondition_not_atomic_frame`. Successful capture establishes
+neither pixel correctness nor visual review. Once any input may have executed,
+Lantern never replays it, including after failed assertion, capture or finalisation.
+
 ### `lantern console`
 
 Purpose: collect a bounded snapshot of recent console errors and page runtime exceptions from the selected page target.
@@ -2023,7 +2081,7 @@ Breaking changes requiring a `schema_version` bump:
 
 ## Shared operation deadlines and evidence limits
 
-For `wait`, `flow` and interactions, `--timeout-ms` covers HTTP target selection,
+For `wait`, `flow`, `action-flow` and interactions, `--timeout-ms` covers HTTP target selection,
 attachment, setup, commands, collection and finalisation as one absolute budget.
 It is not renewed by responses or events. A budget exhausted during setup or a
 CDP call follows the non-zero transport error path; a completed condition

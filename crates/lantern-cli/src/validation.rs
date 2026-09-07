@@ -22,6 +22,19 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
+    if command == Command::ActionFlow {
+        crate::action_flow::validate(invocation)?;
+    } else if invocation.expect_selector.is_some()
+        || invocation.expect_text.is_some()
+        || invocation.expect_url.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Postcondition flags require action-flow.",
+            "Run lantern action-flow with an explicit expectation.",
+        ));
+    }
+
     if command == Command::Open && invocation.open_url.is_none() {
         return Err(CliError::usage(
             invocation.json,
@@ -47,6 +60,7 @@ pub(crate) fn validate_endpoint_invocation(
                 | Command::Hover
                 | Command::Wheel
                 | Command::Drag
+                | Command::ActionFlow
                 | Command::Flow
         )
     {
@@ -88,6 +102,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
             | Command::Flow
     ) && invocation.timeout_ms.is_some()
     {
@@ -107,6 +122,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.wait_selector.is_some()
     {
         return Err(CliError::usage(
@@ -197,7 +213,9 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
-    if command != Command::Screenshot && invocation.has_screenshot_flags() {
+    if !matches!(command, Command::Screenshot | Command::ActionFlow)
+        && invocation.has_screenshot_flags()
+    {
         return Err(CliError::usage(
             invocation.json,
             "Screenshot flags are only supported by screenshot.",
@@ -231,6 +249,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.wait_selector.is_none()
     {
         return Err(CliError::usage(
@@ -248,6 +267,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.timeout_ms.is_none()
     {
         return Err(CliError::usage(
@@ -327,6 +347,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) {
         validate_interaction_timeout(
             invocation

@@ -80,6 +80,7 @@ fn discovery_lists_the_existing_command_surface_and_schema_owners() {
             "hover",
             "wheel",
             "drag",
+            "action-flow",
             "flow",
             "browser",
             "capabilities"
@@ -97,6 +98,10 @@ fn discovery_lists_the_existing_command_surface_and_schema_owners() {
     assert_eq!(
         schema("click"),
         &serde_json::json!([lantern_core::interaction::INTERACTION_SCHEMA_VERSION])
+    );
+    assert_eq!(
+        schema("action-flow"),
+        &serde_json::json!([lantern_core::action_flow::ACTION_FLOW_SCHEMA_VERSION])
     );
     let wait = commands.iter().find(|c| c["name"] == "wait").unwrap();
     assert_eq!(
