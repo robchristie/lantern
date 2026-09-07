@@ -1,0 +1,166 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>loading</title>
+<style>
+  body { font: 18px system-ui, sans-serif; margin: 0; padding: 24px; }
+  button, input { font: inherit; padding: 8px 12px; }
+  #surface { background: #dcecff; height: 180px; touch-action: none; width: 320px; }
+  #occlusion-host { height: 90px; position: relative; width: 240px; }
+  #occlusion-host > * { inset: 0; position: absolute; }
+  #cover { background: rgb(230 230 230 / 90%); z-index: 2; }
+  #moving { animation: move 120ms linear infinite alternate; position: relative; }
+  @keyframes move { from { left: 0; } to { left: 120px; } }
+</style>
+<main id="fixture"></main>
+<script>
+  const fixture = document.querySelector('#fixture');
+  const scenario = new URL(location.href).searchParams.get('case');
+  const viewport = `${innerWidth}x${innerHeight}`;
+  const mark = state => { document.title = `${scenario}:${state}:${viewport}`; };
+  const button = (selector, label = 'Act') => {
+    const node = document.createElement('button');
+    if (selector.startsWith('#')) node.id = selector.slice(1);
+    if (selector.startsWith('.')) node.className = selector.slice(1);
+    node.textContent = label;
+    node.addEventListener('click', () => mark('clicked'));
+    return node;
+  };
+  const pointerBlocked = new Set([
+    'native-disabled', 'fieldset-disabled', 'aria-disabled', 'occluded', 'unstable'
+  ]);
+  const textBlocked = new Set([
+    'readonly', 'noneditable', 'focus-disables', 'focus-readonly'
+  ]);
+  const keyBlocked = scenario === 'nonfocusable-key';
+  const needsSentinel = textBlocked.has(scenario) || keyBlocked;
+  let sentinel = null;
+  if (needsSentinel) {
+    sentinel = document.createElement('input');
+    sentinel.id = 'sentinel';
+    sentinel.setAttribute('aria-label', 'Independent input sentinel');
+    sentinel.addEventListener('beforeinput', () => mark('sentinel-text'));
+    sentinel.addEventListener('keydown', () => mark('sentinel-key'));
+    fixture.append(sentinel);
+  }
+  if (pointerBlocked.has(scenario)) {
+    document.addEventListener('pointerdown', () => mark('forbidden-pointer'), true);
+    document.addEventListener('mousedown', () => mark('forbidden-pointer'), true);
+  }
+  if (textBlocked.has(scenario)) {
+    document.addEventListener('beforeinput', () => mark('forbidden-text'), true);
+    document.addEventListener('input', () => mark('forbidden-text'), true);
+  }
+  if (keyBlocked) {
+    document.addEventListener('keydown', () => mark('forbidden-key'), true);
+  }
+
+  if (scenario === 'unique') {
+    fixture.append(button('#target'));
+  } else if (scenario === 'duplicate') {
+    fixture.append(button('.target', 'First'), button('.target', 'Second'));
+  } else if (scenario === 'native-disabled') {
+    const node = button('#target');
+    node.disabled = true;
+    fixture.append(node);
+  } else if (scenario === 'fieldset-disabled') {
+    const fieldset = document.createElement('fieldset');
+    fieldset.disabled = true;
+    fieldset.append(button('#target'));
+    fixture.append(fieldset);
+  } else if (scenario === 'aria-disabled') {
+    const node = button('#target');
+    node.setAttribute('aria-disabled', 'true');
+    fixture.append(node);
+  } else if (scenario === 'hover-disabled') {
+    const node = button('#target');
+    node.disabled = true;
+    node.addEventListener('pointerover', () => mark('hovered'), { once: true });
+    fixture.append(node);
+  } else if (scenario === 'readonly') {
+    const node = document.createElement('input');
+    node.id = 'target';
+    node.readOnly = true;
+    node.addEventListener('input', () => mark('unexpected-input'));
+    fixture.append(node);
+  } else if (scenario === 'noneditable') {
+    const node = document.createElement('div');
+    node.id = 'target';
+    node.textContent = 'Plain text';
+    node.addEventListener('input', () => mark('unexpected-input'));
+    fixture.append(node);
+  } else if (scenario === 'focus-disables') {
+    const node = document.createElement('input');
+    node.id = 'target';
+    node.addEventListener('focus', () => { node.disabled = true; }, { once: true });
+    node.addEventListener('input', () => mark('unexpected-input'));
+    fixture.append(node);
+  } else if (scenario === 'focus-readonly') {
+    const node = document.createElement('input');
+    node.id = 'target';
+    node.addEventListener('focus', () => { node.readOnly = true; }, { once: true });
+    node.addEventListener('input', () => mark('unexpected-input'));
+    fixture.append(node);
+  } else if (scenario === 'nonfocusable-key') {
+    const node = document.createElement('div');
+    node.id = 'target';
+    node.textContent = 'Cannot receive focus';
+    node.addEventListener('keydown', () => mark('unexpected-key'));
+    fixture.append(node);
+  } else if (scenario === 'occluded') {
+    fixture.innerHTML = '<div id="occlusion-host"><button id="target">Covered</button><div id="cover">Cover</div></div>';
+    document.querySelector('#target').addEventListener('click', () => mark('clicked'));
+    document.querySelector('#cover').addEventListener('click', () => mark('cover-clicked'));
+  } else if (scenario === 'offscreen') {
+    fixture.innerHTML = '<div style="height:1400px">Scroll spacer</div>';
+    fixture.append(button('#target'));
+  } else if (scenario === 'padded-empty') {
+    const node = button('#target', '');
+    node.setAttribute('aria-label', 'Empty padded button');
+    node.style.padding = '20px';
+    fixture.append(node);
+  } else if (scenario === 'unstable') {
+    const node = button('#moving');
+    fixture.append(node);
+  } else if (scenario === 'delayed') {
+    setTimeout(() => fixture.append(button('#target')), 250);
+  } else if (scenario === 'text-focus-key') {
+    const node = document.createElement('input');
+    node.id = 'target';
+    node.setAttribute('aria-label', 'Contract input');
+    node.addEventListener('input', () => mark(node.value === 'lantern text' ? 'typed' : 'unexpected-input'));
+    node.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown') mark(document.activeElement === node ? 'key-focused' : 'key-unfocused');
+    });
+    fixture.append(node);
+  } else if (scenario === 'pointer') {
+    fixture.innerHTML = '<div id="surface" tabindex="0">Pointer surface</div>';
+    const surface = document.querySelector('#surface');
+    surface.addEventListener('pointerover', () => mark('hovered'), { once: true });
+    surface.addEventListener('wheel', () => mark('wheeled'), { once: true });
+    let pressed = false;
+    let moved = false;
+    surface.addEventListener('pointerdown', () => { pressed = true; });
+    surface.addEventListener('pointermove', event => { if (pressed && event.buttons) moved = true; });
+    surface.addEventListener('pointerup', () => { if (pressed && moved) mark('dragged'); pressed = false; });
+  } else if (scenario === 'post-action-failure-hook') {
+    fixture.append(button('#target'));
+    document.querySelector('#target').addEventListener('click', () => {
+      fetch('/intentional-fast-failure');
+      queueMicrotask(() => { throw new Error('intentional-post-action-error'); });
+    });
+  } else if (scenario === 'known-canvas-hook') {
+    fixture.innerHTML = '<canvas id="known-canvas" width="64" height="64"></canvas>';
+    const context = document.querySelector('#known-canvas').getContext('2d');
+    context.fillStyle = '#d00';
+    context.fillRect(0, 0, 32, 64);
+    context.fillStyle = '#0b0';
+    context.fillRect(32, 0, 32, 64);
+    mark('canvas-ready');
+  } else {
+    fixture.textContent = 'Unknown fixture case';
+    mark('unknown');
+  }
+  if (sentinel) sentinel.focus();
+  if (document.title === 'loading') mark('ready');
+</script>

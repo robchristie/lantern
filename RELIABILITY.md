@@ -6,7 +6,7 @@ This file records the repository's current reliability contract. Keep it focused
 
 Overall grade: **C**
 
-Last reviewed: **2026-08-16**
+Last reviewed: **2026-09-07**
 
 Rationale: `Lantern` has local-first docs, a Rust workspace, prompt templates,
 validation profile scripts, conservative harness defaults, fixture coverage for
@@ -71,6 +71,23 @@ Use `+` or `-` only when the repo is clearly between two grades.
 - Transport uncertainty after sending a command does not establish whether an
   input executed. Inspect state before any further action; never replay mutations
   automatically after a missing acknowledgement.
+
+## Interaction Reliability
+
+- All six interaction commands require unique selectors and action-specific
+  preparation before input. Geometry and hit testing use the same target object;
+  the latest blocker survives timeout. `--strict` opts into failed interaction
+  exit status; application outcomes remain explicitly unverified.
+- Text/key preparation first activates the selected page and requires actual
+  document focus; a retained active element alone cannot establish focus-event
+  delivery. Failed activation prevents input without focus emulation.
+- Click, key and drag failures attempt one bounded release without input replay.
+  Partial or unacknowledged input is reported as uncertain, with no second JSON
+  envelope and no raw remote error or entered text.
+- `scripts/test-browser-contracts.py` and its CI job exercise real Chromium with
+  fixture postconditions. See `docs/testing/browser-contracts.md` for inputs and
+  limits. Sampling cannot rule out changes between preparation and input, and
+  ordinary main-document CSS targeting does not pierce frames or shadow roots.
 
 ## Known Reliability Gaps
 

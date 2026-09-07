@@ -32,8 +32,9 @@ pub(crate) fn print_help() {
 
 Shared flags:
   --endpoint <URL>  Local Chromium CDP HTTP endpoint
-  --json            Emit JSON on stdout; errors remain on stderr
+  --json            Emit JSON results on stdout; pre-result errors on stderr
   --no-redact       Disable redaction for command output metadata
+  --strict          Interactions: exit 1 unless input is fully acknowledged
   --target-id <ID>  Exact CDP page target id for selected-page commands
 
 Navigation and wait flags:
@@ -84,6 +85,7 @@ pub(crate) struct Invocation {
     pub(crate) endpoint: Option<String>,
     pub(crate) json: bool,
     pub(crate) no_redact: bool,
+    pub(crate) strict: bool,
     pub(crate) target_id: Option<String>,
     pub(crate) open_url: Option<String>,
     pub(crate) wait_kind: Option<WaitConditionName>,
@@ -161,6 +163,7 @@ impl Invocation {
             endpoint: None,
             json: false,
             no_redact: false,
+            strict: false,
             target_id: None,
             open_url: None,
             wait_kind: None,
@@ -205,6 +208,7 @@ impl Invocation {
                 "-V" | "--version" => invocation.version = true,
                 "--json" => invocation.json = true,
                 "--no-redact" => invocation.no_redact = true,
+                "--strict" => invocation.strict = true,
                 "--endpoint" => {
                     let Some(endpoint) = args.next() else {
                         return Err(CliError::usage(

@@ -920,39 +920,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-
-            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            assert!(
-                message.contains(r#""selector":"[data-testid=save]""#),
-                "click fixture should query the requested selector: {message:?}"
-            );
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"BUTTON"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-
-            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
-                        .to_owned()
-                        .into(),
-                ))
-                .expect("fixture should write box response");
+            actionability_ready(&mut socket, "BUTTON", Some("[data-testid=save]"));
 
             for (id, event_type) in [(5, "mouseMoved"), (6, "mousePressed"), (7, "mouseReleased")] {
                 let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
@@ -990,35 +958,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-
-            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            assert!(
-                message.contains(r#""selector":"input[name=q]""#),
-                "type fixture should query the requested selector: {message:?}"
-            );
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":21}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"INPUT"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-
-            read_expect(&mut socket, r#""method":"DOM.focus""#);
-            socket
-                .send(Message::Text(r#"{"id":4,"result":{}}"#.to_owned().into()))
-                .expect("fixture should write focus response");
+            actionability_ready(&mut socket, "INPUT", Some("input[name=q]"));
 
             let message = read_expect(&mut socket, r#""method":"Input.insertText""#);
             let expected_parameter = format!(r#""text":{expected_text}"#);
@@ -1027,7 +967,7 @@ impl WebSocketFixture {
                 "type fixture should insert requested text: {message:?}"
             );
             socket
-                .send(Message::Text(r#"{"id":5,"result":{}}"#.to_owned().into()))
+                .send(Message::Text(r#"{"id":6,"result":{}}"#.to_owned().into()))
                 .expect("fixture should write insert response");
         });
 
@@ -1044,37 +984,9 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
+            actionability_ready(&mut socket, "BODY", Some("body"));
 
-            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            assert!(
-                message.contains(r#""selector":"body""#),
-                "key fixture should query the requested selector: {message:?}"
-            );
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":9}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"BODY"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-
-            read_expect(&mut socket, r#""method":"DOM.focus""#);
-            socket
-                .send(Message::Text(r#"{"id":4,"result":{}}"#.to_owned().into()))
-                .expect("fixture should write focus response");
-
-            for (id, event_type) in [(5, "keyDown"), (6, "keyUp")] {
+            for (id, event_type) in [(6, "keyDown"), (7, "keyUp")] {
                 let message = read_expect(&mut socket, r#""method":"Input.dispatchKeyEvent""#);
                 assert!(
                     message.contains(&format!(r#""type":"{event_type}""#)),
@@ -1105,39 +1017,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-
-            let message = read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            assert!(
-                message.contains(r#""selector":"[data-testid=viewer-canvas]""#),
-                "hover fixture should query the requested selector: {message:?}"
-            );
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-
-            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
-                        .to_owned()
-                        .into(),
-                ))
-                .expect("fixture should write box response");
+            actionability_ready(&mut socket, "CANVAS", None);
 
             let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
             assert!(
@@ -1164,32 +1044,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
-                        .to_owned()
-                        .into(),
-                ))
-                .expect("fixture should write box response");
+            actionability_ready(&mut socket, "CANVAS", None);
 
             let message = read_expect(&mut socket, r#""method":"Input.dispatchMouseEvent""#);
             assert!(
@@ -1216,32 +1071,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
-                        .to_owned()
-                        .into(),
-                ))
-                .expect("fixture should write box response");
+            actionability_ready(&mut socket, "CANVAS", None);
 
             for (id, event_type) in [
                 (5, "mouseMoved"),
@@ -1281,32 +1111,7 @@ impl WebSocketFixture {
             let (stream, _) = listener.accept().expect("fixture should accept");
             let mut socket = tungstenite::accept(stream).expect("fixture websocket should accept");
 
-            read_expect(&mut socket, r#""method":"DOM.getDocument""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":1,"result":{"root":{"nodeId":1}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write document response");
-            read_expect(&mut socket, r#""method":"DOM.querySelector""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":2,"result":{"nodeId":42}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write selector response");
-            read_expect(&mut socket, r#""method":"DOM.describeNode""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":3,"result":{"node":{"nodeName":"CANVAS"}}}"#.to_owned().into(),
-                ))
-                .expect("fixture should write node response");
-            read_expect(&mut socket, r#""method":"DOM.getBoxModel""#);
-            socket
-                .send(Message::Text(
-                    r#"{"id":4,"result":{"model":{"content":[10,20,110,20,110,60,10,60]}}}"#
-                        .to_owned()
-                        .into(),
-                ))
-                .expect("fixture should write box response");
+            actionability_ready(&mut socket, "CANVAS", None);
 
             for (id, event_type) in [
                 (5, "mouseMoved"),
@@ -1353,20 +1158,15 @@ impl WebSocketFixture {
 
             while let Ok(message) = socket.read() {
                 let message = message.into_text().expect("command should be text");
-                if message.contains(r#""method":"DOM.getDocument""#) {
+                if message.contains(r#""method":"Page.bringToFront""#) {
                     socket
                         .send(Message::Text(
-                            format!(r#"{{"id":{id},"result":{{"root":{{"nodeId":1}}}}}}"#).into(),
+                            format!(r#"{{"id":{id},"result":{{}}}}"#).into(),
                         ))
-                        .expect("fixture should write document response");
-                } else if message.contains(r#""method":"DOM.querySelector""#) {
-                    socket
-                        .send(Message::Text(
-                            format!(r#"{{"id":{id},"result":{{"nodeId":0}}}}"#).into(),
-                        ))
-                        .expect("fixture should write selector response");
+                        .unwrap();
                 } else {
-                    panic!("unexpected websocket command: {message:?}");
+                    assert!(message.contains(r#""method":"Runtime.evaluate""#));
+                    socket.send(Message::Text(format!(r#"{{"id":{id},"result":{{"result":{{"type":"string","value":"selector_not_found"}}}}}}"#).into())).unwrap();
                 }
                 id += 1;
             }
@@ -1385,6 +1185,52 @@ impl WebSocketFixture {
     fn finish(self) {
         self.handle.join().expect("fixture should finish");
     }
+}
+
+fn actionability_ready(
+    socket: &mut tungstenite::WebSocket<TcpStream>,
+    node: &str,
+    selector: Option<&str>,
+) {
+    let start_id = if matches!(node, "INPUT" | "BODY") {
+        read_expect(socket, r#""method":"Page.bringToFront""#);
+        socket
+            .send(Message::Text(r#"{"id":1,"result":{}}"#.to_owned().into()))
+            .unwrap();
+        2
+    } else {
+        1
+    };
+    let request: serde_json::Value =
+        serde_json::from_str(&read_expect(socket, r#""method":"Runtime.evaluate""#)).unwrap();
+    if let Some(selector) = selector {
+        assert!(
+            request["params"]["expression"]
+                .as_str()
+                .unwrap()
+                .contains(selector)
+        );
+    }
+    socket.send(Message::Text(serde_json::json!({"id":start_id,"result":{"result":{"type":"object","subtype":"node","objectId":"target"}}}).to_string().into())).unwrap();
+    for id in [start_id + 1, start_id + 2] {
+        let request: serde_json::Value =
+            serde_json::from_str(&read_expect(socket, r#""method":"Runtime.callFunctionOn""#))
+                .unwrap();
+        assert_eq!(request["params"]["objectId"], "target");
+        assert_eq!(
+            request["params"]["arguments"][2]["value"].is_null(),
+            id == start_id + 1
+        );
+        socket.send(Message::Text(serde_json::json!({"id":id,"result":{"result":{"value":{"node_name":node,"rect":[10,20,100,40],"point":{"x":60.0,"y":40.0}}}}}).to_string().into())).unwrap();
+    }
+    read_expect(socket, r#""method":"Runtime.releaseObjectGroup""#);
+    socket
+        .send(Message::Text(
+            serde_json::json!({"id":start_id + 3,"result":{}})
+                .to_string()
+                .into(),
+        ))
+        .unwrap();
 }
 
 #[test]
@@ -4074,7 +3920,11 @@ fn assert_wait_irrelevant_flags_rejected<const N: usize>(
     message: &str,
     hint: &str,
 ) {
-    let output = lantern(args, None);
+    let output = Command::new(env!("CARGO_BIN_EXE_lantern"))
+        .args(args)
+        .env_remove("LANTERN_CDP_ENDPOINT")
+        .output()
+        .unwrap();
 
     assert!(!output.status.success());
     assert_eq!(output.status.code(), Some(2));
@@ -4155,10 +4005,16 @@ fn drag_move_failure_releases_button_and_preserves_original_error() {
             Duration::from_secs(1),
             lantern_core::redaction::RedactionMode::Redacted,
         )
-        .expect_err("failed movement must remain an error");
-        let error = format!("{error:?}");
-        assert!(error.contains("rejected event 7"), "{error}");
-        assert!(!error.contains("rejected event 8"));
+        .expect("failed movement should produce one interaction result");
+        assert!(!error.interaction.dispatched);
+        assert_eq!(
+            error.interaction.immediate_error,
+            Some("cdp_command_failed")
+        );
+        assert_eq!(
+            error.interaction.dispatch_state,
+            lantern_core::interaction::DispatchState::Uncertain
+        );
         websocket.finish();
     }
 }
@@ -4186,4 +4042,228 @@ fn webgpu_profile_rejected_before_state_or_runtime_access() {
         !state.exists(),
         "invalid unsafe profile combination must not initialise state"
     );
+}
+
+#[test]
+fn strict_interaction_timeout_writes_one_result_and_exits_one() {
+    let websocket = WebSocketFixture::one_click_selector_timeout_response();
+    let fixture =
+        HttpFixture::one_response("/json/list", target_list_with_websocket(websocket.url()));
+    let output = lantern(
+        [
+            "click",
+            "--selector",
+            "#missing",
+            "--timeout-ms",
+            "120",
+            "--strict",
+            "--endpoint",
+            fixture.endpoint(),
+            "--json",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).is_empty());
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(value["interaction"]["dispatched"], false);
+    assert_eq!(value["interaction"]["dispatch_state"], "not_dispatched");
+    assert_eq!(value["interaction"]["application_outcome"], "unverified");
+    assert_eq!(
+        value["interaction"]["immediate_error"],
+        "selector_not_found"
+    );
+    fixture.finish();
+    websocket.finish();
+}
+
+#[test]
+fn uncertain_text_input_writes_one_secret_safe_envelope_without_replay() {
+    for strict in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            actionability_ready(&mut socket, "INPUT", Some("input[name=q]"));
+            let request = read_expect(&mut socket, r#""method":"Input.insertText""#);
+            assert!(request.contains("synthetic-secret-value"));
+            thread::sleep(Duration::from_millis(200));
+            assert!(
+                socket.read().is_err(),
+                "uncertain input must never be replayed"
+            );
+        });
+        let fixture = HttpFixture::one_response(
+            "/json/list",
+            target_list_with_websocket(&format!("ws://{address}/page")),
+        );
+        let mut args = vec![
+            "type",
+            "--selector",
+            "input[name=q]",
+            "--text",
+            "synthetic-secret-value",
+            "--timeout-ms",
+            "200",
+            "--endpoint",
+            fixture.endpoint(),
+            "--json",
+        ];
+        if strict {
+            args.push("--strict");
+        }
+        let output = Command::new(env!("CARGO_BIN_EXE_lantern"))
+            .args(args)
+            .env_remove("LANTERN_CDP_ENDPOINT")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(stderr(&output).is_empty());
+        assert!(!stdout(&output).contains("synthetic-secret-value"));
+        let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["interaction"]["dispatched"], false);
+        assert_eq!(value["interaction"]["dispatch_state"], "uncertain");
+        assert_eq!(
+            value["interaction"]["immediate_error"],
+            "cdp_command_uncertain"
+        );
+        assert_eq!(
+            value["interaction"]["observed"]["inserted_text_length"],
+            serde_json::Value::Null
+        );
+        fixture.finish();
+        handle.join().unwrap();
+    }
+}
+
+#[test]
+fn strict_flag_is_rejected_outside_interactions_before_endpoint_access() {
+    for command in ["page", "wait", "flow", "capabilities", "browser"] {
+        let output = lantern([command, "--strict", "--json"], None);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(stdout(&output).is_empty());
+        assert!(stderr(&output).contains("--strict is only supported by interaction commands."));
+    }
+}
+
+#[test]
+fn stalled_preparation_without_observed_blocker_keeps_runtime_failure_exit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut socket = tungstenite::accept(stream).unwrap();
+        read_expect(&mut socket, r#""method":"Runtime.evaluate""#);
+        thread::sleep(Duration::from_millis(180));
+    });
+    let fixture = HttpFixture::one_response(
+        "/json/list",
+        target_list_with_websocket(&format!("ws://{address}/page")),
+    );
+    let output = lantern(
+        [
+            "click",
+            "--selector",
+            "#target",
+            "--timeout-ms",
+            "120",
+            "--endpoint",
+            fixture.endpoint(),
+            "--json",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).is_empty());
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["interaction"]["dispatch_state"], "not_dispatched");
+    assert_eq!(
+        value["interaction"]["immediate_error"],
+        "cdp_command_uncertain"
+    );
+    fixture.finish();
+    handle.join().unwrap();
+}
+
+#[test]
+fn incomplete_second_sample_does_not_invent_instability_or_succeed_in_legacy_mode() {
+    for stalled_second in [false, true] {
+        for strict in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let handle = thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut socket = tungstenite::accept(stream).unwrap();
+                read_expect(&mut socket, r#""method":"Runtime.evaluate""#);
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({"id":1,"result":{"result":{"objectId":"target"}}})
+                            .to_string()
+                            .into(),
+                    ))
+                    .unwrap();
+                read_expect(&mut socket, r#""method":"Runtime.callFunctionOn""#);
+                socket.send(Message::Text(serde_json::json!({"id":2,"result":{"result":{"value":{"node_name":"BUTTON","rect":[0,0,50,50],"point":{"x":25,"y":25}}}}}).to_string().into())).unwrap();
+                if stalled_second {
+                    read_expect(&mut socket, r#""method":"Runtime.callFunctionOn""#);
+                    // This second probe was sent but never returned a blocker.
+                    thread::sleep(Duration::from_millis(250));
+                }
+                // A short budget expires between samples; neither path sends input.
+                assert!(socket.read().is_err());
+            });
+            let fixture = HttpFixture::one_response(
+                "/json/list",
+                target_list_with_websocket(&format!("ws://{address}/page")),
+            );
+            let mut args = vec![
+                "click",
+                "--selector",
+                "#target",
+                "--timeout-ms",
+                if stalled_second { "220" } else { "80" },
+                "--endpoint",
+                fixture.endpoint(),
+                "--json",
+            ];
+            if strict {
+                args.push("--strict");
+            }
+            let output = Command::new(env!("CARGO_BIN_EXE_lantern"))
+                .args(args)
+                .env_remove("LANTERN_CDP_ENDPOINT")
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(1),
+                "stalled_second={stalled_second} strict={strict}"
+            );
+            assert!(stderr(&output).is_empty());
+            let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+            assert_eq!(value["ok"], false);
+            assert_eq!(value["interaction"]["dispatched"], false);
+            assert_eq!(value["interaction"]["dispatch_state"], "not_dispatched");
+            assert_eq!(value["interaction"]["timed_out"], true);
+            assert_eq!(
+                value["interaction"]["immediate_error"],
+                if stalled_second {
+                    "cdp_command_uncertain"
+                } else {
+                    "actionability_incomplete"
+                }
+            );
+            fixture.finish();
+            handle.join().unwrap();
+        }
+    }
 }

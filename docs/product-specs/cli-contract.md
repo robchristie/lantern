@@ -124,7 +124,7 @@ The first milestone only supports local HTTP endpoints. `https://`, `ws://`, `ws
 
 ### `--json`
 
-Emits stable machine-readable JSON to stdout. Human-readable progress text must not be mixed into stdout when `--json` is set. Errors still go to stderr as described in [Error Output](#error-output).
+Emits stable machine-readable JSON to stdout. Human-readable progress text must not be mixed into stdout when `--json` is set. Errors before an interaction socket is attached go to stderr as described in [Error Output](#error-output). Completed interaction results, including in-socket failure results, use one stdout envelope.
 
 ### `--no-redact`
 
@@ -771,11 +771,93 @@ Redaction behavior:
 - selector strings and expected/current text snippets are echoed because they are operator-supplied or page-visible condition state; callers should avoid passing secrets in selectors or text.
 - `--no-redact` may expose full URLs for URL matching and output for this invocation only.
 
+### Interaction preparation and result semantics
+
+`click`, `type`, `key`, `hover`, `wheel` and `drag` accept optional `--strict`.
+Their actionability checks apply in both modes; the flag changes the exit status.
+A completed blocker result retains legacy exit `0`; strict execution exits `1`
+unless the complete requested input sequence was acknowledged within its budget
+without an immediate error. Invalid usage exits `2`. Endpoint, target, attachment
+and CDP failures retain exit `1` in both modes.
+
+Each selector must match exactly one element in the selected page's main
+document. Duplicate matches stop immediately with `ambiguous_selector`; malformed
+CSS returns `selector_invalid`. Missing targets and temporary blockers are polled
+within the shared timeout. Preparation scrolls the target into view, then checks
+the same connected element twice, 100 ms apart. Its border-box geometry must
+remain unchanged within 0.01 CSS pixels, have positive visible area, and pass
+`elementFromPoint` at the centre of its viewport-clipped border box. The hit must
+be the target or a descendant. Padding can provide usable geometry even when
+content has zero area. Hidden or zero-size targets return `element_not_visible`;
+another element receiving the centre hit returns `element_occluded`; changing
+geometry or identity returns `element_unstable`.
+
+| Action | Additional preparation |
+| --- | --- |
+| `click` | Requires enabled native controls, including disabled-fieldset semantics, and no ARIA-disabled or inert ancestor. |
+| `type` | Activates the selected page with `Page.bringToFront`; requires actual document focus and enabled, editable text input, textarea or contenteditable content; rejects native/ARIA read-only state; focuses and verifies the target. |
+| `key` | Activates the selected page and requires actual document focus plus an enabled and focused target. A selector resolving to `document.body` explicitly sends a global key to the current focus, preserving it and bypassing geometry checks. |
+| `hover`, `wheel`, `drag` | Requires stable visible hit geometry; disabled controls remain meaningful pointer targets. Drag checks its start point; the requested endpoint is an explicit offset. |
+
+Page activation shares the original operation deadline. Failed or unacknowledged
+activation prevents input. `document.activeElement` can retain a target even when
+the document lacks focus and focus listeners have not fired; both `type` and
+`key` therefore require `document.hasFocus()` as well. If normal activation cannot
+establish document focus, preparation returns `element_not_focused`. Lantern
+does not emulate focus. Activating the explicitly selected page can deliver its
+pending focus events before target preparation.
+
+Preparation rechecks identity, disabled and editable state after synchronous
+focus/scroll listeners. It retains the latest observed blocker at deadline expiry,
+including `element_disabled`, `element_not_editable` and `element_not_focused`;
+expiry alone never relabels a known geometry failure as `selector_not_found`.
+A valid first geometry sample is not an observed instability. If the deadline
+prevents the second sample and no blocker has been observed, Lantern returns
+`actionability_incomplete`, `ok=false` and exit `1` in both modes. A stalled CDP
+probe without any observed blocker remains a CDP failure, also exit `1` in both
+modes. An actual previously observed blocker remains available if a later probe
+cannot finish before expiry.
+Diagnostics return fixed codes and at most 64 characters of node name, without
+reading input values or page text. This is a conservative ordinary-DOM contract,
+not full [Playwright actionability](https://playwright.dev/docs/actionability)
+parity: it does not pierce shadow roots or frames, search alternative hit points,
+or prove continuous stability between samples. Page changes can still race the
+final check and browser input. Check an explicit application postcondition.
+
+Once a page socket is attached, Lantern emits exactly one interaction result on
+stdout, including in-socket CDP failures. With `--json`, it emits no second error
+envelope on stderr. Failures before attachment retain the standard stderr error
+envelope. The interaction result distinguishes:
+
+- `ok`: command evaluation completed; a completed actionability blocker remains
+  `true` for compatibility. Incomplete evaluation without an observed blocker
+  or a reported CDP failure makes this `false`.
+- `interaction.dispatched`: every requested input event was acknowledged by CDP.
+  This is false for blocked, partial or uncertain sequences.
+- `interaction.dispatch_state`: `not_dispatched` when no requested input is known
+  or possibly sent, `acknowledged` for a complete sequence, or `uncertain` when
+  part of a failed sequence was acknowledged or may have executed.
+- `interaction.application_outcome`: always `unverified`. Acknowledged dispatch
+  does not prove a click handler, form save, request or intended visual change.
+- `interaction.timed_out`: the shared operation deadline expired; the original
+  budget includes target selection, attachment and preparation.
+
+CDP failures use bounded `immediate_error` codes: `cdp_command_failed`,
+`cdp_command_uncertain`, `cdp_response_invalid` or `cdp_transport_failed`. Partial
+key/pointer counts include acknowledged requested events only. A lost
+acknowledgement must not be interpreted as a safe request to repeat input. Lantern
+never automatically retries an input sequence; click, key and drag failures
+attempt one release with an additional cleanup budget of at most 100 ms, while
+preserving the original error. Release acknowledgement is not guaranteed and is
+excluded from requested-event counts. Observe state before deciding what to do
+next. Separate inspection calls can miss intervening application events; the
+current interaction commands do not provide an observed action flow.
+
 ### `lantern click --selector <CSS_SELECTOR> --timeout-ms <MS>`
 
-Purpose: dispatch one user-like mouse click at the center of the selected element.
+Purpose: dispatch one user-like mouse click at the centre of the selected element.
 
-`lantern click` is a bounded interaction helper, not a crawler or test runner. It does not launch Chromium, navigate pages, evaluate operator-supplied JavaScript, perform complex gestures, retry application workflows, or infer selectors. The command requires an explicit selector and explicit timeout. If the selector is not found or the element cannot produce a clickable box before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and a concise `immediate_error`; endpoint, target, and CDP failures still use the normal non-zero error path.
+`lantern click` is a bounded interaction helper, not a crawler or test runner. It does not launch Chromium, navigate pages, evaluate operator-supplied JavaScript, perform complex gestures, retry application workflows, or infer selectors. The command requires an explicit selector and explicit timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
 
 Supported form:
 
@@ -787,10 +869,8 @@ CDP inputs:
 
 - `GET /json/list`
 - The selected page target's WebSocket debugger endpoint.
-- Bounded `DOM.getDocument` and `DOM.querySelector` reads for the supplied selector.
-- `DOM.describeNode` for concise node metadata when available.
-- `DOM.getBoxModel` to compute a center point for the element's content quad.
-- `Input.dispatchMouseEvent` for one `mouseMoved`, one `mousePressed`, and one `mouseReleased` event at that center point.
+- Fixed `Runtime.evaluate` and `Runtime.callFunctionOn` preparation checks for the supplied selector and same target object.
+- `Input.dispatchMouseEvent` for one `mouseMoved`, one `mousePressed`, and one `mouseReleased` event at that centre point.
 
 Target selection:
 
@@ -817,7 +897,7 @@ Human output should include:
 Recommended human output shape:
 
 ```text
-click: ABCD1234 title="Example" url=https://example.test/path selector="[data-testid=save]" dispatched=true timed_out=false elapsed_ms=42 timeout_ms=1000 observed=node=BUTTON point=420,180 inserted_text_length=null key=null key_event_count=null error=null
+click: ABCD1234 title="Example" url=https://example.test/path selector="[data-testid=save]" dispatched=true dispatch_state=acknowledged application_outcome=unverified timed_out=false elapsed_ms=142 timeout_ms=1000 observed=node=BUTTON point=420,180 inserted_text_length=null key=null key_event_count=null error=null
 ```
 
 JSON output shape:
@@ -836,8 +916,10 @@ JSON output shape:
     "action": "click",
     "selector": "[data-testid=save]",
     "dispatched": true,
+    "dispatch_state": "acknowledged",
+    "application_outcome": "unverified",
     "timed_out": false,
-    "elapsed_ms": 42,
+    "elapsed_ms": 142,
     "timeout_ms": 1000,
     "observed": {
       "node_name": "BUTTON",
@@ -871,6 +953,8 @@ Required JSON fields:
 - `interaction.action`
 - `interaction.selector`
 - `interaction.dispatched`
+- `interaction.dispatch_state`
+- `interaction.application_outcome`
 - `interaction.timed_out`
 - `interaction.elapsed_ms`
 - `interaction.timeout_ms`
@@ -899,8 +983,8 @@ Command-specific error cases:
 - ambiguous page target selection: exit code `2`, error code `target_ambiguous`
 - selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
 - invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
-- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
-- CDP command error or malformed CDP interaction response: exit code `1`, error code `cdp_response_invalid`
+- WebSocket connection failure: exit code `1`, standard stderr error envelope
+- in-socket CDP failure: exit code `1`, one interaction envelope with the bounded codes defined above
 
 Redaction behavior:
 
@@ -913,7 +997,7 @@ Redaction behavior:
 
 Purpose: focus the selected element and insert operator-supplied text.
 
-`lantern type` is a bounded text-entry helper. It does not clear existing values, submit forms, synthesize complex keyboard shortcuts, infer selectors, evaluate operator-supplied JavaScript, or validate application state. The command requires an explicit selector, exactly one text source, and an explicit timeout. If the selector is not found before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and `immediate_error="selector_not_found"`; endpoint, target, and CDP failures still use the normal non-zero error path.
+`lantern type` is a bounded text-entry helper. It does not clear existing values, submit forms, synthesize complex keyboard shortcuts, infer selectors, evaluate operator-supplied JavaScript, or validate application state. The command requires an explicit selector, exactly one text source, and an explicit timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
 
 Supported form:
 
@@ -934,9 +1018,7 @@ CDP inputs:
 
 - `GET /json/list`
 - The selected page target's WebSocket debugger endpoint.
-- Bounded `DOM.getDocument` and `DOM.querySelector` reads for the supplied selector.
-- `DOM.describeNode` for concise node metadata when available.
-- `DOM.focus` on the selected node.
+- Fixed Runtime preparation checks, including focus and action-specific state, as defined above.
 - `Input.insertText` with the supplied text.
 
 Target selection, WebSocket requirements, and target-related error cases are identical to `lantern click`.
@@ -953,7 +1035,7 @@ Human output should include:
 Recommended human output shape:
 
 ```text
-type: ABCD1234 title="Example" url=https://example.test/path selector="input[name=q]" dispatched=true timed_out=false elapsed_ms=39 timeout_ms=1000 observed=node=INPUT point=null inserted_text_length=12 key=null key_event_count=null error=null
+type: ABCD1234 title="Example" url=https://example.test/path selector="input[name=q]" dispatched=true dispatch_state=acknowledged application_outcome=unverified timed_out=false elapsed_ms=139 timeout_ms=1000 observed=node=INPUT point=null inserted_text_length=12 key=null key_event_count=null error=null
 ```
 
 JSON output shape:
@@ -972,8 +1054,10 @@ JSON output shape:
     "action": "type",
     "selector": "input[name=q]",
     "dispatched": true,
+    "dispatch_state": "acknowledged",
+    "application_outcome": "unverified",
     "timed_out": false,
-    "elapsed_ms": 39,
+    "elapsed_ms": 139,
     "timeout_ms": 1000,
     "observed": {
       "node_name": "INPUT",
@@ -1006,8 +1090,8 @@ Command-specific error cases:
 - ambiguous page target selection: exit code `2`, error code `target_ambiguous`
 - selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
 - invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
-- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
-- CDP command error or malformed CDP interaction response: exit code `1`, error code `cdp_response_invalid`
+- WebSocket connection failure: exit code `1`, standard stderr error envelope
+- in-socket CDP failure: exit code `1`, one interaction envelope with the bounded codes defined above
 
 Redaction behavior:
 
@@ -1022,7 +1106,7 @@ Redaction behavior:
 
 Purpose: focus the selected element and dispatch one keyboard key press as a `keyDown`/`keyUp` pair.
 
-`lantern key` is a bounded keyboard interaction helper. It does not insert text, synthesize shortcuts, hold keys, repeat keys, infer selectors, evaluate operator-supplied JavaScript, validate application state, or run multi-step interaction sessions. The command requires an explicit selector, explicit key, and explicit timeout. If the selector is not found before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and `immediate_error="selector_not_found"`; endpoint, target, and CDP failures still use the normal non-zero error path.
+`lantern key` is a bounded keyboard interaction helper. It does not insert text, synthesize shortcuts, hold keys, repeat keys, infer selectors, evaluate operator-supplied JavaScript, validate application state, or run multi-step interaction sessions. The command requires an explicit selector, explicit key, and explicit timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
 
 Supported form:
 
@@ -1034,9 +1118,7 @@ CDP inputs:
 
 - `GET /json/list`
 - The selected page target's WebSocket debugger endpoint.
-- Bounded `DOM.getDocument` and `DOM.querySelector` reads for the supplied selector.
-- `DOM.describeNode` for concise node metadata when available.
-- `DOM.focus` on the selected node.
+- Fixed Runtime preparation checks, including focus and action-specific state, as defined above.
 - `Input.dispatchKeyEvent` for exactly one `keyDown` and one `keyUp` event using the supplied key.
 
 Target selection, WebSocket requirements, and target-related error cases are identical to `lantern click`.
@@ -1053,7 +1135,7 @@ Human output should include:
 Recommended human output shape:
 
 ```text
-key: ABCD1234 title="Example" url=https://example.test/path selector="body" dispatched=true timed_out=false elapsed_ms=20 timeout_ms=1000 observed=node=BODY point=null inserted_text_length=null key=ArrowUp key_event_count=2 error=null
+key: ABCD1234 title="Example" url=https://example.test/path selector="body" dispatched=true dispatch_state=acknowledged application_outcome=unverified timed_out=false elapsed_ms=120 timeout_ms=1000 observed=node=BODY point=null inserted_text_length=null key=ArrowUp key_event_count=2 error=null
 ```
 
 JSON output shape:
@@ -1072,8 +1154,10 @@ JSON output shape:
     "action": "key",
     "selector": "body",
     "dispatched": true,
+    "dispatch_state": "acknowledged",
+    "application_outcome": "unverified",
     "timed_out": false,
-    "elapsed_ms": 20,
+    "elapsed_ms": 120,
     "timeout_ms": 1000,
     "observed": {
       "node_name": "BODY",
@@ -1106,8 +1190,8 @@ Command-specific error cases:
 - ambiguous page target selection: exit code `2`, error code `target_ambiguous`
 - selected page target has no `webSocketDebuggerUrl`: exit code `1`, error code `target_websocket_missing`
 - invalid or non-local page WebSocket URL: exit code `1`, error code `cdp_unhealthy`
-- WebSocket connection or command transport failure: exit code `1`, error code `endpoint_unreachable`
-- CDP command error or malformed CDP interaction response: exit code `1`, error code `cdp_response_invalid`
+- WebSocket connection failure: exit code `1`, standard stderr error envelope
+- in-socket CDP failure: exit code `1`, one interaction envelope with the bounded codes defined above
 
 Redaction behavior:
 
@@ -1118,21 +1202,21 @@ Redaction behavior:
 
 ### `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
 
-Purpose: move the mouse pointer to the center of the selected element without pressing a button.
+Purpose: move the mouse pointer to the centre of the selected element without pressing a button.
 
-`lantern hover` is a bounded pointer interaction helper for menus, tooltips, canvases, and visual hover states. It requires an explicit selector and timeout. If the selector is not found or the element cannot produce a content box before the timeout, the command exits successfully with `dispatched=false`, `timed_out=true`, and a concise `immediate_error`; endpoint, target, and CDP failures still use the normal non-zero error path.
+`lantern hover` is a bounded pointer interaction helper for menus, tooltips, canvases, and visual hover states. It requires an explicit selector and timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
 
 Supported form:
 
 - `lantern hover --selector <CSS_SELECTOR> --timeout-ms <MS>`
 
-CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseMoved`, `button=none`, and the computed center coordinates.
+CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseMoved`, `button=none`, and the computed centre coordinates.
 
 Target selection, WebSocket requirements, timeout bounds, output redaction, and target-related error cases are identical to `lantern click`.
 
 ### `lantern wheel --selector <CSS_SELECTOR> [--dx <PX>] [--dy <PX>] --timeout-ms <MS>`
 
-Purpose: dispatch one mouse-wheel event at the center of the selected element.
+Purpose: dispatch one mouse-wheel event at the centre of the selected element.
 
 `lantern wheel` is a bounded pointer interaction helper for zoomable, scrollable, map-like, canvas, and WebGL surfaces. It requires an explicit selector, explicit timeout, and at least one non-zero finite delta. `--delta-x` and `--delta-y` are accepted as aliases for `--dx` and `--dy`.
 
@@ -1141,7 +1225,7 @@ Supported forms:
 - `lantern wheel --selector <CSS_SELECTOR> --dy <PX> --timeout-ms <MS>`
 - `lantern wheel --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --timeout-ms <MS>`
 
-CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseWheel`, the computed center coordinates, and `deltaX`/`deltaY`.
+CDP inputs are identical to `lantern click` through point computation, then Lantern dispatches one `Input.dispatchMouseEvent` with `type=mouseWheel`, the computed centre coordinates, and `deltaX`/`deltaY`.
 
 Command-specific error cases:
 
@@ -1152,7 +1236,7 @@ Command-specific error cases:
 
 ### `lantern drag --selector <CSS_SELECTOR> --dx <PX> --dy <PX> --duration-ms <MS> --timeout-ms <MS>`
 
-Purpose: dispatch one left-button pointer drag starting at the center of the selected element and ending at the requested offset.
+Purpose: dispatch one left-button pointer drag starting at the centre of the selected element and ending at the requested offset.
 
 `lantern drag` is a bounded pointer interaction helper for panning canvases, maps, node graphs, timelines, and similar viewport surfaces. `lantern pointer-drag` is an alias. The command requires an explicit selector, explicit timeout, finite deltas, and an explicit duration from `0` through `30000` milliseconds. It does not infer a target surface, switch mouse buttons, use touch events, perform pinch gestures, or run multi-step interaction sessions.
 
@@ -1188,7 +1272,7 @@ Pointer interaction JSON extends the shared `interaction.observed` object with n
 - `pointer_end`: drag endpoint, or `null` for click, hover, wheel, type, and key
 - `delta_x` and `delta_y`: wheel or drag deltas, or `null`
 - `duration_ms`: drag duration, or `null`
-- `input_event_count`: number of CDP input events dispatched, or `0` for a timed-out pointer interaction
+- `input_event_count`: number of acknowledged requested CDP input events; cleanup releases are excluded
 
 These fields are metadata only. Pointer interaction output does not capture DOM text, input values, cookies, storage, headers, request bodies, response bodies, or screenshots.
 
@@ -1994,11 +2078,11 @@ hint: Pass --endpoint http://127.0.0.1:9222 or set LANTERN_CDP_ENDPOINT.
 ## Exit Codes
 
 - `0`: success, including help and version output
-- `1`: runtime failure after valid invocation, such as unreachable endpoint, malformed CDP response, no page target, or transport failure
+- `1`: runtime failure after valid invocation, such as unreachable endpoint, malformed CDP response, no page target, transport failure, or an unsuccessful interaction with `--strict`
 - `2`: usage or configuration error, such as unknown command, invalid flag, missing endpoint, invalid endpoint URL, or ambiguous page target selection
 - `130`: interrupted by `SIGINT` when Lantern can observe and normalize the interruption
 
-Lantern should not encode detailed failure categories into many exit codes. Use stable stderr error codes for detail.
+Lantern should not encode detailed failure categories into many exit codes. Use stable error codes for detail, including interaction `immediate_error` in the single stdout result.
 
 ## Stable Error Codes
 
