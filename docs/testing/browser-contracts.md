@@ -143,7 +143,8 @@ This fixture does not establish application-specific design or hardware quality.
 
 The Polyorama adapter cases use a labelled synthetic owner hook to qualify stable
 and differing frame counters, missing/oversized hooks, malformed geometry,
-retained screenshot hashes and absence of input dispatch. They do not render
+retained screenshot hashes, preservation of captured pixels after a trailing
+snapshot exception, and absence of input dispatch. They do not render
 Polyorama or establish GPU coverage. Actual owner application-shell qualification
 and its source/browser/render provenance belong to the application evidence
 package plan and PR evidence.

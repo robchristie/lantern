@@ -47,8 +47,9 @@ Semantic/text geometry is in egui points with the owner's `pixels_per_point`.
 Record artefact SHA-256 hashes, actual browser/render route and independently
 known source/input identities. Open every relevant PNG and apply explicit visual
 expectations. A successful PNG decode can still describe black pixels. Missing
-hooks produce `ok=false` with an unavailable reason; malformed or oversized
-contracts fail the command. Files are limited to 8 MiB, collections to 5000 items,
+hooks and oversized live snapshots produce `ok=false` with an unavailable reason
+and a successful command exit. Malformed contracts and oversized local files
+fail the command. Files are limited to 8 MiB, collections to 5000 items,
 and decoded PNGs to 64 MiB. Owner names, descriptions, disabled reasons, layout
 errors and domain references receive ordinary snippet redaction by default;
 stable identifiers and hashes remain available for correlation. Screenshot pixels

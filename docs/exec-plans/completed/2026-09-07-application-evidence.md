@@ -54,8 +54,8 @@ application-shell pixels. This is software WebGPU evidence only. No source,
 baseline, protected material or profile was modified in Polyorama.
 
 Canonical validation passes: format, workspace checks, Rust 1.85 locked check,
-226 tests and documentation hygiene. The browser suite passes 43 cases including
-five synthetic adapter cases; input audit proves the adapter dispatches no input.
+226 tests and documentation hygiene. The browser suite passes 44 cases including
+six synthetic adapter cases; input audit proves the adapter dispatches no input.
 Owner-standard `cargo xtask build-web` completed on clean source, with its log and
 WASM/JS/browser/Lantern hashes retained in the qualification record.
 
@@ -69,6 +69,8 @@ Visual expectation: dark gallery chrome, selected reference/application-shell,
 two dock panes with deterministic text, and intentionally truncated tab labels.
 The accepted live route yielded 1440×900 pixels, matching the owner fixture,
 with equal application/semantic/bracketing counters; pixel frame remains unknown.
+A synthetic trailing-hook exception confirms that the initial semantic frame and
+captured PNG/hash survive an unavailable second observation.
 The image is newly captured live evidence, separate from the illustrative baseline.
 
 Clean committed-source qualification passes; repeatable final artefacts identify

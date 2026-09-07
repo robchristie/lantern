@@ -8,10 +8,13 @@ const mode = new URLSearchParams(location.search).get('mode');
 const rect = {min_x:0,min_y:0,max_x:300,max_y:90};
 let frame = 7;
 let inputCount = 0;
+let snapshotCalls = 0;
 document.querySelector('button').onclick = () => {inputCount++;frame++;};
 const ctx=document.querySelector('canvas').getContext('2d');ctx.fillStyle='#37a8b0';ctx.fillRect(0,0,300,90);ctx.fillStyle='#17242d';ctx.fillText('Owner fixture',20,40);
 if(mode !== 'missing') window.__POLYORAMA_GALLERY_HANDLE = {
  snapshot() {
+  snapshotCalls++;
+  if(mode === 'trailing-failure' && snapshotCalls > 1) throw new Error('Trailing snapshot intentionally unavailable');
   if(mode === 'oversized') return {padding:'x'.repeat(2097153)};
   if(mode === 'differing')frame++;
   const coverage={measured_components:0,attempted_components:0,successful_components:0,failed_components:0,native_text_controls:1,observed_native_controls:0,excluded_categories:['ordinary_egui_labels','native_button_text']};

@@ -1140,7 +1140,7 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
     record["verdict"] = "pass"
     evidence.pop("active_case")
 
-    for mode in ["stable", "differing", "missing", "oversized", "malformed"]:
+    for mode in ["stable", "differing", "missing", "oversized", "malformed", "trailing-failure"]:
         case = f"polyorama-{mode}"
         evidence["active_case"] = case
         invoke("open", f"{fixture_base}/polyorama?mode={mode}")
@@ -1162,8 +1162,15 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             assert not path.exists(), path
         else:
             assert actual_exit == 0 and value["ok"] is True, value
-            expected = "same_observed_frame" if mode == "stable" else "differing"
+            expected = {"stable": "same_observed_frame", "differing": "differing",
+                        "trailing-failure": "unavailable"}[mode]
             assert value["frame_correlation"]["status"] == expected, value
+            if mode == "trailing-failure":
+                assert value["frame_correlation"]["before"] == 7, value
+                assert value["frame_correlation"]["after"] is None, value
+                assert "after_snapshot_sha256" not in value, value
+                assert value["semantic"]["frame"] == 7, value
+                assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), value
             assert value["frame_correlation"]["pixel_frame"] is None, value
             assert value["source_revision"]["status"] == "unavailable", value
             assert value["readiness"]["application_ready"] is None, value
