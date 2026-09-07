@@ -478,18 +478,27 @@ impl CdpWebSocket {
                 continue;
             };
             if let Some(event) = Self::event_from_text(&text)? {
-                if remaining(deadline).is_err() {
-                    self.evidence_loss.dropped_events =
-                        self.evidence_loss.dropped_events.saturating_add(1);
-                    self.evidence_loss.dropped_event_bytes = self
-                        .evidence_loss
-                        .dropped_event_bytes
-                        .saturating_add(text.len() as u64);
-                    return Ok(None);
-                }
-                return Ok(Some(event));
+                return Ok(self.finish_event_read(event, text.len()));
             }
         }
+    }
+
+    fn finish_event_read(&mut self, event: CdpEvent, bytes: usize) -> Option<CdpEvent> {
+        // The poll slice bounds further socket work. A complete, parsed event
+        // remains usable after that slice, provided the operation budget remains.
+        // Dropping it at the slice boundary would create an avoidable evidence gap.
+        if self
+            .deadline
+            .is_some_and(|deadline| remaining(deadline).is_err())
+        {
+            self.evidence_loss.dropped_events = self.evidence_loss.dropped_events.saturating_add(1);
+            self.evidence_loss.dropped_event_bytes = self
+                .evidence_loss
+                .dropped_event_bytes
+                .saturating_add(bytes as u64);
+            return None;
+        }
+        Some(event)
     }
 
     fn event_from_text(text: &str) -> Result<Option<CdpEvent>, CdpError> {
@@ -790,6 +799,43 @@ mod tests {
         while client.pop_pending_event().is_some() {}
         assert_eq!(client.pending_bytes, 0);
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn complete_event_crossing_poll_slice_respects_only_operation_deadline() {
+        let (url, handle) = adversarial_socket(|_| {});
+        let mut client = CdpWebSocket::connect(&url).unwrap();
+        handle.join().unwrap();
+        let text = r#"{"method":"Runtime.consoleAPICalled","params":{"type":"error"}}"#;
+        let event = CdpWebSocket::event_from_text(text).unwrap().unwrap();
+        // Model completion after the socket's local slice, without relying on
+        // scheduler timing or a large JSON parse crossing a wall-clock boundary.
+        client.socket.get_mut().deadline = Instant::now() - Duration::from_secs(1);
+        client.deadline = Some(Instant::now() + Duration::from_secs(60));
+        assert_eq!(
+            client.finish_event_read(event.clone(), text.len()),
+            Some(event.clone())
+        );
+        assert_eq!(client.evidence_loss(), EvidenceLoss::default());
+        assert!(client.pending_events.is_empty());
+        assert_eq!(client.pending_bytes, 0);
+
+        client.deadline = Some(Instant::now() - Duration::from_secs(1));
+        assert_eq!(client.finish_event_read(event.clone(), text.len()), None);
+        assert_eq!(client.evidence_loss().dropped_events, 1);
+        assert_eq!(
+            client.evidence_loss().dropped_event_bytes,
+            text.len() as u64
+        );
+        assert!(client.read_event(Duration::from_secs(1)).unwrap().is_none());
+
+        // Standalone polling has no operation deadline beyond its I/O slice.
+        client.deadline = None;
+        assert_eq!(
+            client.finish_event_read(event.clone(), text.len()),
+            Some(event)
+        );
+        assert_eq!(client.evidence_loss().dropped_events, 1);
     }
 
     #[test]

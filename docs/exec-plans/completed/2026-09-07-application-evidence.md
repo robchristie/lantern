@@ -81,3 +81,27 @@ hardware coverage. The adapter itself still reports source revision unavailable.
 
 Next: conductor independently reviews the exact candidate and final PNG, publishes
 and lands the package when review/CI gates pass, then reconciles programme row P.
+
+## CI transport boundary calibration
+
+CI `34086692985` on `b39b01e2c3aeab61b92887414ffeafbe79effc77`
+retained the expected runtime exception and HTTP 500 but reported `incomplete`:
+one complete 617-byte event was dropped at a polling slice boundary. Evidence:
+`.smoogle/qualification-tools/polyorama/ci-34086692985/browser-contract-evidence/evidence.json`.
+Question: can a fully parsed event cross the short polling slice without losing
+usable evidence while the absolute operation budget remains? The smallest probe
+is a deterministic transport completion test with an expired socket slice and
+separate live/expired operation budgets. The transport regression owns mechanism
+evidence; this package owns the CI disposition. Exit requires retained delivery
+inside the operation budget, unchanged loss accounting after actual expiry,
+canonical verification and the unchanged 44-case browser suite.
+
+Selected repair: the poll slice bounds further socket work; completed events use
+only the absolute operation deadline for delivery. This creates no new queue or
+read iteration and preserves absolute deadline drops, byte accounting, existing
+partial-frame loss semantics and bounded irrelevant-response handling.
+
+Calibration regression and canonical verification pass: formatting, workspace and
+locked Rust 1.85 checks, all 227 tests and documentation hygiene. The exact repair
+candidate's clean-build browser results and final calibration acceptance are
+retained with the package PR and ignored qualification artefacts.
