@@ -11,13 +11,13 @@ body{font:18px/1.5 sans-serif;margin:40px;background:#f4f6f8;color:#162434}main{
 const task=document.querySelector('#task');
 const route=location.pathname.slice(1)||'form';
 const state={case:route,submits:0,inputEvents:[],pointerEvents:[],saved:null,revision:0,frame:0};
-function report(kind,extra={}){fetch('/truth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,...state,...extra,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio}})}).catch(()=>{});}
+function report(kind,extra={}){window.__qualificationReport({kind,...state,...extra,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio}}).catch(()=>{});}
 if(route==='form'||route==='failure'||route==='recovery'){
  const recovery=route==='recovery';
  task.innerHTML=`<h2>${recovery?'Disposable draft':route==='failure'?'Service failure investigation':'Contact form'}</h2><p>${recovery?'A fresh disposable browser starts with no draft. A draft survives reloads in the same browser only.':'Enter the synthetic contact name and save once.'}</p><form><label for="contact-name">Contact name</label><input id="contact-name" autocomplete="off" required><button type="submit">Save contact</button></form><output id="save-status" role="status"></output>`;
  const input=document.querySelector('input'),status=document.querySelector('output');
  state.saved=recovery?localStorage.getItem('draft'):null;status.textContent=state.saved?`Saved contact: ${state.saved}`:'No saved contact';
- input.addEventListener('input',e=>{state.inputEvents.push({trusted:e.isTrusted,inputType:e.inputType});report('input');});
+ input.addEventListener('input',e=>{state.inputEvents.push({trusted:e.isTrusted,inputType:e.inputType,data:e.data,value:input.value});report('input');});
  document.querySelector('form').addEventListener('submit',async e=>{
   e.preventDefault();state.submits++;report('submit',{trusted:e.isTrusted,value:input.value});
   status.textContent='Saving…';
