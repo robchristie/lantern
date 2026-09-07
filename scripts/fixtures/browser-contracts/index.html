@@ -221,6 +221,9 @@
     });
   } else if (scenario === 'action-baseline-console-clean' || scenario === 'action-baseline-console-new-error') {
     fixture.innerHTML = '<button id="baseline-error">Emit baseline error</button><button id="target">Save</button><p id="status">Idle</p>';
+    if (scenario === 'action-baseline-console-new-error') {
+      Date.now = () => 9000000000000000;
+    }
     document.querySelector('#baseline-error').addEventListener('click', () => {
       console.error('intentional-baseline-console-error');
       mark('baseline-error');

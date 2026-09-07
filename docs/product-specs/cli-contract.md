@@ -1440,7 +1440,8 @@ with `baseline_error_count`, `action_error_count` and `unknown_error_count`.
 Console entries retain CDP `source_timestamp_ms` (Unix epoch milliseconds,
 including fractional precision, or null if unavailable) and an
 `observation_phase` of `baseline`, `action` or `unknown`. The boundary samples
-the browser's `Date.now()` after the baseline probe and drain, before interaction
+the browser's `Date.now()` in a fresh isolated world (independent of application
+clock mocks) after the baseline probe and drain, before interaction
 preparation; it is an observation boundary, not the physical input timestamp.
 Entries collected before that boundary are baseline evidence. Later arrivals
 with older source timestamps are also baseline, including attachment replay.

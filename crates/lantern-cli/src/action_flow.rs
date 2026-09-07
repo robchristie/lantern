@@ -113,7 +113,10 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
             output.console_attribution.unknown_error_count,
             output.network.http_error_count,
             output.network.failed_count,
-            output.console.evidence_loss.incomplete() || output.network.evidence_loss.incomplete(),
+            output.console_attribution.unknown_error_count > 0
+                || output.console.truncated
+                || output.console.evidence_loss.incomplete()
+                || output.network.evidence_loss.incomplete(),
             output
                 .error
                 .or(output.capture.error)

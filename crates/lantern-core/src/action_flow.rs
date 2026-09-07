@@ -112,9 +112,28 @@ pub fn run_action_flow_until(
     // Flush baseline probe traffic, then sample the browser clock. Events queued
     // during this call are classified by their source time when drained later.
     drain_available_events(&mut socket, &mut console, &mut network)?;
+    // Use a fresh isolated world's built-ins: applications may mock Date.now().
+    let frame_tree = socket.call("Page.getFrameTree", None)?;
+    let frame_id = frame_tree["frameTree"]["frame"]["id"]
+        .as_str()
+        .ok_or_else(|| CdpError::ResponseInvalid {
+            context: "action boundary frame unavailable",
+            source: "missing main frame identity".into(),
+        })?;
+    let world = socket.call(
+        "Page.createIsolatedWorld",
+        Some(json!({"frameId":frame_id})),
+    )?;
+    let context_id =
+        world["executionContextId"]
+            .as_i64()
+            .ok_or_else(|| CdpError::ResponseInvalid {
+                context: "action boundary context unavailable",
+                source: "missing isolated execution context".into(),
+            })?;
     let clock = socket.call(
         "Runtime.evaluate",
-        Some(json!({"expression":"Date.now()","returnByValue":true})),
+        Some(json!({"expression":"Date.now()","contextId":context_id,"returnByValue":true})),
     )?;
     if clock.get("exceptionDetails").is_some() {
         return Err(CdpError::ResponseInvalid {
@@ -360,8 +379,14 @@ mod tests {
                         ws.send(Message::Text(json!({"method":"Runtime.exceptionThrown","params":{"timestamp":1001,"exceptionDetails":{"text":"new error"}}}).to_string().into())).unwrap();
                     }
                 }
-                if method == "Runtime.evaluate" {
+                if method == "Page.getFrameTree" {
+                    result = json!({"frameTree":{"frame":{"id":"main-frame"}}});
+                } else if method == "Page.createIsolatedWorld" {
+                    assert_eq!(c["params"]["frameId"], "main-frame");
+                    result = json!({"executionContextId":42});
+                } else if method == "Runtime.evaluate" {
                     if c["params"]["expression"] == "Date.now()" {
+                        assert_eq!(c["params"]["contextId"], 42);
                         result = json!({"result":{"value":1000}});
                     } else if c["params"].get("objectGroup").is_some() {
                         result = json!({"result":{"objectId":"target"}});
