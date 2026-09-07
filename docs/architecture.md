@@ -25,6 +25,27 @@
 - `lantern-storage`: reserved persistence boundary for SQLite-backed local task, state, and future session metadata; first-milestone CDP inspection should not require it
 - `lantern-cli`: first operator surface for the initial workflow
 
+## CLI Ownership
+
+`lantern-cli` keeps its executable entrypoint small and its boundaries inside the
+existing crate:
+
+- `args` parses flag and positional syntax; `validation` preserves command/flag
+  compatibility and pre-endpoint validation order.
+- `registry` defines typed command variants, parsing spellings, aliases and
+  discovery schema references together. `capabilities` writes endpoint-independent
+  executable discovery; the build script owns conservative Git provenance.
+- `dispatch` creates the endpoint client and shared operation budget, then passes
+  a typed context to `inspection`, `interaction` or `screenshot`.
+- `browser` owns explicit managed browser/profile lifecycle and state access.
+- Command families own their human output and command-specific envelopes;
+  `selection` owns target choice and target/page output. `output` owns shared JSON
+  serialisation and escaping; `error` owns stable error envelopes and translation.
+
+Existing CDP executable fixtures remain the compatibility proof. Discovery and
+actual Cargo rebuild tests cover the registry and build identity. This split adds
+no alternate backend or broader browser interaction semantics.
+
 ## Local State
 
 - checked-in docs define the system of record

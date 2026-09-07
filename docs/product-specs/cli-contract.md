@@ -23,6 +23,7 @@ artefact capture remain out of scope.
 
 Implemented commands:
 
+- `lantern capabilities [--json]`
 - `lantern doctor`
 - `lantern targets`
 - `lantern page`
@@ -62,6 +63,48 @@ Each implemented command accepts the shared flags below. Unknown commands, unkno
 Lifecycle commands are explicit. Existing CDP commands resolve only `--endpoint`
 or `LANTERN_CDP_ENDPOINT` and must not auto-start or auto-select a managed
 browser.
+
+## Capability Discovery
+
+`lantern capabilities` and `lantern capabilities --json` both emit one JSON
+object describing this executable. They need no configured endpoint, Chromium,
+container runtime or browser state. An explicit `--endpoint` or
+`LANTERN_CDP_ENDPOINT` is not resolved by discovery. Execution-only flags such as
+`--target-id`, `--timeout-ms`, `--output` and browser lifecycle options remain
+usage errors. `--version` and `-V` retain `lantern <package-version>` output.
+
+The version 1 response contains these fields in order:
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version`, `command`, `ok` | Standard envelope; command is `capabilities` |
+| `package_version` | Cargo package version of this executable |
+| `build` | `provenance`, nullable full `commit`, nullable Boolean `dirty` |
+| `error_schema_versions` | Supported shared error-envelope schema versions |
+| `commands` | Ordered command registry, including aliases and subcommands |
+
+Every command entry contains `name`, `aliases`, `output_schema_versions` and
+`subcommands`. Names are individual command tokens; concatenate parent and child
+names to form invocations such as `browser profile list`. `wait` lists its five
+condition names. Group-only entries (`browser` and `browser profile`) have no
+output schema versions. The `pointer-drag` alias belongs to `drag`. Output schema
+versions describe JSON contracts; they do not assert browser availability or
+verified application outcomes.
+
+`build.provenance="git"` means the build found the owning source checkout,
+verified its root and source paths in HEAD, and captured that checkout's full
+commit and Git modified-state indicator. `dirty=true` means the build included a
+checkout with tracked or untracked changes; the commit alone does not identify
+those changes. The indicator covers Git-visible workspace state, not ignored
+files, external dependencies or build configuration. A clean commit is source
+identity, not an artefact signature or a claim of reproducible compilation.
+
+When Git or a valid owning checkout is unavailable, including exported source
+archives, discovery reports `provenance="unknown"`, `commit=null` and
+`dirty=null`. It never substitutes an enclosing repository's commit or an
+unverified commit environment variable. Git identity refreshes on every Cargo
+build, including ref-only changes, packed refs and linked worktrees. Archives
+currently have no separate trusted provenance channel.
 
 ## Shared Flags
 
