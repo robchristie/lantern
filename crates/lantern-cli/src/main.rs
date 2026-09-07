@@ -1,3 +1,4 @@
+mod action_flow;
 mod args;
 mod browser;
 mod capabilities;
@@ -68,7 +69,8 @@ fn run(
     if invocation.strict
         && !matches!(
             command,
-            Command::Click
+            Command::ActionFlow
+                | Command::Click
                 | Command::Type
                 | Command::Key
                 | Command::Hover
@@ -78,8 +80,8 @@ fn run(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--strict is only supported by interaction commands.",
-            "Use --strict with click, type, key, hover, wheel or drag.",
+            "--strict is only supported by interaction commands and action-flow.",
+            "Use --strict with click, type, key, hover, wheel, drag or action-flow.",
         ));
     }
 

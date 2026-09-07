@@ -1404,6 +1404,64 @@ Error cases:
 
 Default output follows the flow, console, network, wait, and URL policies in `docs/product-specs/output-policy.md`.
 
+### `lantern action-flow`
+
+Observe one click and verify an explicit postcondition on one selected page:
+
+```sh
+lantern action-flow --selector '#save' --expect-selector '#status' --expect-text 'Saved' --timeout-ms 3000 --strict --json
+lantern action-flow --selector '#draw' --expect-selector '[data-state="drawn"]' --timeout-ms 3000 --output .smoogle/drawn.png --json
+lantern action-flow --selector '#next' --expect-url 'http://localhost:5173/done' --timeout-ms 3000 --json
+```
+
+Pass exactly one condition: `--expect-selector` for presence, that selector plus
+`--expect-text` for a substring in exactly one matching element, or `--expect-url`
+for an exact current URL (including query and fragment). Text and URL matching
+use the original values; reported metadata follows ordinary redaction. Empty
+expectations are rejected. There is no quietness, navigation, generic evaluation,
+input-text or multi-action language in this command.
+
+The explicit 1–30000 ms budget covers target selection, attachment, enabling
+Runtime/Log/Network/Page, baseline observation, ordinary click actionability,
+input, condition polling, optional viewport capture and final event draining.
+Input cleanup retains the existing separate 100 ms best-effort allowance and
+then restores the original observation deadline. Local file I/O and OS scheduling
+have the same non-real-time qualification as other local operations. Use a regular
+local file sink. Existing output paths require `--overwrite`; capture pixels are
+unredacted and no image data is embedded in the JSON output.
+
+The schema-version-1 result contains `target_id`, `single_attachment`,
+`observation_started_before_action`, the existing `interaction` summary,
+`postcondition`, `console`, `network`, `capture`, `verdict`, `error` and `elapsed_ms`.
+`ok: true` describes structured command completion. It does not establish a
+successful application outcome. `--strict` exits 1 unless the verdict is `passed`;
+the structured result remains on stdout. Pre-input setup/baseline errors use the
+ordinary stderr error envelope and send no input.
+
+`postcondition` retains `matched_before_action`, `observed_before_action`, the last post-action `matched`,
+`timed_out` and typed `observed` metadata (null until a post-action probe completes). A passing verdict requires a false
+baseline followed by an observed match, acknowledged input, complete evidence,
+no captured runtime/console/HTTP/network failure, and a successful requested
+capture. This demonstrates observed order, not causation. A condition already
+true before input produces `postcondition_already_matched` and cannot pass even
+if it remains true. It does not suppress the requested click. Unknown outcomes,
+uncertain dispatch, evidence loss, observation errors, deadline exhaustion or
+capture/persistence failure yield `incomplete`; otherwise known failure yields
+`failed`. Known failures remain present even alongside a match or incomplete
+verdict. Collection includes setup and preparation events and is not a causal
+attribution of every observed error to the click. It ends at finalisation and
+cannot promise detection of errors occurring afterwards.
+
+`capture` records `requested`, `status` (`not_requested`, `captured`, `failed`),
+nullable screenshot metadata and an error code. It is attempted after assertion
+success or failure while the original budget permits. A write failure retains
+the interaction, condition and failure observations with `screenshot_write_failed`;
+a capture failure uses `screenshot_capture_failed`; expiry before persistence uses
+`screenshot_deadline_reached`. Its correlation is explicitly
+`sequenced_after_postcondition_not_atomic_frame`. Successful capture establishes
+neither pixel correctness nor visual review. Once any input may have executed,
+Lantern never replays it, including after failed assertion, capture or finalisation.
+
 ### `lantern console`
 
 Purpose: collect a bounded snapshot of recent console errors and page runtime exceptions from the selected page target.
@@ -2023,20 +2081,28 @@ Breaking changes requiring a `schema_version` bump:
 
 ## Shared operation deadlines and evidence limits
 
-For `wait`, `flow` and interactions, `--timeout-ms` covers HTTP target selection,
+For `wait`, `flow`, `action-flow` and interactions, `--timeout-ms` covers HTTP target selection,
 attachment, setup, commands, collection and finalisation as one absolute budget.
-It is not renewed by responses or events. A budget exhausted during setup or a
-CDP call follows the non-zero transport error path; a completed condition
-observation may still return its existing `matched=false`/`timed_out=true` or
-`dispatched=false` result. Browser readiness polling similarly shares `--wait-ms`
-with its HTTP calls.
+It is not renewed by responses or events. Pre-result setup or transport failures
+use the non-zero stderr error path. Completed wait or interaction observations
+may instead return their existing `matched=false`/`timed_out=true` or
+`dispatched=false` result. Once action-flow enters its interaction phase, later
+assertion, capture, persistence or observation failures remain in its single
+stdout result, preserving dispatch and available evidence. An incomplete
+action-flow result exits 0 by default and 1 with `--strict`; the flag likewise
+requires fully acknowledged input for standalone interactions. Browser readiness
+polling similarly shares `--wait-ms` with its HTTP calls.
 
-A sent command without a definitive response returns exit code `1` with
-`cdp_command_uncertain`. It may have executed; inspect browser state and do not
-automatically replay it. `interaction_transport_failed` also warns that earlier
-input steps may have executed when a later transport step fails. A drag attempts
-one best-effort release after a failure, including an unacknowledged press,
-with a separate 100 ms cleanup budget.
+A sent command without a definitive response may have executed. Directly surfaced
+uncertainty uses `cdp_command_uncertain` in the pre-result error envelope (exit 1)
+or retained interaction diagnostics. Later action-flow assertion and capture
+failures use their phase-specific error codes in the structured result. These
+results follow the command's strict-exit policy. Inspect browser state and do
+not automatically replay uncertain input.
+`interaction_transport_failed` also warns that earlier input steps may have
+executed when a later transport step fails. A click, key or drag attempts one
+best-effort release after a failure, including an unacknowledged press, with a
+separate 100 ms cleanup budget.
 
 Transport and collectors have finite count, byte and drain limits. Incomplete
 collection adds `evidence_loss` to console/network/interaction summaries or the
@@ -2048,13 +2114,17 @@ qualifications are specified in [Transport budgets and incomplete evidence](../w
 
 ## Error Output
 
-Errors write to stderr for both human and JSON modes. Error output must include:
+Pre-result errors write to stderr for both human and JSON modes. Structured
+interaction and action-flow results retain their failure diagnostics on stdout;
+`--strict` changes their exit status without moving the result to stderr.
+Pre-result error output must include:
 
 - a short stable error code
 - a concise human message
 - a remediation hint when practical
 
-With `--json`, stderr should contain one JSON object and stdout should be empty:
+For a pre-result error with `--json`, stderr should contain one JSON object and
+stdout should be empty:
 
 ```json
 {
@@ -2077,8 +2147,8 @@ hint: Pass --endpoint http://127.0.0.1:9222 or set LANTERN_CDP_ENDPOINT.
 
 ## Exit Codes
 
-- `0`: success, including help and version output
-- `1`: runtime failure after valid invocation, such as unreachable endpoint, malformed CDP response, no page target, transport failure, or an unsuccessful interaction with `--strict`
+- `0`: command completion, including help, version and completed non-strict results; this alone does not establish application success
+- `1`: runtime failure after valid invocation, such as unreachable endpoint, malformed CDP response, no page target, transport failure, an unsuccessful interaction with `--strict`, or an action-flow verdict other than `passed` with `--strict`
 - `2`: usage or configuration error, such as unknown command, invalid flag, missing endpoint, invalid endpoint URL, or ambiguous page target selection
 - `130`: interrupted by `SIGINT` when Lantern can observe and normalize the interruption
 
@@ -2094,9 +2164,9 @@ Initial stable error codes:
 - `endpoint_unreachable`: endpoint could not be reached
 - `cdp_unhealthy`: endpoint responded but did not behave like a Chromium CDP endpoint
 - `cdp_response_invalid`: endpoint returned malformed or unsupported CDP JSON
-- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`, or `--target-id` did not match a page target
+- `target_not_found`: no page target was available for `lantern page`, `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern action-flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`, or `--target-id` did not match a page target
 - `target_ambiguous`: multiple page targets matched and no deterministic selection was possible
-- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`
+- `target_websocket_missing`: the selected page target did not include a WebSocket debugger URL required by `lantern dom`, `lantern open`, `lantern wait`, `lantern console`, `lantern network`, `lantern flow`, `lantern action-flow`, `lantern screenshot`, `lantern click`, `lantern type`, `lantern key`, `lantern hover`, `lantern wheel`, or `lantern drag`
 - `url_invalid`: the requested navigation URL was malformed or used an unsupported scheme
 - `navigation_failed`: Chromium rejected or failed the requested page navigation
 - `wait_timeout_invalid`: wait timeout or quiet-period bounds were outside the supported range

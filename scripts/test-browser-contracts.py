@@ -301,6 +301,7 @@ def main():
                             lantern,
                             audit_endpoint,
                             f"http://127.0.0.1:{server.server_port}",
+                            output,
                             evidence,
                             suite_started,
                             audit,
@@ -447,7 +448,7 @@ def verify_audit_guards(audit, evidence):
             raise AssertionError(f"audit guard accepted deliberate {method} injection")
 
 
-def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
+def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, audit):
     def invoke(*arguments, expected_exit=0):
         if time.monotonic() - suite_started > SUITE_TIMEOUT_SECONDS:
             raise TimeoutError(f"browser contract suite exceeded {SUITE_TIMEOUT_SECONDS} seconds")
@@ -525,6 +526,151 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
             "case": case,
             "command": command[0],
             "strict": "--strict" in command,
+            "exit_code": actual_exit,
+            "expected_exit_code": expected_exit,
+            "actual_exit_code": actual_exit,
+            "actual_stdout": stdout,
+            "actual_stderr": stderr,
+            "actual_output": value,
+            "dispatched": summary.get("dispatched"),
+            "dispatch_state": summary.get("dispatch_state"),
+            "timed_out": summary.get("timed_out"),
+            "immediate_error": summary.get("immediate_error"),
+            "audited_input_commands": input_commands,
+            "application_state_before": before,
+            "application_state_after": after,
+            "elapsed_ms": elapsed_ms,
+            "verdict": "fail" if failures else "pass",
+        }
+        if failures:
+            case_evidence["failure"] = "; ".join(failures)
+        evidence["cases"].append(case_evidence)
+        evidence.pop("active_case")
+        if failures:
+            raise AssertionError(f"{case}: {case_evidence['failure']}")
+
+    def action_flow(
+        case,
+        scenario,
+        condition,
+        expected_exit,
+        dispatched,
+        expected_state,
+        matched_before_action,
+        matched,
+        timed_out,
+        verdict,
+        error=None,
+        immediate_error=None,
+        capture_status="not_requested",
+        capture_error=None,
+        verify=None,
+        timeout_ms=2000,
+        extra_arguments=(),
+    ):
+        evidence["active_case"] = case
+        before = navigate(scenario)
+        checkpoint = audit.checkpoint()
+        command = [
+            "action-flow", "--selector", "#target", "--timeout-ms", str(timeout_ms),
+            *condition, *extra_arguments, "--strict",
+        ]
+        value, elapsed_ms, actual_exit, stdout, stderr = invoke_retained(*command)
+        summary = value.get("interaction", {})
+        postcondition = value.get("postcondition", {})
+        capture = value.get("capture", {})
+        input_commands = audit.commands_since(checkpoint)
+        after = page_title()
+        expected_title = f"{scenario}:{expected_state}:" + before.rsplit(":", 1)[1]
+        failures = []
+        if actual_exit != expected_exit:
+            failures.append(f"exit {actual_exit}, expected {expected_exit}")
+        if value.get("command") != "action-flow" or value.get("ok") is not True:
+            failures.append(
+                f"command/ok {(value.get('command'), value.get('ok'))!r}, "
+                "expected completed action-flow"
+            )
+        if value.get("single_attachment") is not True:
+            failures.append(f"single_attachment {value.get('single_attachment')!r}, expected true")
+        if value.get("observation_started_before_action") is not True:
+            failures.append(
+                "observation_started_before_action "
+                f"{value.get('observation_started_before_action')!r}, expected true"
+            )
+        if summary.get("action") != "click" or summary.get("selector") != "#target":
+            failures.append(
+                f"interaction identity {(summary.get('action'), summary.get('selector'))!r}"
+            )
+        if summary.get("dispatched") is not dispatched:
+            failures.append(
+                f"dispatched {summary.get('dispatched')!r}, expected {dispatched!r}"
+            )
+        expected_dispatch_state = "acknowledged" if dispatched else "not_dispatched"
+        if summary.get("dispatch_state") != expected_dispatch_state:
+            failures.append(
+                f"dispatch_state {summary.get('dispatch_state')!r}, "
+                f"expected {expected_dispatch_state!r}"
+            )
+        if summary.get("immediate_error") != immediate_error:
+            failures.append(
+                f"immediate_error {summary.get('immediate_error')!r}, "
+                f"expected {immediate_error!r}"
+            )
+        if postcondition.get("matched_before_action") is not matched_before_action:
+            failures.append(
+                f"matched_before_action {postcondition.get('matched_before_action')!r}, "
+                f"expected {matched_before_action!r}"
+            )
+        if postcondition.get("matched") is not matched:
+            failures.append(
+                f"matched {postcondition.get('matched')!r}, expected {matched!r}"
+            )
+        if postcondition.get("timed_out") is not timed_out:
+            failures.append(
+                f"postcondition timed_out {postcondition.get('timed_out')!r}, "
+                f"expected {timed_out!r}"
+            )
+        if "observed" not in postcondition:
+            failures.append("postcondition omitted observed")
+        if value.get("verdict") != verdict or value.get("error") != error:
+            failures.append(
+                f"verdict/error {(value.get('verdict'), value.get('error'))!r}, "
+                f"expected {(verdict, error)!r}"
+            )
+        if capture.get("requested") is not (capture_status != "not_requested"):
+            failures.append(f"capture requested/status inconsistent: {capture!r}")
+        if capture.get("status") != capture_status:
+            failures.append(
+                f"capture status {capture.get('status')!r}, expected {capture_status!r}"
+            )
+        if capture.get("error") != capture_error:
+            failures.append(
+                f"capture error {capture.get('error')!r}, expected {capture_error!r}"
+            )
+        if capture_status == "captured" and not isinstance(capture.get("screenshot"), dict):
+            failures.append("captured action-flow omitted screenshot summary")
+        if capture_status != "captured" and capture.get("screenshot") is not None:
+            failures.append(f"uncaptured action-flow returned screenshot: {capture!r}")
+        for owner in ("console", "network"):
+            observed = value.get(owner, {})
+            if observed.get("collection_gap") is not False:
+                failures.append(f"{owner} collection_gap {observed.get('collection_gap')!r}")
+        expected_input = ["Input.dispatchMouseEvent"] * 3 if dispatched else []
+        if input_commands != expected_input:
+            failures.append(
+                f"audited input commands {input_commands!r}, expected {expected_input!r}"
+            )
+        if after != expected_title:
+            failures.append(f"application state {after!r}, expected {expected_title!r}")
+        if verify is not None:
+            try:
+                verify(value)
+            except AssertionError as verification_error:
+                failures.append(str(verification_error))
+        case_evidence = {
+            "case": case,
+            "command": "action-flow",
+            "strict": True,
             "exit_code": actual_exit,
             "expected_exit_code": expected_exit,
             "actual_exit_code": actual_exit,
@@ -716,6 +862,145 @@ def run_suite(lantern, endpoint, fixture_base, evidence, suite_started, audit):
             "--duration-ms", "120", "--timeout-ms", "2000", "--strict",
         ],
         0, True, None, "dragged",
+    )
+
+    def verify_text_observed(value, expected_text):
+        observed = value["postcondition"]["observed"]
+        assert observed.get("kind") == "text", f"unexpected text observation: {observed!r}"
+        assert observed.get("selector") == "#status", f"unexpected selector: {observed!r}"
+        assert observed.get("expected_text") == expected_text, (
+            f"unexpected expected text: {observed!r}"
+        )
+        assert observed.get("current_text") == expected_text, (
+            f"unexpected current text: {observed!r}"
+        )
+        assert observed.get("count") == 1, f"unexpected text match count: {observed!r}"
+
+    action_flow(
+        "action-flow-async-text", "action-async-saved",
+        ["--expect-selector", "#status", "--expect-text", "Record saved"],
+        0, True, "saved-1", False, True, False, "passed",
+        verify=lambda value: verify_text_observed(value, "Record saved"),
+    )
+
+    def verify_failure_observation(value):
+        observed = value["postcondition"]["observed"]
+        assert observed.get("kind") == "selector", (
+            f"unexpected selector observation: {observed!r}"
+        )
+        assert observed.get("count") == 1, f"failure marker count was not one: {observed!r}"
+        console = value["console"]
+        assert console.get("exception_count", 0) >= 1, (
+            f"runtime exception was not retained: {console!r}"
+        )
+        assert any(
+            "intentional-post-action-error" in entry.get("message", "")
+            for entry in console.get("entries", [])
+        ), f"runtime exception detail was not retained: {console!r}"
+        network = value["network"]
+        assert network.get("http_error_count", 0) >= 1, (
+            f"HTTP failure was not retained: {network!r}"
+        )
+        assert any(
+            entry.get("status") == 500 for entry in network.get("entries", [])
+        ), f"HTTP 500 detail was not retained: {network!r}"
+
+    action_flow(
+        "action-flow-failure-observation", "post-action-failure-hook",
+        ["--expect-selector", "#failure-observed"],
+        1, True, "failure-observed", False, True, False, "failed",
+        verify=verify_failure_observation,
+    )
+
+    expected_url = f"{fixture_base}/?case=action-url-transition&step=complete"
+    expected_url_shape = f"{fixture_base}/"
+
+    def verify_url_observed(value):
+        observed = value["postcondition"]["observed"]
+        assert observed.get("kind") == "url", f"unexpected URL observation: {observed!r}"
+        assert observed.get("expected_url") == expected_url_shape, (
+            f"unexpected expected URL: {observed!r}"
+        )
+        assert observed.get("current_url") == expected_url_shape, (
+            f"unexpected current URL: {observed!r}"
+        )
+
+    action_flow(
+        "action-flow-url", "action-url-transition",
+        ["--expect-url", expected_url],
+        0, True, "navigated", False, True, False, "passed",
+        verify=verify_url_observed,
+    )
+
+    def verify_timeout_loss(value):
+        for owner in ("console", "network"):
+            loss = value[owner].get("evidence_loss", {})
+            assert loss.get("collection_deadline_reached") is True, (
+                f"{owner} did not retain deadline evidence loss: {value[owner]!r}"
+            )
+        observed = value["postcondition"]["observed"]
+        assert observed.get("kind") == "selector" and observed.get("count") == 0, (
+            f"unexpected timeout observation: {observed!r}"
+        )
+
+    action_flow(
+        "action-flow-assertion-timeout", "action-timeout",
+        ["--expect-selector", "#never-created"],
+        1, True, "clicked-1", False, False, True, "incomplete",
+        timeout_ms=350,
+        verify=verify_timeout_loss,
+    )
+
+    action_flow(
+        "action-flow-preexisting-condition", "action-preexisting",
+        ["--expect-selector", "#status", "--expect-text", "Record saved"],
+        1, True, "clicked-1", True, True, False, "incomplete",
+        error="postcondition_already_matched",
+        verify=lambda value: verify_text_observed(value, "Record saved"),
+    )
+
+    action_flow(
+        "action-flow-blocked-zero-input", "action-blocked",
+        ["--expect-selector", "#never-created"],
+        1, False, "ready", False, False, False, "incomplete",
+        immediate_error="element_disabled",
+    )
+
+    failed_capture = output / "missing-action-flow-parent" / "capture.png"
+    action_flow(
+        "action-flow-capture-write-failure", "action-async-saved",
+        ["--expect-selector", "#status", "--expect-text", "Record saved"],
+        1, True, "saved-1", False, True, False, "incomplete",
+        capture_status="failed",
+        capture_error="screenshot_write_failed",
+        extra_arguments=("--output", str(failed_capture)),
+        verify=lambda value: verify_text_observed(value, "Record saved"),
+    )
+
+    canvas_capture = output / "action-flow-canvas.png"
+
+    def verify_canvas_capture(value):
+        observed = value["postcondition"]["observed"]
+        assert observed.get("kind") == "text" and observed.get("current_text") == "Canvas ready", (
+            f"unexpected canvas observation: {observed!r}"
+        )
+        screenshot = value["capture"]["screenshot"]
+        assert screenshot.get("format") == "png", f"unexpected capture format: {screenshot!r}"
+        assert screenshot.get("path") == str(canvas_capture), (
+            f"unexpected capture path: {screenshot!r}"
+        )
+        assert screenshot.get("byte_count", 0) > 8, f"empty canvas capture: {screenshot!r}"
+        assert canvas_capture.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), (
+            "canvas capture did not persist a PNG"
+        )
+
+    action_flow(
+        "action-flow-canvas-capture", "known-canvas-hook",
+        ["--expect-selector", "#status", "--expect-text", "Canvas ready"],
+        0, True, "canvas-ready", False, True, False, "passed",
+        capture_status="captured",
+        extra_arguments=("--output", str(canvas_capture), "--overwrite"),
+        verify=verify_canvas_capture,
     )
 
 

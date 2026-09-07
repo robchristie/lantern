@@ -66,6 +66,7 @@ commands!(Command, COMMANDS, [
     Hover => ("hover", [], &[INTERACTION_SCHEMA_VERSION], &[]),
     Wheel => ("wheel", [], &[INTERACTION_SCHEMA_VERSION], &[]),
     Drag => ("drag", ["pointer-drag"], &[INTERACTION_SCHEMA_VERSION], &[]),
+    ActionFlow => ("action-flow", [], &[lantern_core::action_flow::ACTION_FLOW_SCHEMA_VERSION], &[]),
     Flow => ("flow", [], &[FLOW_SCHEMA_VERSION], &[]),
     Browser => ("browser", [], &[], BROWSER_COMMANDS),
     Capabilities => ("capabilities", [], &[CLI_SCHEMA_VERSION], &[]),

@@ -22,6 +22,19 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
+    if command == Command::ActionFlow {
+        crate::action_flow::validate(invocation)?;
+    } else if invocation.expect_selector.is_some()
+        || invocation.expect_text.is_some()
+        || invocation.expect_url.is_some()
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Postcondition flags require action-flow.",
+            "Run lantern action-flow with an explicit expectation.",
+        ));
+    }
+
     if command == Command::Open && invocation.open_url.is_none() {
         return Err(CliError::usage(
             invocation.json,
@@ -47,12 +60,13 @@ pub(crate) fn validate_endpoint_invocation(
                 | Command::Hover
                 | Command::Wheel
                 | Command::Drag
+                | Command::ActionFlow
                 | Command::Flow
         )
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, and flow.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, and action-flow.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -88,12 +102,13 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
             | Command::Flow
     ) && invocation.timeout_ms.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, and flow.",
+            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, flow, and action-flow.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
@@ -107,11 +122,12 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.wait_selector.is_some()
     {
         return Err(CliError::usage(
             invocation.json,
-            "--selector is only supported by wait, click, type, key, hover, wheel, and drag.",
+            "--selector is only supported by wait, click, type, key, hover, wheel, drag, and action-flow.",
             "Run a selected-element command with --selector <CSS_SELECTOR>.",
         ));
     }
@@ -197,11 +213,13 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
-    if command != Command::Screenshot && invocation.has_screenshot_flags() {
+    if !matches!(command, Command::Screenshot | Command::ActionFlow)
+        && invocation.has_screenshot_flags()
+    {
         return Err(CliError::usage(
             invocation.json,
-            "Screenshot flags are only supported by screenshot.",
-            "Run lantern screenshot --output <PATH>.",
+            "Capture output flags are only supported by screenshot and action-flow; region flags require screenshot.",
+            "Run lantern screenshot --output <PATH>, or add --output <PATH> to action-flow.",
         ));
     }
 
@@ -231,6 +249,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.wait_selector.is_none()
     {
         return Err(CliError::usage(
@@ -248,6 +267,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) && invocation.timeout_ms.is_none()
     {
         return Err(CliError::usage(
@@ -327,6 +347,7 @@ pub(crate) fn validate_endpoint_invocation(
             | Command::Hover
             | Command::Wheel
             | Command::Drag
+            | Command::ActionFlow
     ) {
         validate_interaction_timeout(
             invocation

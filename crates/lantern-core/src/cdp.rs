@@ -371,6 +371,10 @@ impl CdpWebSocket {
         Some(event)
     }
 
+    pub(crate) fn restore_deadline(&mut self, deadline: Instant) {
+        self.deadline = Some(deadline);
+    }
+
     pub fn deadline(&self) -> Option<Instant> {
         self.deadline
     }

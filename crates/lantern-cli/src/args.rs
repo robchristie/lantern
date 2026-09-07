@@ -15,12 +15,13 @@ use std::path::PathBuf;
 
 pub(crate) fn print_help() {
     println!(
-        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|hover|wheel|drag|flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
+        "Usage: lantern <doctor|targets|page|dom|open|wait|console|network|layout|screenshot|click|type|key|hover|wheel|drag|flow|action-flow> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern capabilities [--json]
        lantern browser <start|list|status|endpoint|stop|prune> [--json]
        lantern browser profile <create|list|status|delete> [NAME] [--yes] [--json]
        lantern open <URL> [--endpoint <URL>] [--json] [--no-redact] [--target-id <ID>]
        lantern wait <ready|url|selector|text|quiet> --timeout-ms <MS> [condition flags]
+       lantern action-flow --selector <CSS> --timeout-ms <MS> (--expect-selector <CSS> [--expect-text <TEXT>] | --expect-url <URL>) [--output <PATH>] [--strict]
        lantern flow --timeout-ms <MS> [--quiet-ms <MS>] [--open <URL>]
        lantern screenshot --output <PATH> [--overwrite]
        lantern click --selector <CSS> --timeout-ms <MS>
@@ -34,7 +35,7 @@ Shared flags:
   --endpoint <URL>  Local Chromium CDP HTTP endpoint
   --json            Emit JSON results on stdout; pre-result errors on stderr
   --no-redact       Disable redaction for command output metadata
-  --strict          Interactions: exit 1 unless input is fully acknowledged
+  --strict          Interactions: require acknowledged input; action-flow: require passed verdict
   --target-id <ID>  Exact CDP page target id for selected-page commands
 
 Navigation and wait flags:
@@ -53,7 +54,7 @@ Navigation and wait flags:
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
 Screenshot flags:
-  --output <PATH>   Required local PNG output path
+  --output <PATH>   Local PNG path: required for screenshot, optional for action-flow
   --overwrite       Replace an existing output file
   --region-x <PX>   Screenshot crop x coordinate; --crop-x is an alias
   --region-y <PX>   Screenshot crop y coordinate; --crop-y is an alias
@@ -86,6 +87,9 @@ pub(crate) struct Invocation {
     pub(crate) json: bool,
     pub(crate) no_redact: bool,
     pub(crate) strict: bool,
+    pub(crate) expect_selector: Option<String>,
+    pub(crate) expect_text: Option<String>,
+    pub(crate) expect_url: Option<String>,
     pub(crate) target_id: Option<String>,
     pub(crate) open_url: Option<String>,
     pub(crate) wait_kind: Option<WaitConditionName>,
@@ -164,6 +168,9 @@ impl Invocation {
             json: false,
             no_redact: false,
             strict: false,
+            expect_selector: None,
+            expect_text: None,
+            expect_url: None,
             target_id: None,
             open_url: None,
             wait_kind: None,
@@ -209,6 +216,20 @@ impl Invocation {
                 "--json" => invocation.json = true,
                 "--no-redact" => invocation.no_redact = true,
                 "--strict" => invocation.strict = true,
+                flag @ ("--expect-selector" | "--expect-text" | "--expect-url") => {
+                    let value = args.next().ok_or_else(|| {
+                        CliError::usage(
+                            invocation.json,
+                            "Missing postcondition flag value.",
+                            "Pass a value after --expect-selector, --expect-text or --expect-url.",
+                        )
+                    })?;
+                    match flag {
+                        "--expect-selector" => invocation.expect_selector = Some(value),
+                        "--expect-text" => invocation.expect_text = Some(value),
+                        _ => invocation.expect_url = Some(value),
+                    }
+                }
                 "--endpoint" => {
                     let Some(endpoint) = args.next() else {
                         return Err(CliError::usage(

@@ -4147,7 +4147,10 @@ fn strict_flag_is_rejected_outside_interactions_before_endpoint_access() {
         let output = lantern([command, "--strict", "--json"], None);
         assert_eq!(output.status.code(), Some(2));
         assert!(stdout(&output).is_empty());
-        assert!(stderr(&output).contains("--strict is only supported by interaction commands."));
+        assert!(
+            stderr(&output)
+                .contains("--strict is only supported by interaction commands and action-flow.")
+        );
     }
 }
 
@@ -4266,4 +4269,36 @@ fn incomplete_second_sample_does_not_invent_instability_or_succeed_in_legacy_mod
             handle.join().unwrap();
         }
     }
+}
+
+#[test]
+fn bounded_action_flow_includes_http_target_selection_in_its_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 4096];
+        stream.read(&mut buffer).unwrap();
+        thread::sleep(Duration::from_millis(500));
+        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]");
+    });
+    let started = std::time::Instant::now();
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            &endpoint,
+            "action-flow",
+            "--selector",
+            "#save",
+            "--expect-selector",
+            "#saved",
+            "--timeout-ms",
+            "40",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert!(started.elapsed() < Duration::from_millis(400));
+    handle.join().unwrap();
 }

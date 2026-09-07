@@ -146,6 +146,17 @@ these I/O deadlines; this is not a hard real-time guarantee. Existing `ok` and
 exit-status semantics for completed condition results remain unchanged.
 
 
+## Action and postcondition verification
+
+Use `action-flow --selector '#save' --expect-selector '#status' --expect-text
+'Saved' --timeout-ms 3000 --strict --json` for one continuously observed click
+and an explicit condition. `--output .smoogle/saved.png` requests a viewport
+capture after the condition attempt. Review dispatch, baseline and final
+condition, captured failures and completeness separately. A matched condition
+that was already true cannot pass. Do not replay uncertain input. Capture is
+sequenced evidence and still needs actual image inspection when visual
+correctness matters. See the [CLI contract](product-specs/cli-contract.md#lantern-action-flow).
+
 ## Interaction verification
 
 Use `--strict` with `click`, `type`, `key`, `hover`, `wheel` and `drag` when an

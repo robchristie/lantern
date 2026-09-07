@@ -52,6 +52,7 @@ pub(crate) fn run_command(
         | Command::Hover
         | Command::Wheel
         | Command::Drag => run_interaction(context),
+        Command::ActionFlow => crate::action_flow::run_action_flow(context),
         Command::Screenshot => run_screenshot(context).map(|()| true),
         Command::Browser | Command::Capabilities => {
             unreachable!("browser lifecycle commands bypass endpoint commands")
