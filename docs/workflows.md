@@ -131,7 +131,8 @@ means remaining traffic was not ruled out. An event read slice that times out
 after consuming part of a frame also marks the collection deadline indicator.
 Console and network set `truncated`
 and clear `observed_clean` when evidence is lost; quiet waits cannot report a
-match from lost transport evidence. Historical `collection_gap` remains a
+match from lost transport evidence; flow quiet matching also requires complete
+console and network collector evidence after finalisation. Historical `collection_gap` remains a
 separate statement about when observation began. A missing loss field does not
 remove that historical gap or prove application correctness.
 

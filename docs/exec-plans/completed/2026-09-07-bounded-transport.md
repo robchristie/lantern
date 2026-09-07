@@ -46,11 +46,23 @@ contracts. Selector timeout fixtures now allow 100 ms for shared setup, replacin
 a 1 ms assumption that excluded HTTP and attachment.
 
 Final `scripts/validate.sh`: formatting, workspace/all-target checks, locked
-Rust 1.85 checks, 193 nextest tests (193 passed, none skipped), and docs hygiene
+Rust 1.85 checks, 195 nextest tests (195 passed, none skipped), and docs hygiene
 passed. Focused CDP, flow and core test runs passed during implementation.
 The existing ordinary CLI JSON fixtures still pass; additive evidence metadata
 is omitted when complete. The committed candidate revision and subsequent
 independent review/CI/landing evidence are owned by the package pull request.
+
+## Independent review repair
+
+The review of `c9ad4dc0c5dd778d45ceaeec07100269c797a18d` identified that
+the provisional quiet verdict checked only socket loss, omitting collector-only
+payload and request-correlation loss. The repaired verdict checks the final
+console and network summaries after finalisation. Two fake-CDP regressions prove
+that collector-only oversized payloads and correlation exhaustion clear the
+match without transport queue overflow, while preserving completed-command
+`ok` and timeout semantics. Focused flow tests passed (5/5), followed by the
+canonical verification above. The [BLOCK record](https://github.com/robchristie/lantern/pull/8#issuecomment-5564049707)
+owns the review finding; the coordinator owns re-review and landing.
 
 ## Next action
 

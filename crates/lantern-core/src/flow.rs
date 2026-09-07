@@ -153,9 +153,6 @@ pub fn run_observation_flow_until(
         push_observation_event(event, &mut console, &mut network);
     }
     let loss = socket.evidence_loss();
-    if loss.incomplete() && wait.condition == WaitConditionName::Quiet {
-        wait.matched = false;
-    }
     console.record_evidence_loss(loss.clone());
     network.record_evidence_loss(loss);
     let collection_gap = !opened_url;
@@ -170,6 +167,14 @@ pub fn run_observation_flow_until(
         FLOW_COLLECTION_GAP_NONE
     };
 
+    let console = console.finish_with_collection_gap(collection_gap, collection_gap_reason);
+    let network = network.finish_with_collection_gap(collection_gap, network_gap_reason);
+    if wait.condition == WaitConditionName::Quiet
+        && (console.evidence_loss.incomplete() || network.evidence_loss.incomplete())
+    {
+        wait.matched = false;
+    }
+
     Ok(FlowCommandOutput {
         schema_version: FLOW_SCHEMA_VERSION,
         command: "flow",
@@ -181,8 +186,8 @@ pub fn run_observation_flow_until(
             observation_started_before_navigation: opened_url,
             wait,
         },
-        console: console.finish_with_collection_gap(collection_gap, collection_gap_reason),
-        network: network.finish_with_collection_gap(collection_gap, network_gap_reason),
+        console,
+        network,
     })
 }
 
@@ -487,6 +492,115 @@ mod tests {
             },
             handle,
         )
+    }
+
+    fn flow_with_collector_events(batches: Vec<(&'static str, Vec<Value>)>) -> FlowCommandOutput {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream.set_nodelay(true).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            while let Ok(Message::Text(text)) = socket.read() {
+                let command: Value = serde_json::from_str(&text).unwrap();
+                let method = command["method"].as_str().unwrap();
+                for (_, events) in batches.iter().filter(|(when, _)| *when == method) {
+                    for event in events {
+                        socket
+                            .send(Message::Text(event.to_string().into()))
+                            .unwrap();
+                    }
+                }
+                let result = if method == "Runtime.evaluate" {
+                    json!({"result":{"value":"complete"}})
+                } else {
+                    json!({})
+                };
+                socket
+                    .send(Message::Text(
+                        json!({"id":command["id"],"result":result})
+                            .to_string()
+                            .into(),
+                    ))
+                    .unwrap();
+            }
+        });
+        let target = TargetInfo {
+            id: "collector-fixture".into(),
+            kind: "page".into(),
+            title: None,
+            url: Some("about:blank".into()),
+            attached: None,
+            browser_context_id: None,
+            web_socket_debugger_url: Some(format!("ws://{address}/page")),
+        };
+        let output = run_observation_flow(
+            &target,
+            FlowOptions {
+                open_url: Some("http://example.test".into()),
+                timeout: Duration::from_secs(1),
+                quiet_ms: Some(30),
+            },
+            RedactionMode::Redacted,
+        )
+        .unwrap();
+        handle.join().unwrap();
+        output
+    }
+
+    #[test]
+    fn quiet_flow_rejects_collector_payload_loss_without_transport_loss() {
+        let output = flow_with_collector_events(vec![(
+            "Page.navigate",
+            vec![json!({
+                "method":"Runtime.exceptionThrown", "params":{"exceptionDetails":{"text":"x".repeat(270_000)}}
+            })],
+        )]);
+        assert!(output.ok, "preserve completed-command exit semantics");
+        assert!(!output.flow.wait.timed_out);
+        assert!(!output.flow.wait.matched);
+        for loss in [&output.console.evidence_loss, &output.network.evidence_loss] {
+            assert_eq!(
+                loss.dropped_events, 1,
+                "only the collector rejects this payload"
+            );
+            assert!(!loss.drain_limit_reached);
+            assert!(!loss.collection_deadline_reached);
+        }
+        assert!(!output.console.observed_clean);
+        assert!(!output.network.observed_clean);
+    }
+
+    #[test]
+    fn quiet_flow_rejects_correlation_loss_from_finalisation_without_queue_overflow() {
+        let requests = |start, end| {
+            (start..end).map(|id| json!({
+            "method":"Network.requestWillBeSent", "params":{"requestId":format!("request-{id}"), "request":{"method":"GET", "url":"http://example.test"}}
+        })).collect::<Vec<_>>()
+        };
+        // Each response buffers fewer than 1024 small events; only the network
+        // collector's retained correlation map fills. The final batch arrives
+        // during finalisation, after the provisional quiet match.
+        let output = flow_with_collector_events(vec![
+            ("Page.navigate", requests(0, 512)),
+            ("Page.getNavigationHistory", requests(512, 1025)),
+        ]);
+        assert!(output.ok);
+        assert!(!output.flow.wait.timed_out);
+        assert!(!output.flow.wait.matched);
+        assert!(
+            output.console.evidence_loss.is_complete(),
+            "no transport or console loss"
+        );
+        assert_eq!(output.network.evidence_loss.dropped_events, 1);
+        assert!(!output.network.evidence_loss.drain_limit_reached);
+        assert!(!output.network.evidence_loss.collection_deadline_reached);
+        assert!(!output.network.observed_clean);
     }
 
     #[test]

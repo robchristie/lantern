@@ -118,7 +118,8 @@ metadata: `dropped_events`, `dropped_event_bytes`, `drain_limit_reached` and
 `collection_deadline_reached`. Omit the field when all counters/indicators are
 zero. Console/network summaries must set `truncated=true` and
 `observed_clean=false` when it is present. Quiet matching must not succeed from
-incomplete transport evidence. See `docs/workflows.md` for the resource limits
+incomplete transport or flow collector evidence, including evidence lost during
+finalisation. See `docs/workflows.md` for the resource limits
 and partial-frame handling. These limits also apply with `--no-redact`.
 
 ## Interaction Output

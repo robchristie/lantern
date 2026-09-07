@@ -1916,7 +1916,7 @@ collection adds `evidence_loss` to console/network/interaction summaries or the
 wait output, with dropped event/byte counters and drain/collection deadline
 indicators. Console and network clear `observed_clean` and set `truncated` when
 collection is incomplete. Quiet matching is false when transport evidence is
-incomplete. Zero-loss output omits the additive field. The limits and timing
+incomplete; flow also checks final console and network collector completeness. Zero-loss output omits the additive field. The limits and timing
 qualifications are specified in [Transport budgets and incomplete evidence](../workflows.md#transport-budgets-and-incomplete-evidence).
 
 ## Error Output

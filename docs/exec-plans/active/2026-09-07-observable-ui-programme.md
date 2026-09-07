@@ -68,7 +68,7 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | Package | Owner revision / consumer revision | Aggregate result | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | Baseline | Lantern `901e419579fbcc3f6ac65df8f0fcd2c7d9cced94` / Polyorama baseline above | Reviewed baseline landed; existing Polyorama evidence reusable | PR #7 | Landed |
-| T: bounded transport | Candidate identified by package PR / no downstream consumers yet | Shared deadlines and bounded evidence; 193 tests and canonical checks passed | `../completed/2026-09-07-bounded-transport.md` | Independent review and landing pending |
+| T: bounded transport | Candidate identified by package PR / no downstream consumers yet | Shared deadlines and bounded evidence; 195 tests and canonical checks passed | `../completed/2026-09-07-bounded-transport.md` | Independent review and landing pending |
 
 Next: select and independently review the bounded transport candidate, then land
 it before the separate CLI foundation package. Other capability rows remain pending.
