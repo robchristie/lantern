@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout inspection fixture</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; color: #172b4d; background: #edf2f7; font: 16px Arial, sans-serif; }
+  main { max-width: 920px; margin: auto; }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  h2 { margin: 0 0 16px; font-size: 20px; }
+  p { margin: 8px 0 16px; }
+  .status { display: inline-block; padding: 6px 12px; margin-bottom: 20px; border-radius: 12px; background: #d2f4df; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  article { padding: 20px; border: 1px solid #c0cfdd; border-radius: 10px; background: white; }
+  .sample { width: 180px; white-space: nowrap; padding: 6px; margin: 10px 0; background: #fff3cf; }
+  .clip { overflow: hidden; }
+  .ellipsis { overflow: hidden; text-overflow: ellipsis; }
+  .scroll { overflow-x: auto; }
+  .wide { width: 230px; padding: 6px; background: #fbd5d5; }
+  .panel, [data-layout-container] { width: 180px; margin: 16px 0; border: 2px dashed #c53030; }
+  .duplicate-host { width: 180px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } body { padding: 16px; } }
+</style>
+<main>
+  <h1>Layout evidence</h1>
+  <p>Known examples: intentional overflow and suspected defects.</p>
+  <div class="status">Fixture ready</div>
+  <div class="grid">
+    <article>
+      <h2>Intentional overflow</h2>
+      <div id="scroll" class="sample scroll"><div style="width:420px">Scrollable content remains reachable with horizontal scrolling.</div></div>
+      <div id="ellipsis" class="sample ellipsis">Intentionally abbreviated summary uses an ellipsis.</div>
+      <p>Scroll and ellipsis are CSS intent signals, subject to visual review.</p>
+    </article>
+    <article>
+      <h2>Suspected clipping</h2>
+      <div id="status:ready.1" class="sample clip">Punctuation identifier has clipped content.</div>
+      <div class="sample clip state:warning/2">Punctuation class has clipped content.</div>
+      <p>These yellow rows cut text without an ellipsis.</p>
+    </article>
+    <article>
+      <h2>Explicit containers</h2>
+      <div class="panel"><div id="app-child" class="wide">App class container</div></div>
+      <div data-layout-container><div id="default-child" class="wide">Default data container</div></div>
+      <p>Red strips visibly escape the dashed borders.</p>
+    </article>
+    <article id="duplicates">
+      <h2>Repeated structure</h2>
+      <p>Both repeated rows need independently resolving selectors.</p>
+    </article>
+  </div>
+</main>
+<script>
+  const mode = new URL(location.href).searchParams.get('mode');
+  const host = document.querySelector('#duplicates');
+  for (let i = 0; i < 2; ++i) {
+    let node = document.createElement('div');
+    node.className = 'duplicate-host';
+    host.append(node);
+    for (let depth = 0; depth < 7; ++depth) {
+      const child = document.createElement('div');
+      node.append(child);
+      node = child;
+    }
+    node.innerHTML = `<div id="duplicate:id" class="sample clip">Repeated row ${i + 1} contains clipped text.</div>`;
+  }
+  if (mode === 'bounded') {
+    host.replaceChildren();
+    for (let i = 0; i < 70; ++i) {
+      const node = document.createElement('div');
+      node.className = 'sample clip';
+      node.textContent = `Bounded finding ${i}: intentionally long clipping text`;
+      host.append(node);
+    }
+  }
+  if (mode === 'scan-bound') {
+    document.body.replaceChildren();
+    for (let i = 0; i < 10001; ++i) {
+      const node = document.createElement('div');
+      node.hidden = true;
+      document.body.append(node);
+    }
+  }
+  if (mode === 'deep') {
+    document.body.replaceChildren();
+    for (let i = 0; i < 2; ++i) {
+      let node = document.body;
+      for (let depth = 0; depth < 70; ++depth) {
+        const child = document.createElement('div');
+        node.append(child);
+        node = child;
+      }
+      node.className = 'sample clip';
+      node.textContent = 'A deeply nested clipped row with no bounded unique path';
+    }
+  }
+</script>

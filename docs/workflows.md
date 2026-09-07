@@ -46,7 +46,37 @@
 1. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when the agent needs one coherent `open -> wait -> inspect` observation rather than separate snapshot commands.
 2. Treat `flow.console.collection_gap=false` and `flow.network.collection_gap=false` as evidence that collection started before the observed navigation, not as proof that no unobserved browser history exists outside the flow.
 3. Use `lantern console` and `lantern network` for quick ad hoc snapshots, but prefer `flow` when judging whether a code change introduced fresh page-load errors.
-4. Keep interaction commands separate from `flow` until a later ExecPlan defines multi-step interaction sessions explicitly.
+4. Use `action-flow` for one continuously observed click and an explicit
+   postcondition; `flow` remains the navigation observation command.
+
+## Task-dependent UI Inspection Loop
+
+1. Write the functional or visual expectation before choosing evidence. The task
+   and product contract own the expected result; Lantern reports observations
+   and their limits.
+2. Use `flow` for fresh navigation/runtime evidence, `page` and `dom` for
+   structure, an explicit `wait` for a state condition, and `action-flow` for one
+   click with one explicit postcondition.
+3. For layout work, run `layout --container-selector <CSS>`. The default
+   `[data-layout-container]` is a page contract, and an override should identify
+   the page's actual layout containers. Confirm `layout.heuristic=true` and that
+   `layout.container_selector` echoes the intended configuration.
+4. Use a finding's `overflow_behaviour` (`scroll`, `ellipsis`, `clipped` or
+   `visible`) to distinguish the informational `intentional-horizontal-scroll`
+   and `intentional-text-ellipsis` cases from suspected overflow, clipping or
+   container escape. All findings remain heuristic evidence; verify material
+   ones against intended component behaviour and opened pixels.
+5. For visual, responsive, layout or canvas work, capture every relevant
+   viewport and open each PNG. Responsive work normally needs desktop and narrow
+   evidence. Record actual capture dimensions and judge component presence,
+   hierarchy, spacing, alignment, clipping and state clarity against explicit
+   expectations.
+6. A successful capture establishes that pixels were persisted, not that anyone
+   reviewed them. A clean layout audit likewise does not establish visual
+   quality.
+7. Report structured evidence, image paths actually inspected, the observed
+   result and material uncertainty such as collection gaps, evidence loss,
+   truncation or uncertain dispatch.
 
 ## Authenticated Browser Loop
 
@@ -150,12 +180,18 @@ exit-status semantics for completed condition results remain unchanged.
 
 Use `action-flow --selector '#save' --expect-selector '#status' --expect-text
 'Saved' --timeout-ms 3000 --strict --json` for one continuously observed click
-and an explicit condition. `--output .smoogle/saved.png` requests a viewport
-capture after the condition attempt. Review dispatch, baseline and final
-condition, captured failures and completeness separately. A matched condition
-that was already true cannot pass. Do not replay uncertain input. Capture is
-sequenced evidence and still needs actual image inspection when visual
-correctness matters. See the [CLI contract](product-specs/cli-contract.md#lantern-action-flow).
+and an explicit condition. Pass exactly one condition form: selector presence,
+selector plus text, or exact URL. `--output .smoogle/saved.png` requests a
+viewport capture after the condition attempt; add `--overwrite` only when
+replacement is intentional. Region flags are not supported by `action-flow`.
+Review dispatch, baseline and final condition, runtime/network findings,
+capture and completeness separately. A condition already matched at baseline
+cannot pass. `ok: true` records structured command completion, while `--strict`
+requires `verdict=passed`. Never automatically replay uncertain or possibly
+partial input. Preserve pre-input, dispatch, postcondition, observation and
+capture failures as distinct evidence. Capture is sequenced evidence and still
+needs actual image inspection when visual correctness matters. See the
+[CLI contract](product-specs/cli-contract.md#lantern-action-flow).
 
 ## Interaction verification
 

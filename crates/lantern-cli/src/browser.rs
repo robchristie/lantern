@@ -161,6 +161,7 @@ fn validate_browser_invocation(invocation: &Invocation) -> Result<(), CliError> 
         || invocation.timeout_ms.is_some()
         || invocation.has_screenshot_flags()
         || invocation.has_dom_flags()
+        || invocation.container_selector.is_some()
     {
         return Err(CliError::usage(
             invocation.json,

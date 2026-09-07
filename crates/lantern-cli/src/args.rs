@@ -53,6 +53,9 @@ Navigation and wait flags:
   --duration-ms <MS> Drag duration from 0 through 30000
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
+Layout flags:
+  --container-selector <CSS> Ancestor containers for heuristic layout (default [data-layout-container])
+
 Screenshot flags:
   --output <PATH>   Local PNG path: required for screenshot, optional for action-flow
   --overwrite       Replace an existing output file
@@ -107,6 +110,7 @@ pub(crate) struct Invocation {
     pub(crate) region_y: Option<f64>,
     pub(crate) region_width: Option<f64>,
     pub(crate) region_height: Option<f64>,
+    pub(crate) container_selector: Option<String>,
     pub(crate) dom_depth: Option<usize>,
     pub(crate) dom_max_nodes: Option<usize>,
     pub(crate) delta_x: Option<f64>,
@@ -188,6 +192,7 @@ impl Invocation {
             region_y: None,
             region_width: None,
             region_height: None,
+            container_selector: None,
             dom_depth: None,
             dom_max_nodes: None,
             delta_x: None,
@@ -279,6 +284,15 @@ impl Invocation {
                         ));
                     };
                     invocation.wait_url_shape = Some(url_shape);
+                }
+                "--container-selector" => {
+                    invocation.container_selector = Some(args.next().ok_or_else(|| {
+                        CliError::usage(
+                            invocation.json,
+                            "Missing value for --container-selector.",
+                            "Pass a CSS selector for layout containers.",
+                        )
+                    })?);
                 }
                 "--selector" => {
                     let Some(selector) = args.next() else {

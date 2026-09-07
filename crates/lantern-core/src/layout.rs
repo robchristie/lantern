@@ -7,6 +7,16 @@ use crate::{
 };
 
 pub const LAYOUT_SCHEMA_VERSION: u8 = 1;
+pub const DEFAULT_CONTAINER_SELECTOR: &str = "[data-layout-container]";
+pub const MAX_CONTAINER_SELECTOR_BYTES: usize = 2048;
+
+/// Check configuration bounds before connecting; Chromium validates CSS syntax.
+pub fn validate_container_selector(selector: &str) -> Result<(), LayoutReadError> {
+    if selector.trim().is_empty() || selector.len() > MAX_CONTAINER_SELECTOR_BYTES {
+        return Err(LayoutReadError::ContainerSelectorInvalid);
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LayoutCommandOutput {
@@ -38,6 +48,9 @@ pub struct LayoutPageSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LayoutAudit {
+    /// Geometry is a heuristic observation, never a visual quality verdict.
+    pub heuristic: bool,
+    pub container_selector: String,
     pub viewport: LayoutViewport,
     pub finding_count: usize,
     pub truncated: bool,
@@ -59,6 +72,7 @@ pub struct LayoutViewport {
 pub struct LayoutFinding {
     pub kind: String,
     pub severity: String,
+    pub overflow_behaviour: String,
     pub selector: String,
     pub tag: String,
     pub id: Option<String>,
@@ -84,6 +98,7 @@ pub struct LayoutFindingMetrics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayoutReadError {
     TargetWebSocketMissing,
+    ContainerSelectorInvalid,
     Cdp(CdpError),
 }
 
@@ -97,6 +112,19 @@ pub fn read_layout_audit(
     target: &TargetInfo,
     mode: RedactionMode,
 ) -> Result<LayoutCommandOutput, LayoutReadError> {
+    read_layout_audit_with_container(target, mode, DEFAULT_CONTAINER_SELECTOR)
+}
+
+pub fn read_layout_audit_with_container(
+    target: &TargetInfo,
+    mode: RedactionMode,
+    container_selector: &str,
+) -> Result<LayoutCommandOutput, LayoutReadError> {
+    validate_container_selector(container_selector)?;
+    let expression = LAYOUT_AUDIT_SCRIPT.replace(
+        "__CONTAINER_SELECTOR__",
+        &serde_json::to_string(container_selector).expect("string serialisation"),
+    );
     let web_socket_debugger_url = target
         .web_socket_debugger_url
         .as_deref()
@@ -106,7 +134,7 @@ pub fn read_layout_audit(
     let result = socket.call(
         "Runtime.evaluate",
         Some(json!({
-            "expression": LAYOUT_AUDIT_SCRIPT,
+            "expression": expression,
             "returnByValue": true,
             "timeout": 2000
         })),
@@ -123,6 +151,9 @@ pub fn read_layout_audit(
             context: "failed to read layout audit response",
             source: "Runtime.evaluate returned no by-value result".to_owned(),
         })?;
+    if raw.get("error").and_then(Value::as_str) == Some("container_selector_invalid") {
+        return Err(LayoutReadError::ContainerSelectorInvalid);
+    }
     let raw: RawLayoutAudit =
         serde_json::from_value(raw).map_err(|source| CdpError::ResponseInvalid {
             context: "failed to parse layout audit result",
@@ -135,6 +166,7 @@ pub fn read_layout_audit(
         .map(|finding| LayoutFinding {
             kind: finding.kind,
             severity: finding.severity,
+            overflow_behaviour: finding.overflow_behaviour,
             selector: finding.selector,
             tag: finding.tag,
             id: finding.id,
@@ -147,6 +179,8 @@ pub fn read_layout_audit(
         })
         .collect::<Vec<_>>();
     let layout = LayoutAudit {
+        heuristic: true,
+        container_selector: container_selector.to_owned(),
         viewport: raw.viewport,
         finding_count: findings.len(),
         truncated: raw.truncated,
@@ -188,6 +222,8 @@ struct RawLayoutAudit {
 struct RawLayoutFinding {
     kind: String,
     severity: String,
+    #[serde(default)]
+    overflow_behaviour: String,
     selector: String,
     tag: String,
     id: Option<String>,
@@ -199,7 +235,11 @@ struct RawLayoutFinding {
 
 const LAYOUT_AUDIT_SCRIPT: &str = r##"
 (() => {
+  const containerSelector = __CONTAINER_SELECTOR__;
+  try { document.querySelector(containerSelector); }
+  catch (_) { return { error: "container_selector_invalid" }; }
   const maxFindings = 40;
+  const maxElements = 10000;
   const tolerance = 2;
   const viewport = {
     innerWidth: window.innerWidth,
@@ -213,27 +253,39 @@ const LAYOUT_AUDIT_SCRIPT: &str = r##"
   let truncated = false;
   const seen = new Set();
   function cssPath(el) {
-    if (!el || !el.tagName) return "unknown";
+    // Prove identity in this observation; selectors have no cross-render lifetime.
+    function unique(selector) {
+      if (selector.length > 2048) return false;
+      try {
+        const matches = document.querySelectorAll(selector);
+        return matches.length === 1 && matches[0] === el;
+      } catch (_) { return false; }
+    }
     const parts = [];
     let node = el;
-    while (node && node.nodeType === 1 && parts.length < 5) {
-      let part = node.tagName.toLowerCase();
+    while (node && node.nodeType === 1 && parts.length < 64) {
+      const tag = CSS.escape(node.localName);
       if (node.id) {
-        part += "#" + node.id;
-        parts.unshift(part);
-        break;
+        const candidate = [tag + "#" + CSS.escape(node.id), ...parts].join(" > ");
+        if (unique(candidate)) return candidate;
       }
-      const classes = Array.from(node.classList || []).slice(0, 3);
-      if (classes.length) part += "." + classes.join(".");
       const parent = node.parentElement;
+      let structural = tag;
       if (parent) {
-        const siblings = Array.from(parent.children).filter((child) => child.tagName === node.tagName);
-        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+        const siblings = Array.from(parent.children).filter(child => child.localName === node.localName);
+        structural += `:nth-of-type(${siblings.indexOf(node) + 1})`;
       }
-      parts.unshift(part);
+      const classes = Array.from(node.classList || []).slice(0, 3).map(name => CSS.escape(name));
+      const decorated = tag + (classes.length ? "." + classes.join(".") : "") + structural.slice(tag.length);
+      const candidate = [decorated, ...parts].join(" > ");
+      if (unique(candidate)) return candidate;
+      parts.unshift(structural);
+      const path = parts.join(" > ");
+      if (unique(path)) return path;
+      if (path.length > 2048) break;
       node = parent;
     }
-    return parts.join(" > ");
+    return null;
   }
   function textSample(el) {
     const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
@@ -245,13 +297,37 @@ const LAYOUT_AUDIT_SCRIPT: &str = r##"
   function containerFor(el) {
     let node = el.parentElement;
     while (node && node.nodeType === 1) {
-      if (node.matches(".panel, .next-action, .tracker-space, [data-layout-container]")) return node;
+      if (node.matches(containerSelector)) return node;
       node = node.parentElement;
     }
     return null;
   }
+  function overflowBehaviour(el) {
+    const style = window.getComputedStyle(el);
+    if (["auto", "scroll"].includes(style.overflowX)) return "scroll";
+    if (["hidden", "clip"].includes(style.overflowX)) {
+      return style.textOverflow === "ellipsis" ? "ellipsis" : "clipped";
+    }
+    return "visible";
+  }
+  function clippedByAncestor(el, boundary) {
+    let node = el.parentElement;
+    while (node) {
+      // Overflow under a scrolling/clipping ancestor is not exposed outside it.
+      if (overflowBehaviour(node) !== "visible") return true;
+      if (node === boundary) break;
+      node = node.parentElement;
+    }
+    return false;
+  }
   function push(kind, severity, el, rect, container) {
-    const key = `${kind}:${cssPath(el)}`;
+    const selector = cssPath(el);
+    const containerPath = container && container !== el ? cssPath(container) : null;
+    if (!selector || (container && container !== el && !containerPath)) {
+      truncated = true;
+      return;
+    }
+    const key = `${kind}:${selector}`;
     if (seen.has(key)) return;
     seen.add(key);
     if (findings.length >= maxFindings) {
@@ -262,7 +338,8 @@ const LAYOUT_AUDIT_SCRIPT: &str = r##"
     findings.push({
       kind,
       severity,
-      selector: cssPath(el),
+      selector,
+      overflowBehaviour: overflowBehaviour(el),
       tag: el.tagName.toLowerCase(),
       id: el.id || null,
       classSample: el.className && typeof el.className === "string" ? el.className.slice(0, 120) : null,
@@ -277,30 +354,38 @@ const LAYOUT_AUDIT_SCRIPT: &str = r##"
         containerRight: containerRect ? containerRect.right : null,
         viewportWidth: viewport.clientWidth,
       },
-      containerSelector: containerRect ? cssPath(container) : null,
+      containerSelector: containerPath,
     });
   }
   if (viewport.scrollWidth > viewport.clientWidth + tolerance) {
     const bodyRect = document.body.getBoundingClientRect();
     push("document-horizontal-overflow", "p1", document.body, bodyRect, null);
   }
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  let scanned = 0;
+  for (const el of document.querySelectorAll("body *")) {
+    if (++scanned > maxElements) { truncated = true; break; }
     const style = window.getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     if (!visible(el, rect, style)) continue;
     const hasText = !!textSample(el);
-    const overflowContainer = ["auto", "scroll"].includes(style.overflowX);
-    if (hasText && !overflowContainer && el.scrollWidth > el.clientWidth + tolerance) {
-      push("element-horizontal-overflow", "p2", el, rect, containerFor(el));
+    const behaviour = overflowBehaviour(el);
+    if (hasText && el.scrollWidth > el.clientWidth + tolerance) {
+      if (behaviour === "scroll") {
+        push("intentional-horizontal-scroll", "info", el, rect, containerFor(el));
+      } else if (behaviour === "ellipsis") {
+        push("intentional-text-ellipsis", "info", el, rect, containerFor(el));
+      } else {
+        push("element-horizontal-overflow", "p2", el, rect, containerFor(el));
+      }
     }
     const container = containerFor(el);
-    if (container && container !== el) {
+    if (container && container !== el && !clippedByAncestor(el, container)) {
       const containerRect = container.getBoundingClientRect();
       if (rect.right > containerRect.right + tolerance || rect.left < containerRect.left - tolerance) {
         push("element-escapes-container", "p2", el, rect, container);
       }
     }
-    if (rect.right > viewport.clientWidth + tolerance || rect.left < -tolerance) {
+    if (!clippedByAncestor(el, null) && (rect.right > viewport.clientWidth + tolerance || rect.left < -tolerance)) {
       push("element-escapes-viewport", "p2", el, rect, null);
     }
   }
@@ -353,6 +438,7 @@ mod tests {
             .map(|finding| LayoutFinding {
                 kind: finding.kind,
                 severity: finding.severity,
+                overflow_behaviour: finding.overflow_behaviour,
                 selector: finding.selector,
                 tag: finding.tag,
                 id: finding.id,

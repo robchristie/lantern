@@ -4,7 +4,12 @@ Rust-first local CLI shim over Chromium CDP for agentic frontend development.
 
 ## Purpose
 
-Agents need concise browser feedback during frontend work, but broad DevTools integrations add too much tool context, compaction pressure, and setup brittleness.
+Lantern gives local development agents bounded, structured evidence from an
+explicitly owned Chromium page. It combines page and DOM summaries, heuristic
+layout findings, console and network observations, action/postcondition results,
+and visible-viewport captures while retaining collection gaps, truncation and
+dispatch uncertainty in its output. The agent uses that evidence to judge the
+interface against the task; a capture alone is not a visual review.
 
 ## Initial Shape
 
@@ -52,7 +57,8 @@ for unknown or modified source identities.
    For a trusted hardware-WebGPU application, use `--graphics webgpu` with an
    explicit `--gpu-device`; Lantern never selects a host device implicitly.
 5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
-6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` when one coherent navigation/wait/console/network observation is more reliable than separate snapshot commands.
-7. Add `--strict` to interaction commands to fail on blocked or incomplete input, then verify an explicit application postcondition. Use `lantern hover`, `lantern wheel`, and `lantern drag` for explicit canvas or viewport pointer checks after reviewing the target and selector.
-8. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-9. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
+6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` for one coherent navigation, wait, console and network observation.
+7. Use `lantern action-flow --selector <CSS> --expect-selector <CSS> --timeout-ms <MS> --strict` for one observed click and explicit postcondition. For other interactions, add `--strict`, then verify an application postcondition; never automatically replay uncertain input.
+8. Use `lantern layout --container-selector <CSS>` for heuristic layout evidence. For visual, responsive or canvas work, capture each relevant viewport and open the PNG before judging appearance.
+9. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+10. Build new browser-inspection capability in bounded steps rather than broad scaffolding.

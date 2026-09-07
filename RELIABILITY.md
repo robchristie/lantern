@@ -35,6 +35,15 @@ already matched baseline remains incomplete. Capture follows the assertion and
 does not claim visual correctness or an atomic frame. Independent browser input
 audits and fake-CDP deadline/loss regressions cover the no-replay contract.
 
+## Layout and visual evidence
+
+Layout output explicitly reports heuristic geometry and configured containers.
+Generated selectors uniquely resolve only in the observed DOM; bounded path or
+scan omissions set `truncated`. CSS scrolling and ellipses are intent signals,
+not usability verdicts. A successful capture or zero layout findings cannot
+establish appearance: visual tasks require opening images at relevant viewports
+and judging the task's explicit expectations.
+
 ## Operational Expectations
 
 - Keep runtime state under `.smoogle/` and out of Git.

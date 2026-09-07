@@ -1,210 +1,113 @@
 ---
 name: lantern-ui-inspection
-description: Inspect and dogfood local web UIs with Lantern, a narrow CLI over Chromium CDP. Use when Codex is doing frontend, dashboard, WebGL/WebGPU canvas, web observability, or browser-facing UI work and should verify the result through a local browser without MCP overhead; especially for Smoogle web dashboard work, Leptos/Rust web UI changes, local app servers, flow/layout/DOM/screenshot checks, managed disposable browser sessions, or when repeated browser-inspection friction should become Lantern product work.
+description: Inspect local web interfaces with Lantern and judge them from bounded structural, runtime, layout and opened-image evidence. Use for functional UI checks, responsive visual review, canvas inspection, or Lantern dogfooding against a local Chromium CDP endpoint.
 ---
 
 # Lantern UI Inspection
 
-## Purpose
+## Purpose and ownership
 
-Use Lantern as a small, text-first browser inspection loop for agentic frontend development. Prefer it over broad browser MCP surfaces when the task needs stable command output, one-shot flow observation, compact DOM summaries, console/network checks, layout audits, screenshots, or repeated dashboard dogfooding.
+Use Lantern to collect bounded evidence from a local Chromium page while
+developing or reviewing a web interface. The task or product contract owns the
+expected behaviour and appearance. Lantern owns observation and reports its
+limits; the inspecting agent owns the final judgement.
 
-Do not use this skill for non-UI backend tasks. Do not expand Lantern's command surface during a UI task unless the same inspection gap repeats and cannot be solved with the current commands.
+A screenshot command only captures pixels. It is not a visual review until the
+resulting image has been opened and judged against explicit expectations.
+Persist screenshots only through an explicit output path. Pixels are unredacted
+even when command metadata uses default redaction.
 
-## Preconditions
+## Establish the inspection surface
 
-- Confirm the app server is running or start it yourself when safe.
-- Use plain `lantern` first; in Smoogle child runs a run-local shim is injected when Lantern is discoverable. If unavailable, try the command path in `$LANTERN_BIN`, `/usr/local/bin/lantern`, `/nvme/development/lantern/target/release/lantern`, then `/nvme/development/lantern/target/debug/lantern`.
-- Record the resolved binary with `command -v lantern`; local builds may retain
-  the same package version while exposing different capabilities.
-- Before inspecting a GPU canvas, confirm `lantern browser start --help`
-  exposes both `--graphics` and `--gpu-device`. Use a repository build if the
-  installed binary is stale.
-- Confirm a Chromium or Chrome instance exposes a local CDP HTTP endpoint, or
-  explicitly start a disposable managed instance with `lantern browser start`.
-  For repeated authenticated checks, use an existing dedicated persistent
-  profile rather than creating another disposable login.
-- If the browser runs in a container, open the app through a container-reachable URL such as `http://host.docker.internal:<port>/`, not host loopback.
-- Keep Smoogle dashboard non-loopback binding explicit and local/trusted.
-
-## Browser Setup
-
-Use an operator-owned endpoint when one already exists:
+Confirm the application is running and identify the browser owner before
+navigating or interacting. Prefer an existing operator-owned local CDP endpoint.
+Read [browser-sessions.md](references/browser-sessions.md) for managed,
+container-reachable or authenticated sessions; [gpu-canvas.md](references/gpu-canvas.md)
+for WebGL/WebGPU; and [smoogle-dashboard.md](references/smoogle-dashboard.md)
+only for Smoogle.
 
 ```bash
-ENDPOINT=http://127.0.0.1:9222
+command -v lantern
+lantern capabilities --json
 lantern doctor --endpoint "$ENDPOINT" --json
 ```
 
-For software WebGL, start with `--graphics swiftshader`. Do not treat that mode
-as WebGPU coverage.
+Use command help to confirm task-specific flags when revisions may differ. A
+package version alone does not identify a local build.
 
-For hardware WebGPU, use an explicit operator-selected device in a disposable
-trusted-site session:
+## Choose evidence for the task
 
-```bash
-ID="$(lantern browser start \
-  --graphics webgpu \
-  --gpu-device nvidia.com/gpu=0 \
-  --json | jq -r .instance.id)"
-```
+- For a fresh navigation, use `flow --open` so console and network collection
+  starts before the observed navigation.
+- For page state or semantics, use `page`, `dom` and an explicit `wait`
+  condition. Increase DOM depth and node limits only when the default summary
+  omits a relevant component.
+- For one click with an explicit postcondition, use `action-flow`. It observes
+  the baseline, dispatch, condition, console, network and optional capture on
+  one attachment.
+- For other bounded interactions, use `click`, `type`, `key`, `hover`, `wheel`
+  or `drag` with `--strict`, then collect evidence for the application
+  postcondition.
+- For layout risk, use `layout --container-selector <CSS>`. The selector
+  defaults to `[data-layout-container]`; override it only with the page's real
+  layout-container contract.
+- For appearance, responsive layout or a canvas, capture the visible viewport
+  with `screenshot`, then open the PNG with the environment's image viewer.
 
-The WebGPU mode opts into Chrome's unsafe WebGPU boundary. Require a visibly
-nonblank application canvas and ready/rendered state in addition to a clean
-console. Treat it as evidence for the selected Linux/Vulkan device, not as a
-replacement for production-browser, Metal, D3D12, or other-GPU checks.
+Use JSON output when evidence will support a finding or assertion. Human output
+is suitable for a quick exploratory read.
 
-For an isolated disposable browser, use Lantern's managed lifecycle. Build the browser image first if the repo has not already done so, then start an instance, keep the instance id, install a shell cleanup trap, and pass its endpoint explicitly:
+Read [functional-actions.md](references/functional-actions.md) when the task
+needs command recipes or the detailed `action-flow` flag and result contract.
+`ok: true` means structured completion, not application success. Use `--strict`
+for acknowledged standalone input and a passed action-flow verdict.
 
-```bash
-ID="$(lantern browser start --json | jq -r .instance.id)"
-cleanup_lantern_browser() {
-  if [ -n "${ID:-}" ]; then
-    lantern browser stop "$ID" --json >/dev/null 2>&1 || true
-    lantern browser prune --json >/dev/null 2>&1 || true
-  fi
-}
-trap cleanup_lantern_browser EXIT
-lantern browser list --json
-ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
-lantern doctor --endpoint "$ENDPOINT" --json
-```
+Never automatically replay input whose dispatch is uncertain or may have
+partly executed. Inspect current state first. Preserve the distinction between
+pre-input setup failure, not-dispatched input, uncertain dispatch, failed or
+timed-out postcondition, observed runtime/network failure, incomplete evidence
+and capture failure when reporting the result.
 
-Before finishing any turn that started a managed browser, explicitly stop and prune it even if the trap should also run:
+## Inspect visual, layout and canvas results
 
-```bash
-lantern browser stop "$ID" --json
-lantern browser prune --json
-```
+Before capturing pixels, state the component and state that should be visible.
+For each relevant viewport, define expectations for component presence, state
+clarity, information hierarchy, spacing, alignment, clipping, overlap, unwanted
+overflow, and intentional scrolling, wrapping or ellipsis.
 
-For a repeated authenticated journey, create one dedicated named profile once,
-then reuse it. The first start may require the operator to log in through the
-returned noVNC URL; subsequent stop/start cycles retain Chromium's session
-state until the service expires or revokes it:
+Use both desktop and narrow viewports for responsive work unless the task
+defines a different set. Arrange each through the available browser or
+application harness, record actual PNG dimensions (screenshot metadata reports
+best-effort viewport dimensions), and collect both
+`layout --container-selector <CSS> --json` and `screenshot --output <PNG>
+--json` evidence.
 
-```bash
-PROFILE=geometis-review
-lantern browser profile status "$PROFILE" --json >/dev/null 2>&1 || \
-  lantern browser profile create "$PROFILE" --json
+Open every relevant PNG and inspect its pixels. Do not infer hierarchy,
+spacing, alignment, state clarity or visual correctness from DOM or layout JSON.
+Treat `layout.heuristic=true` findings as leads and confirm
+`layout.container_selector` matches the intended contract. Use each finding's
+`overflow_behaviour` (`scroll`, `ellipsis`, `clipped` or `visible`) to
+distinguish the informational `intentional-horizontal-scroll` and
+`intentional-text-ellipsis` cases from suspected defects, then verify material
+findings in the opened image. A clean layout audit does not establish visual
+quality.
 
-ID="$(lantern browser start \
-  --profile "$PROFILE" \
-  --host-gateway lv426.yutani.tech \
-  --json | jq -r .instance.id)"
-ENDPOINT="$(lantern browser endpoint "$ID" --json | jq -r .instance.endpoint)"
-lantern doctor --endpoint "$ENDPOINT" --json
-```
+For canvas work, also require application readiness and visibly useful,
+nonblank pixels. Check the expected canvas content, overlays, controls and
+loading/empty/error state as applicable, plus console and network evidence.
+Read [gpu-canvas.md](references/gpu-canvas.md) before selecting a graphics mode
+or interpreting GPU coverage.
 
-For another inspected application whose local public hostname is not reachable
-through the rootless container's ordinary DNS route, replace that exact
-validated name on every start:
+## Report the result
 
-```bash
-ID="$(lantern browser start \
-  --profile "$PROFILE" \
-  --host-gateway app.example.test \
-  --json | jq -r .instance.id)"
-```
+Tie each conclusion to the task expectation and the evidence that supports it.
+Report the executable build identity, target and actual viewport dimensions
+when they affect reproducibility; name structured artefacts and opened image
+paths; state observed behaviour and visual findings; and retain material
+uncertainty such as collection gaps, evidence loss, truncation or an ambiguous
+target.
 
-Do not use the option as a general DNS override. It maps one hostname to the
-runtime's fixed host gateway and accepts neither an IP nor a URL.
-
-Stop the browser when inspection is complete; do not delete or recursively
-clean the profile:
-
-```bash
-lantern browser stop "$ID" --json
-lantern browser prune --json
-lantern browser profile status "$PROFILE" --json
-```
-
-Only an operator-approved retirement uses
-`lantern browser profile delete "$PROFILE" --yes`. If server-side session
-revocation matters, log out in the visible browser before stopping and deleting
-the profile.
-
-`lantern browser prune` removes stopped, missing, or errored managed instances recorded under this repo's `.smoogle/` state. If exited containers still accumulate, run `lantern browser list --json` in the same repo to confirm Lantern can see them, then `lantern browser prune --json`; containers from stale or deleted registry state may need operator cleanup through the container runtime.
-
-## Smoogle Dashboard Loop
-
-For Smoogle UI work, start the dashboard like this when a containerized browser needs to reach it:
-
-```bash
-/nvme/development/smoogle/target/debug/smoogle-cli web serve --host 0.0.0.0 --port 7879 --allow-non-loopback
-```
-
-Then inspect with Lantern. Prefer `flow` for the first navigation because it observes navigation, wait state, console, and network in one attachment:
-
-```bash
-ENDPOINT=http://127.0.0.1:9222
-URL=http://host.docker.internal:7879/
-
-lantern doctor --endpoint "$ENDPOINT" --json
-lantern flow --endpoint "$ENDPOINT" --open "$URL" --timeout-ms 5000 --quiet-ms 500 --json
-lantern page --endpoint "$ENDPOINT" --json
-lantern layout --endpoint "$ENDPOINT" --json
-lantern dom --endpoint "$ENDPOINT" --json
-lantern dom --endpoint "$ENDPOINT" --depth 8 --max-nodes 220 --json
-lantern screenshot --endpoint "$ENDPOINT" --output /tmp/smoogle-dashboard.png --overwrite --json
-```
-
-Use a different port/path for other local web apps, but keep the same inspection pattern.
-
-Use `console` and `network` as ad hoc follow-ups after later UI changes or interactions:
-
-```bash
-lantern console --endpoint "$ENDPOINT" --json
-lantern network --endpoint "$ENDPOINT" --json
-```
-
-## Inspection Heuristics
-
-- Run `doctor` first if CDP connectivity is uncertain.
-- Prefer `flow --open` for a fresh navigation when judging page-load errors. Treat `flow.console.collection_gap=false` and `flow.network.collection_gap=false` as evidence that collection started before the flow navigation, not as proof that no earlier browser history exists.
-- Use separate `open`, `wait`, `console`, and `network` commands for ad hoc snapshots or after interactions; prefer `flow` when one coherent `open -> wait -> inspect` observation is needed.
-- Run `page` before judging DOM output.
-- Run `layout` when checking viewport sizing, horizontal overflow, clipped text, or other layout regressions.
-- Start with default `dom` for compact structure; increase to `--depth 8 --max-nodes 220` when an app shell hides meaningful content below the default cap.
-- Check `console` and `network` after navigation and after UI changes; do not rely only on screenshots.
-- Use screenshots as supporting evidence for layout and visual regressions, not as the primary inspection artifact.
-- Prefer JSON output for precise assertions and stable summaries; use human output only for quick local reading.
-- If Lantern reports a browser/tool failure but the page clearly changed, inspect the Lantern output and CDP state before treating the app as broken.
-- For WebGPU, verify browser-start output identifies `graphics=webgpu`, the
-  expected `gpu_device`, and `unsafe_webgpu=true`; CDP readiness alone only
-  proves that Chrome started.
-
-## Interactions
-
-Use interaction commands only for explicit, bounded UI checks. Keep them separate from `flow` until a later Lantern workflow defines multi-step interaction sessions:
-
-```bash
-lantern click --endpoint "$ENDPOINT" --selector '[data-testid=save]' --timeout-ms 1000 --json
-lantern type --endpoint "$ENDPOINT" --selector 'input[name=q]' --text 'hello' --timeout-ms 1000 --json
-lantern key --endpoint "$ENDPOINT" --selector body --key ArrowUp --timeout-ms 1000 --json
-lantern hover --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --timeout-ms 1000 --json
-lantern wheel --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --delta-y -400 --timeout-ms 1000 --json
-lantern drag --endpoint "$ENDPOINT" --selector '[data-testid=viewer-canvas]' --dx 160 --dy -80 --duration-ms 250 --timeout-ms 1000 --json
-```
-
-After an interaction, re-check the focused surface with `page`, `dom`, `layout`, `console`, `network`, or a screenshot as appropriate.
-
-## Feedback Rule
-
-When UI inspection is awkward because Lantern lacks a narrow affordance, record or implement that as Lantern work. Keep the browser shim small: add commands or output fields only when they remove repeated friction in real frontend loops.
-
-## Safety
-
-- Do not expose local dashboards broadly; use non-loopback binding only for trusted local/container setups.
-- Use hardware WebGPU only with disposable profiles and trusted sites. It
-  exposes the selected host GPU to the container and bypasses some Chrome
-  adapter safety policy.
-- Do not use `eval`-style browser operations unless the task explicitly requires it and the code is small, local, and inspectable.
-- Do not add web mutation routes just because Lantern can dispatch click, type, key, or pointer interactions. Keep mutation design separate from read-only observability until the repo has explicit confirmation, audit, and recovery policy.
-- Treat named profile data as sensitive local credential material. Never inspect
-  or export its cookie/storage databases, include it in Git or support bundles,
-  or reuse a daily personal browser profile.
-
-
-Named persistent profiles can use `disabled`, `swiftshader`, or `gpu` graphics.
-Hardware `webgpu` is restricted to disposable trusted-site sessions: combining
-`--graphics webgpu` with `--profile` is rejected before state or runtime access.
+Do not turn a bounded clean observation into a claim that no earlier or later
+failure occurred. When Lantern itself lacks a small observation needed across
+real UI tasks, record that repeated friction as potential Lantern product work
+rather than broadening the current application task.

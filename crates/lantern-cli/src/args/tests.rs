@@ -136,3 +136,27 @@ fn parses_network_command() {
     assert_eq!(invocation.command, Some(Command::Network));
     assert_eq!(invocation.target_id.as_deref(), Some("PAGE_123"));
 }
+
+#[test]
+fn validates_layout_container_configuration_without_an_endpoint() {
+    use crate::validation::validate_endpoint_invocation;
+    for selector in ["", "  ", &"x".repeat(2049)] {
+        let invocation =
+            Invocation::parse(["layout", "--container-selector", selector].map(str::to_owned))
+                .unwrap();
+        assert!(validate_endpoint_invocation(&invocation, Command::Layout).is_err());
+    }
+    let invocation = Invocation::parse(
+        [
+            "layout",
+            "--container-selector",
+            ".panel, [data-layout-container]",
+        ]
+        .map(str::to_owned),
+    )
+    .unwrap();
+    assert!(validate_endpoint_invocation(&invocation, Command::Layout).is_ok());
+    assert!(validate_endpoint_invocation(&invocation, Command::Page).is_err());
+    assert!(validate_endpoint_invocation(&invocation, Command::Capabilities).is_err());
+    assert!(Invocation::parse(["layout", "--container-selector"].map(str::to_owned)).is_err());
+}
