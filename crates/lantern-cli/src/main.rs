@@ -80,8 +80,8 @@ fn run(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--strict is only supported by interaction commands.",
-            "Use --strict with click, type, key, hover, wheel or drag.",
+            "--strict is only supported by interaction commands and action-flow.",
+            "Use --strict with click, type, key, hover, wheel, drag or action-flow.",
         ));
     }
 

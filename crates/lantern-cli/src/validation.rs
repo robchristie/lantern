@@ -66,7 +66,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, and flow.",
+            "--target-id is only supported by page, dom, open, wait, console, network, screenshot, layout, click, type, key, hover, wheel, drag, flow, and action-flow.",
             "Run a selected-page command with --target-id <CDP_TARGET_ID>.",
         ));
     }
@@ -108,7 +108,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, and flow.",
+            "--timeout-ms is only supported by wait, click, type, key, hover, wheel, drag, flow, and action-flow.",
             "Run a bounded command with --timeout-ms <MS>.",
         ));
     }
@@ -127,7 +127,7 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "--selector is only supported by wait, click, type, key, hover, wheel, and drag.",
+            "--selector is only supported by wait, click, type, key, hover, wheel, drag, and action-flow.",
             "Run a selected-element command with --selector <CSS_SELECTOR>.",
         ));
     }
@@ -218,8 +218,8 @@ pub(crate) fn validate_endpoint_invocation(
     {
         return Err(CliError::usage(
             invocation.json,
-            "Screenshot flags are only supported by screenshot.",
-            "Run lantern screenshot --output <PATH>.",
+            "Capture output flags are only supported by screenshot and action-flow; region flags require screenshot.",
+            "Run lantern screenshot --output <PATH>, or add --output <PATH> to action-flow.",
         ));
     }
 

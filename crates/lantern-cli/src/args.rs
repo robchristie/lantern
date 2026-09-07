@@ -54,7 +54,7 @@ Navigation and wait flags:
   --quiet-ms <MS>   Quiet period for wait quiet or flow
 
 Screenshot flags:
-  --output <PATH>   Required local PNG output path
+  --output <PATH>   Local PNG path: required for screenshot, optional for action-flow
   --overwrite       Replace an existing output file
   --region-x <PX>   Screenshot crop x coordinate; --crop-x is an alias
   --region-y <PX>   Screenshot crop y coordinate; --crop-y is an alias

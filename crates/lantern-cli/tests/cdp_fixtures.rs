@@ -4147,7 +4147,10 @@ fn strict_flag_is_rejected_outside_interactions_before_endpoint_access() {
         let output = lantern([command, "--strict", "--json"], None);
         assert_eq!(output.status.code(), Some(2));
         assert!(stdout(&output).is_empty());
-        assert!(stderr(&output).contains("--strict is only supported by interaction commands."));
+        assert!(
+            stderr(&output)
+                .contains("--strict is only supported by interaction commands and action-flow.")
+        );
     }
 }
 
