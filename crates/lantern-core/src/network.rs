@@ -6,7 +6,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    cdp::{CdpError, CdpEvent, CdpWebSocket, TargetInfo},
+    cdp::{
+        CdpError, CdpEvent, CdpWebSocket, DEFAULT_OPERATION_TIMEOUT, EvidenceLoss,
+        MAX_DRAIN_EVENTS, TargetInfo,
+    },
     redaction::{RedactionMode, TITLE_TEXT_LIMIT, sanitize_text, sanitize_title, sanitize_url},
 };
 
@@ -51,6 +54,8 @@ pub struct NetworkSummary {
     pub max_entries: usize,
     pub truncated: bool,
     pub observed_clean: bool,
+    #[serde(skip_serializing_if = "crate::cdp::EvidenceLoss::is_complete")]
+    pub evidence_loss: EvidenceLoss,
     pub collection_gap: bool,
     pub collection_gap_reason: &'static str,
     pub entries: Vec<NetworkEntry>,
@@ -96,20 +101,31 @@ pub fn read_network_failures(
         .as_deref()
         .ok_or(NetworkReadError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let operation_deadline = Instant::now() + DEFAULT_OPERATION_TIMEOUT;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, operation_deadline)?;
     socket.call("Network.enable", None)?;
 
     let mut collector = NetworkCollector::new(mode);
     let deadline = Instant::now() + NETWORK_DRAIN_TIMEOUT;
 
-    while Instant::now() < deadline {
+    let mut drained = 0;
+    while Instant::now() < deadline && drained < MAX_DRAIN_EVENTS {
         let remaining = deadline.saturating_duration_since(Instant::now());
         let timeout = remaining.min(NETWORK_READ_SLICE);
         let Some(event) = socket.read_event(timeout)? else {
             break;
         };
+        drained += 1;
         collector.push_event(event);
     }
+
+    if drained == MAX_DRAIN_EVENTS {
+        socket.mark_drain_limit();
+    }
+    if Instant::now() >= deadline || Instant::now() >= operation_deadline {
+        socket.mark_collection_deadline();
+    }
+    collector.record_evidence_loss(socket.evidence_loss());
 
     let page = NetworkPageSummary {
         target_id: target.id.clone(),
@@ -129,7 +145,9 @@ pub(crate) struct NetworkCollector {
     failed_count: usize,
     http_error_count: usize,
     truncated: bool,
+    evidence_loss: EvidenceLoss,
     requests: HashMap<String, RequestMetadata>,
+    request_bytes: usize,
     entries: Vec<NetworkEntry>,
 }
 
@@ -141,28 +159,82 @@ impl NetworkCollector {
             failed_count: 0,
             http_error_count: 0,
             truncated: false,
+            evidence_loss: EvidenceLoss::default(),
             requests: HashMap::new(),
+            request_bytes: 0,
             entries: Vec::new(),
         }
     }
 
+    pub(crate) fn record_evidence_loss(&mut self, loss: EvidenceLoss) {
+        self.evidence_loss.dropped_events = self
+            .evidence_loss
+            .dropped_events
+            .saturating_add(loss.dropped_events);
+        self.evidence_loss.dropped_event_bytes = self
+            .evidence_loss
+            .dropped_event_bytes
+            .saturating_add(loss.dropped_event_bytes);
+        self.evidence_loss.drain_limit_reached |= loss.drain_limit_reached;
+        self.evidence_loss.collection_deadline_reached |= loss.collection_deadline_reached;
+    }
+
     pub(crate) fn push_event(&mut self, event: CdpEvent) {
+        // Bound retained derived fields even with redaction disabled.
+        let bytes = event.params.to_string().len() + event.method.len();
+        if bytes > 256 * 1024 {
+            self.evidence_loss.dropped_events = self.evidence_loss.dropped_events.saturating_add(1);
+            self.evidence_loss.dropped_event_bytes = self
+                .evidence_loss
+                .dropped_event_bytes
+                .saturating_add(bytes as u64);
+            return;
+        }
         match event.method.as_str() {
             "Network.requestWillBeSent" => self.push_request(event.params),
             "Network.responseReceived" => self.push_response(event.params),
             "Network.loadingFailed" => self.push_failure(event.params),
+            "Network.loadingFinished" => {
+                if let Some(id) = event
+                    .params
+                    .get("requestId")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    self.remove_request(id);
+                }
+            }
             _ => {}
         }
     }
 
+    fn remove_request(&mut self, id: &str) -> Option<RequestMetadata> {
+        let metadata = self.requests.remove(id)?;
+        self.request_bytes -= metadata.bytes;
+        Some(metadata)
+    }
+
     fn push_request(&mut self, params: serde_json::Value) {
+        let bytes = params.to_string().len();
         let Ok(event) = serde_json::from_value::<NetworkRequestWillBeSent>(params) else {
             return;
         };
 
+        self.remove_request(&event.request_id);
+        if self.requests.len() >= 1024
+            || bytes > (4 * 1024 * 1024_usize).saturating_sub(self.request_bytes)
+        {
+            self.evidence_loss.dropped_events = self.evidence_loss.dropped_events.saturating_add(1);
+            self.evidence_loss.dropped_event_bytes = self
+                .evidence_loss
+                .dropped_event_bytes
+                .saturating_add(bytes as u64);
+            return;
+        }
+        self.request_bytes += bytes;
         self.requests.insert(
             event.request_id,
             RequestMetadata {
+                bytes,
                 method: Some(sanitize_short_label(&event.request.method, self.mode)),
                 url_shape: sanitize_url(&event.request.url, self.mode),
             },
@@ -209,11 +281,7 @@ impl NetworkCollector {
             return;
         };
 
-        let metadata = self
-            .requests
-            .get(&event.request_id)
-            .cloned()
-            .unwrap_or_default();
+        let metadata = self.remove_request(&event.request_id).unwrap_or_default();
         let entry = NetworkEntry {
             sequence: 0,
             kind: NetworkEntryKind::FailedRequest,
@@ -253,12 +321,14 @@ impl NetworkCollector {
         collection_gap: bool,
         collection_gap_reason: &'static str,
     ) -> NetworkSummary {
-        let observed_clean = self.entries.is_empty();
+        let observed_clean =
+            self.entries.is_empty() && !self.truncated && !self.evidence_loss.incomplete();
         NetworkSummary {
             failed_count: self.failed_count,
             http_error_count: self.http_error_count,
             max_entries: NETWORK_MAX_ENTRIES,
-            truncated: self.truncated,
+            truncated: self.truncated || self.evidence_loss.incomplete(),
+            evidence_loss: self.evidence_loss,
             observed_clean,
             collection_gap,
             collection_gap_reason,
@@ -269,6 +339,7 @@ impl NetworkCollector {
 
 #[derive(Debug, Clone, Default)]
 struct RequestMetadata {
+    bytes: usize,
     method: Option<String>,
     url_shape: Option<String>,
 }
@@ -320,6 +391,59 @@ struct NetworkLoadingFailed {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn lost_transport_or_oversized_evidence_cannot_be_observed_clean() {
+        let mut collector = NetworkCollector::new(RedactionMode::Redacted);
+        collector.record_evidence_loss(EvidenceLoss {
+            dropped_events: 1,
+            dropped_event_bytes: 100,
+            ..Default::default()
+        });
+        let summary = collector.finish();
+        assert!(!summary.observed_clean);
+        assert!(summary.truncated);
+        assert_eq!(summary.evidence_loss.dropped_events, 1);
+        let mut collector = NetworkCollector::new(RedactionMode::Unredacted);
+        collector.push_event(CdpEvent {
+            method: "Runtime.exceptionThrown".into(),
+            params: serde_json::json!({"large":"x".repeat(256 * 1024)}),
+        });
+        let summary = collector.finish();
+        assert!(!summary.observed_clean);
+        assert!(summary.evidence_loss.dropped_event_bytes > 256 * 1024);
+    }
+
+    #[test]
+    fn request_correlation_has_count_and_byte_limits_and_reclaims_completed_requests() {
+        let request = |id: usize, payload: String| CdpEvent {
+            method: "Network.requestWillBeSent".into(),
+            params: serde_json::json!({"requestId":id.to_string(),"request":{"method":"GET","url":payload}}),
+        };
+        let mut collector = NetworkCollector::new(RedactionMode::Redacted);
+        for id in 0..1100 {
+            collector.push_event(request(id, "http://example.test".into()));
+        }
+        assert_eq!(collector.requests.len(), 1024);
+        assert_eq!(collector.evidence_loss.dropped_events, 76);
+        collector.push_event(CdpEvent {
+            method: "Network.loadingFinished".into(),
+            params: serde_json::json!({"requestId":"0"}),
+        });
+        collector.push_event(request(1101, "http://example.test".into()));
+        assert_eq!(collector.requests.len(), 1024);
+        assert!(collector.requests.contains_key("1101"));
+        let mut collector = NetworkCollector::new(RedactionMode::Unredacted);
+        for id in 0..100 {
+            collector.push_event(request(
+                id,
+                format!("http://example.test/{}", "x".repeat(100_000)),
+            ));
+        }
+        assert!(collector.requests.len() < 100);
+        assert!(collector.request_bytes <= 4 * 1024 * 1024);
+        assert!(!collector.finish().observed_clean);
+    }
 
     #[test]
     fn collects_failed_and_http_error_entries_with_request_metadata() {

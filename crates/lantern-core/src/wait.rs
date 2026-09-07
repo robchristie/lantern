@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    cdp::{CdpError, CdpEvent, CdpWebSocket, TargetInfo},
+    cdp::{CdpError, CdpEvent, CdpWebSocket, OperationDeadline, TargetInfo},
     redaction::{RedactionMode, sanitize_dom_text, sanitize_title, sanitize_url},
 };
 
@@ -23,6 +23,8 @@ pub struct WaitCommandOutput {
     pub ok: bool,
     pub page: WaitPageSummary,
     pub wait: WaitSummary,
+    #[serde(skip_serializing_if = "crate::cdp::EvidenceLoss::is_complete")]
+    pub evidence_loss: crate::cdp::EvidenceLoss,
 }
 
 impl WaitCommandOutput {
@@ -33,6 +35,7 @@ impl WaitCommandOutput {
             ok: true,
             page,
             wait,
+            evidence_loss: Default::default(),
         }
     }
 }
@@ -152,7 +155,7 @@ impl From<CdpError> for WaitError {
 pub fn wait_for_condition(
     target: &TargetInfo,
     condition: WaitCondition,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<WaitCommandOutput, WaitError> {
     let web_socket_debugger_url = target
@@ -160,8 +163,10 @@ pub fn wait_for_condition(
         .as_deref()
         .ok_or(WaitError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let wait = match condition {
         WaitCondition::Quiet { quiet_ms } => {
             wait_for_quiet(&mut socket, started, timeout, quiet_ms)?
@@ -230,7 +235,12 @@ pub fn wait_for_condition(
             .and_then(|url| sanitize_wait_url(url, mode)),
     };
 
-    Ok(WaitCommandOutput::success(page, wait))
+    let mut output = WaitCommandOutput::success(page, wait);
+    output.evidence_loss = socket.evidence_loss();
+    if output.evidence_loss.incomplete() && output.wait.condition == WaitConditionName::Quiet {
+        output.wait.matched = false;
+    }
+    Ok(output)
 }
 
 fn wait_by_polling(

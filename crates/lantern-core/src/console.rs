@@ -3,7 +3,10 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    cdp::{CdpError, CdpEvent, CdpWebSocket, TargetInfo},
+    cdp::{
+        CdpError, CdpEvent, CdpWebSocket, DEFAULT_OPERATION_TIMEOUT, EvidenceLoss,
+        MAX_DRAIN_EVENTS, TargetInfo,
+    },
     redaction::{
         CONSOLE_MESSAGE_LIMIT, RedactionMode, sanitize_console_message, sanitize_title,
         sanitize_url,
@@ -52,6 +55,8 @@ pub struct ConsoleSummary {
     pub message_text_limit: usize,
     pub truncated: bool,
     pub observed_clean: bool,
+    #[serde(skip_serializing_if = "crate::cdp::EvidenceLoss::is_complete")]
+    pub evidence_loss: EvidenceLoss,
     pub collection_gap: bool,
     pub collection_gap_reason: &'static str,
     pub entries: Vec<ConsoleEntry>,
@@ -98,21 +103,32 @@ pub fn read_console_errors(
         .as_deref()
         .ok_or(ConsoleReadError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let operation_deadline = Instant::now() + DEFAULT_OPERATION_TIMEOUT;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, operation_deadline)?;
     socket.call("Runtime.enable", None)?;
     socket.call("Log.enable", None)?;
 
     let mut collector = ConsoleCollector::new(mode);
     let deadline = Instant::now() + CONSOLE_DRAIN_TIMEOUT;
 
-    while Instant::now() < deadline {
+    let mut drained = 0;
+    while Instant::now() < deadline && drained < MAX_DRAIN_EVENTS {
         let remaining = deadline.saturating_duration_since(Instant::now());
         let timeout = remaining.min(CONSOLE_READ_SLICE);
         let Some(event) = socket.read_event(timeout)? else {
             break;
         };
+        drained += 1;
         collector.push_event(event);
     }
+
+    if drained == MAX_DRAIN_EVENTS {
+        socket.mark_drain_limit();
+    }
+    if Instant::now() >= deadline || Instant::now() >= operation_deadline {
+        socket.mark_collection_deadline();
+    }
+    collector.record_evidence_loss(socket.evidence_loss());
 
     let page = ConsolePageSummary {
         target_id: target.id.clone(),
@@ -132,6 +148,7 @@ pub(crate) struct ConsoleCollector {
     message_count: usize,
     exception_count: usize,
     truncated: bool,
+    evidence_loss: EvidenceLoss,
     entries: Vec<ConsoleEntry>,
 }
 
@@ -143,11 +160,35 @@ impl ConsoleCollector {
             message_count: 0,
             exception_count: 0,
             truncated: false,
+            evidence_loss: EvidenceLoss::default(),
             entries: Vec::new(),
         }
     }
 
+    pub(crate) fn record_evidence_loss(&mut self, loss: EvidenceLoss) {
+        self.evidence_loss.dropped_events = self
+            .evidence_loss
+            .dropped_events
+            .saturating_add(loss.dropped_events);
+        self.evidence_loss.dropped_event_bytes = self
+            .evidence_loss
+            .dropped_event_bytes
+            .saturating_add(loss.dropped_event_bytes);
+        self.evidence_loss.drain_limit_reached |= loss.drain_limit_reached;
+        self.evidence_loss.collection_deadline_reached |= loss.collection_deadline_reached;
+    }
+
     pub(crate) fn push_event(&mut self, event: CdpEvent) {
+        // Bound retained derived fields even with redaction disabled.
+        let bytes = event.params.to_string().len() + event.method.len();
+        if bytes > 256 * 1024 {
+            self.evidence_loss.dropped_events = self.evidence_loss.dropped_events.saturating_add(1);
+            self.evidence_loss.dropped_event_bytes = self
+                .evidence_loss
+                .dropped_event_bytes
+                .saturating_add(bytes as u64);
+            return;
+        }
         let candidate = match event.method.as_str() {
             "Runtime.consoleAPICalled" => runtime_console_entry(event.params, self.mode),
             "Runtime.exceptionThrown" => runtime_exception_entry(event.params, self.mode),
@@ -185,13 +226,15 @@ impl ConsoleCollector {
         collection_gap: bool,
         collection_gap_reason: &'static str,
     ) -> ConsoleSummary {
-        let observed_clean = self.entries.is_empty();
+        let observed_clean =
+            self.entries.is_empty() && !self.truncated && !self.evidence_loss.incomplete();
         ConsoleSummary {
             message_count: self.message_count,
             exception_count: self.exception_count,
             max_entries: CONSOLE_MAX_ENTRIES,
             message_text_limit: CONSOLE_MESSAGE_LIMIT,
-            truncated: self.truncated,
+            truncated: self.truncated || self.evidence_loss.incomplete(),
+            evidence_loss: self.evidence_loss,
             observed_clean,
             collection_gap,
             collection_gap_reason,
@@ -431,6 +474,28 @@ struct CdpCallFrame {
 mod tests {
     use super::*;
     use crate::redaction::RedactionMode;
+
+    #[test]
+    fn lost_transport_or_oversized_evidence_cannot_be_observed_clean() {
+        let mut collector = ConsoleCollector::new(RedactionMode::Redacted);
+        collector.record_evidence_loss(EvidenceLoss {
+            dropped_events: 1,
+            dropped_event_bytes: 100,
+            ..Default::default()
+        });
+        let summary = collector.finish();
+        assert!(!summary.observed_clean);
+        assert!(summary.truncated);
+        assert_eq!(summary.evidence_loss.dropped_events, 1);
+        let mut collector = ConsoleCollector::new(RedactionMode::Unredacted);
+        collector.push_event(CdpEvent {
+            method: "Runtime.exceptionThrown".into(),
+            params: serde_json::json!({"large":"x".repeat(256 * 1024)}),
+        });
+        let summary = collector.finish();
+        assert!(!summary.observed_clean);
+        assert!(summary.evidence_loss.dropped_event_bytes > 256 * 1024);
+    }
 
     #[test]
     fn clean_window_still_reports_collection_gap() {

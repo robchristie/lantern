@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    cdp::{CdpError, CdpWebSocket, TargetInfo},
+    cdp::{CdpError, CdpWebSocket, OperationDeadline, TargetInfo},
     redaction::{RedactionMode, sanitize_title, sanitize_url},
 };
 
@@ -59,6 +59,8 @@ pub struct InteractionSummary {
     pub timeout_ms: u64,
     pub observed: InteractionObservedState,
     pub immediate_error: Option<&'static str>,
+    #[serde(skip_serializing_if = "crate::cdp::EvidenceLoss::is_complete")]
+    pub evidence_loss: crate::cdp::EvidenceLoss,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -205,7 +207,7 @@ impl From<CdpError> for InteractionError {
 pub fn click_element(
     target: &TargetInfo,
     selector: &str,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -213,8 +215,10 @@ pub fn click_element(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -233,6 +237,7 @@ pub fn click_element(
                         elapsed_ms: duration_millis(started.elapsed()),
                         timeout_ms: duration_millis(timeout),
                         observed: InteractionObservedState::click(node_name, Some(clickable_point)),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: None,
                     },
                 ));
@@ -250,6 +255,7 @@ pub fn click_element(
                         elapsed_ms: duration_millis(started.elapsed()),
                         timeout_ms: duration_millis(timeout),
                         observed: InteractionObservedState::click(node_name, None),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: Some("element_not_clickable"),
                     },
                 ));
@@ -266,6 +272,7 @@ pub fn click_element(
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
                     observed: InteractionObservedState::click(None, None),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -279,7 +286,7 @@ pub fn type_text(
     target: &TargetInfo,
     selector: &str,
     text: &str,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -287,8 +294,10 @@ pub fn type_text(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -310,6 +319,7 @@ pub fn type_text(
                         node_name,
                         Some(text.chars().count()),
                     ),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: None,
                 },
             ));
@@ -327,6 +337,7 @@ pub fn type_text(
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
                     observed: InteractionObservedState::type_text(None, None),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -340,7 +351,7 @@ pub fn press_key(
     target: &TargetInfo,
     selector: &str,
     key: &str,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -348,8 +359,10 @@ pub fn press_key(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -368,6 +381,7 @@ pub fn press_key(
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
                     observed: InteractionObservedState::key(node_name, key, 2),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: None,
                 },
             ));
@@ -385,6 +399,7 @@ pub fn press_key(
                     elapsed_ms: duration_millis(started.elapsed()),
                     timeout_ms: duration_millis(timeout),
                     observed: InteractionObservedState::key(None, key, 0),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -397,7 +412,7 @@ pub fn press_key(
 pub fn hover_element(
     target: &TargetInfo,
     selector: &str,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -405,8 +420,10 @@ pub fn hover_element(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -432,6 +449,7 @@ pub fn hover_element(
                             None,
                             Some(1),
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: None,
                     },
                 ));
@@ -456,6 +474,7 @@ pub fn hover_element(
                             None,
                             Some(0),
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: Some("element_not_pointable"),
                     },
                 ));
@@ -479,6 +498,7 @@ pub fn hover_element(
                         None,
                         Some(0),
                     ),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -493,7 +513,7 @@ pub fn wheel_element(
     selector: &str,
     delta_x: f64,
     delta_y: f64,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -501,8 +521,10 @@ pub fn wheel_element(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -528,6 +550,7 @@ pub fn wheel_element(
                             None,
                             Some(1),
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: None,
                     },
                 ));
@@ -552,6 +575,7 @@ pub fn wheel_element(
                             None,
                             Some(0),
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: Some("element_not_pointable"),
                     },
                 ));
@@ -575,6 +599,7 @@ pub fn wheel_element(
                         None,
                         Some(0),
                     ),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -590,7 +615,7 @@ pub fn drag_element(
     delta_x: f64,
     delta_y: f64,
     duration: Duration,
-    timeout: Duration,
+    timeout: impl Into<OperationDeadline>,
     mode: RedactionMode,
 ) -> Result<InteractionCommandOutput, InteractionError> {
     let web_socket_debugger_url = target
@@ -598,8 +623,10 @@ pub fn drag_element(
         .as_deref()
         .ok_or(InteractionError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
-    let started = Instant::now();
+    let budget = timeout.into();
+    let timeout = budget.timeout;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     let deadline = started + timeout;
 
     loop {
@@ -631,6 +658,7 @@ pub fn drag_element(
                             duration_millis(duration),
                             input_event_count,
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: None,
                     },
                 ));
@@ -656,6 +684,7 @@ pub fn drag_element(
                             duration_millis(duration),
                             0,
                         ),
+                        evidence_loss: socket.evidence_loss(),
                         immediate_error: Some("element_not_pointable"),
                     },
                 ));
@@ -680,6 +709,7 @@ pub fn drag_element(
                         duration_millis(duration),
                         0,
                     ),
+                    evidence_loss: socket.evidence_loss(),
                     immediate_error: Some("selector_not_found"),
                 },
             ));
@@ -693,6 +723,9 @@ fn query_selector(
     socket: &mut CdpWebSocket,
     selector: &str,
 ) -> Result<Option<u64>, InteractionError> {
+    if socket.deadline().is_some_and(|d| Instant::now() >= d) {
+        return Ok(None);
+    }
     let document = socket.call("DOM.getDocument", Some(json!({ "depth": 0 })))?;
     let response: CdpGetDocumentResponse =
         serde_json::from_value(document).map_err(|source| CdpError::ResponseInvalid {
@@ -855,7 +888,7 @@ fn dispatch_drag(
     duration: Duration,
 ) -> Result<usize, InteractionError> {
     dispatch_hover(socket, start)?;
-    socket.call(
+    if let Err(error) = socket.call(
         "Input.dispatchMouseEvent",
         Some(json!({
             "type": "mousePressed",
@@ -865,7 +898,11 @@ fn dispatch_drag(
             "buttons": 1,
             "clickCount": 1
         })),
-    )?;
+    ) {
+        socket.begin_cleanup();
+        let _ = dispatch_drag_release(socket, start);
+        return Err(error.into());
+    }
 
     let steps = drag_step_count(duration);
     let drag_started = Instant::now();
@@ -873,7 +910,12 @@ fn dispatch_drag(
     let mut last_accepted = start;
     for step in 1..=steps {
         if !duration.is_zero() {
-            sleep_until(drag_started + drag_step_elapsed(duration, step, steps));
+            let scheduled = drag_started + drag_step_elapsed(duration, step, steps);
+            sleep_until(
+                socket
+                    .deadline()
+                    .map_or(scheduled, |deadline| deadline.min(scheduled)),
+            );
         }
         let progress = step as f64 / steps as f64;
         let point = InteractionPoint {
@@ -891,8 +933,9 @@ fn dispatch_drag(
             })),
         ) {
             // A rejected move must not leave the shared browser holding the
-            // button down. Attempt one release using the normal CDP timeout,
+            // button down. Attempt one release with a separate bounded cleanup budget,
             // preserving the original movement error if cleanup also fails.
+            socket.begin_cleanup();
             let _ = dispatch_drag_release(socket, last_accepted);
             return Err(error.into());
         }
@@ -900,7 +943,11 @@ fn dispatch_drag(
         event_count += 1;
     }
 
-    dispatch_drag_release(socket, end)?;
+    if let Err(error) = dispatch_drag_release(socket, end) {
+        socket.begin_cleanup();
+        let _ = dispatch_drag_release(socket, end);
+        return Err(error);
+    }
     event_count += 1;
 
     Ok(event_count)
@@ -1028,6 +1075,89 @@ struct CdpBoxModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uncertain_drag_press_gets_one_bounded_release_without_replay() {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            for expected in ["mouseMoved", "mousePressed", "mouseReleased"] {
+                let command: serde_json::Value =
+                    serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                assert_eq!(command["params"]["type"], expected);
+                if expected == "mouseMoved" {
+                    socket
+                        .send(Message::Text(
+                            json!({"id":command["id"],"result":{}}).to_string().into(),
+                        ))
+                        .unwrap();
+                }
+                // Withhold press and release acknowledgements to exercise both budgets.
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        });
+        let started = Instant::now();
+        let mut socket = CdpWebSocket::connect_until(
+            &format!("ws://{address}/page"),
+            started + Duration::from_millis(80),
+        )
+        .unwrap();
+        let point = InteractionPoint { x: 1., y: 1. };
+        assert!(matches!(
+            dispatch_drag(&mut socket, point, point, Duration::from_secs(5)),
+            Err(InteractionError::Cdp(CdpError::CommandUncertain { .. }))
+        ));
+        assert!(started.elapsed() < Duration::from_millis(400));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn drag_duration_cannot_extend_operation_budget() {
+        use std::net::TcpListener;
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            loop {
+                let command: serde_json::Value =
+                    serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+                socket
+                    .send(Message::Text(
+                        json!({"id":command["id"],"result":{}}).to_string().into(),
+                    ))
+                    .unwrap();
+                if command["params"]["type"] == "mouseReleased" {
+                    break;
+                }
+            }
+        });
+        let started = Instant::now();
+        let mut socket = CdpWebSocket::connect_until(
+            &format!("ws://{address}/page"),
+            started + Duration::from_millis(80),
+        )
+        .unwrap();
+        assert!(
+            dispatch_drag(
+                &mut socket,
+                InteractionPoint { x: 1., y: 1. },
+                InteractionPoint { x: 50., y: 50. },
+                Duration::from_secs(5)
+            )
+            .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_millis(400));
+        handle.join().unwrap();
+    }
 
     #[test]
     fn computes_center_point_from_content_quad() {

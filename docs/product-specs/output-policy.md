@@ -112,6 +112,16 @@ Breaking JSON changes that require a `schema_version` bump:
 
 Flow output must follow the same redaction and truncation rules as `page`, `wait`, `console`, and `network`. It must not emit raw CDP payloads, request or response bodies, headers, cookies, local storage values, screenshot bytes, or full URLs by default.
 
+Resource loss is separate from historical collection gaps. When a transport or
+collector limit prevents complete observation, include additive `evidence_loss`
+metadata: `dropped_events`, `dropped_event_bytes`, `drain_limit_reached` and
+`collection_deadline_reached`. Omit the field when all counters/indicators are
+zero. Console/network summaries must set `truncated=true` and
+`observed_clean=false` when it is present. Quiet matching must not succeed from
+incomplete transport or flow collector evidence, including evidence lost during
+finalisation. See `docs/workflows.md` for the resource limits
+and partial-frame handling. These limits also apply with `--no-redact`.
+
 ## Interaction Output
 
 `lantern click`, `lantern type`, and `lantern key` share one interaction output schema. The command-specific `interaction.action` values are `click`, `type`, and `key`.

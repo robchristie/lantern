@@ -26,6 +26,8 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Recently Completed Plans
 
+- `docs/exec-plans/completed/2026-09-07-bounded-transport.md`
+
 - `docs/exec-plans/completed/2026-09-05-recover-pointer-graphics.md`
 - `docs/exec-plans/completed/2026-08-20-secret-safe-form-entry.md`
 - `docs/exec-plans/completed/2026-07-27-managed-browser-hardware-webgpu.md`
