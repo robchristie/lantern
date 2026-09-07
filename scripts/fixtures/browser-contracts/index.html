@@ -219,6 +219,25 @@
         mark(`saved-${clicks}`);
       }, 150);
     });
+  } else if (scenario === 'action-baseline-console-clean' || scenario === 'action-baseline-console-new-error') {
+    fixture.innerHTML = '<button id="baseline-error">Emit baseline error</button><button id="target">Save</button><p id="status">Idle</p>';
+    if (scenario === 'action-baseline-console-new-error') {
+      Date.now = () => 9000000000000000;
+    }
+    document.querySelector('#baseline-error').addEventListener('click', () => {
+      console.error('intentional-baseline-console-error');
+      mark('baseline-error');
+    });
+    document.querySelector('#target').addEventListener('click', () => {
+      mark('clicked');
+      if (scenario === 'action-baseline-console-new-error') {
+        console.error('intentional-action-console-error');
+      }
+      setTimeout(() => {
+        document.querySelector('#status').textContent = 'Record saved';
+        mark('saved');
+      }, 150);
+    });
   } else if (scenario === 'action-url-transition') {
     fixture.innerHTML = '<button id="target">Continue</button>';
     document.querySelector('#target').addEventListener('click', () => {

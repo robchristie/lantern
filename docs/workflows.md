@@ -185,7 +185,12 @@ selector plus text, or exact URL. `--output .smoogle/saved.png` requests a
 viewport capture after the condition attempt; add `--overwrite` only when
 replacement is intentional. Region flags are not supported by `action-flow`.
 Review dispatch, baseline and final condition, runtime/network findings,
-capture and completeness separately. A condition already matched at baseline
+capture and completeness separately. Console `console_attribution` separates
+baseline page errors from errors in the action interval; retained baseline
+entries do not fail a successful action. Inspect entry `source_timestamp_ms`
+and `observation_phase` alongside `action_boundary_timestamp_ms`; unknown
+attribution or truncation makes the verdict incomplete. Network failure policy
+still covers the whole attachment. A condition already matched at baseline
 cannot pass. `ok: true` records structured command completion, while `--strict`
 requires `verdict=passed`. Never automatically replay uncertain or possibly
 partial input. Preserve pre-input, dispatch, postcondition, observation and
