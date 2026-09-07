@@ -81,8 +81,14 @@ Final qualification selected at clean Lantern
 `3c29e48596dab102d54acc2b398e2dcb15c70cef`. Canonical validation passed 231
 Rust tests, four independent-adjudication contracts, current/MSRV checks and
 documentation hygiene; all 64 audited browser cases passed. The actual Polyorama
-capture retained reviewed owner `db534693a36157e04323f0acec6a1a34e4c08994`
-and reproduced the same opened 1440 × 900 software-rendered shell PNG.
+capture used reviewed owner `db534693a36157e04323f0acec6a1a34e4c08994`
+and reproduced the same opened 1440 × 900 software-rendered shell PNG. Its
+retained evidence now comes from clean Lantern
+`da22ab409d53a9fe6084c13fe04addc1d65cd090`, whose delta from `3c29e4` is
+documentation/evidence only. The earlier Polyorama raw JSON was overwritten
+after observations were recorded; the versioned `da22ab4` capture supersedes it
+with retained paths and hashes in the aggregate manifest. Canonical/browser
+results remain attributed to `3c29e4`.
 
 The paired agents used frozen Lantern `32a32be21a2e2d8311153925a0c84ea7cd341076`,
 Playwright CLI 0.1.19 and agent-browser 0.36.0, the same model/reasoning,

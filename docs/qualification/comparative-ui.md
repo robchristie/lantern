@@ -240,9 +240,12 @@ cleanup of browser and both profiles. These scripted checks are qualification
 evidence, not additional agent comparison runs.
 
 The actual Polyorama owner capture used clean owner
-`db534693a36157e04323f0acec6a1a34e4c08994` and the same Lantern qualification
-source. Materialisation hashes were checked around capture. The conductor opened
-the 1440 × 900 dark application shell: two panes, deterministic pane text,
+`db534693a36157e04323f0acec6a1a34e4c08994` and clean Lantern
+`da22ab409d53a9fe6084c13fe04addc1d65cd090`. This later capture uses unchanged
+product source and qualification harness: the delta from `3c29e4` contains only
+documentation and evidence changes. Its distinct build and executable hash are
+recorded in the aggregate. Materialisation hashes were checked around capture.
+The conductor opened the 1440 × 900 dark application shell: two panes, deterministic pane text,
 intentional tab ellipsis and nonblank content matched expectations. PNG SHA-256
 `f503313263c2a8dc83e3bc1a2a3926428b2542dd7fbec20dd67b51f2504299e7`
 matched the prior reviewed owner capture, establishing this declared software
@@ -251,6 +254,15 @@ remained null and atomicity was not established. Readiness was partial
 (bootstrap true, application readiness unavailable). Coverage was six successful
 measured components, zero failed, with 26 native controls unobserved and explicit
 text exclusions. No hardware support or app-wide readiness claim follows.
+
+The `3c29e4` Polyorama raw `identity.json` and `live-shell.json` were overwritten
+after their observations were recorded; they were not retained or reconstructed.
+The fully retained `da22ab4` capture supersedes that Polyorama record. Its raw
+JSON, opened PNG, owner build provenance and probe are preserved under
+`.smoogle/comparison/polyorama-da22ab4/`, with exact paths and SHA-256 hashes in
+the aggregate. Raw metadata still contains its original capture output paths;
+the manifest's `retained_artefacts` paths identify the versioned copies. The
+canonical, browser and hardened-owner results above remain the `3c29e4` results.
 
 The [aggregate manifest](aggregate-ui-evidence.json) retains qualification input,
 result and artefact identities. The [programme assessment](observable-ui-assessment.md)
