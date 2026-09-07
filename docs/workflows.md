@@ -100,3 +100,46 @@
 3. Use `landing_policy = "auto"` only when validation, review prompts, and task hygiene are consistently clean.
 4. Treat `already-satisfied` as a valid review outcome for tasks that no longer require a code change.
 5. Inspect dependent-task reconciliation after landing and use task review before executing newly unblocked inbox work.
+
+## Transport budgets and incomplete evidence
+
+`--timeout-ms` is one deadline shared by HTTP target selection, WebSocket
+attachment, domain setup, polling, input dispatch, flow collection and flow
+finalisation. It starts before target selection; it is not restarted after
+navigation or each event. A short budget can therefore fail during setup before
+an observation result is available. Browser readiness polling also shares its
+`--wait-ms` deadline with HTTP requests. Commands without a caller-supplied
+budget retain a ten-second bound per HTTP request, attachment or CDP call;
+console and network attachment/collection share a ten-second budget.
+
+Transport accepts local numeric addresses and resolves `localhost` through
+literal IPv6 and IPv4 loopback addresses without DNS. HTTP redirects are rejected.
+HTTP bodies are limited to 4 MiB; WebSocket frames and assembled messages are
+limited to 16 MiB. An oversized response is a transport failure, including an
+oversized screenshot response. The pending event queue retains at most 1024
+events and 4 MiB of encoded messages. Flow drains yield after 1024 events or
+20 ms. Console/network collectors reject individual payloads over 256 KiB;
+network request correlation retains at most 1024 requests and 4 MiB of encoded
+request payloads and releases metadata when loading finishes or fails.
+
+Incomplete collection adds `evidence_loss` to the relevant summary (or wait
+output): `dropped_events`, `dropped_event_bytes`, `drain_limit_reached` and
+`collection_deadline_reached`. The field is omitted when no loss is recorded.
+Human output includes an `evidence_loss:` line when present. These are
+conservative completeness indicators: reaching a drain or collection deadline
+means remaining traffic was not ruled out. An event read slice that times out
+after consuming part of a frame also marks the collection deadline indicator.
+Console and network set `truncated`
+and clear `observed_clean` when evidence is lost; quiet waits cannot report a
+match from lost transport evidence. Historical `collection_gap` remains a
+separate statement about when observation began. A missing loss field does not
+remove that historical gap or prove application correctness.
+
+A command sent without a definitive response returns `cdp_command_uncertain`.
+The command may have executed; inspect state before deciding whether another
+action is needed, and never automatically replay it. A drag failure attempts
+one best-effort pointer release, including an unacknowledged press, using an
+additional budget of at most 100 ms. Release acknowledgement is not guaranteed.
+CPU processing and operating-system scheduling can add bounded-work overhead to
+these I/O deadlines; this is not a hard real-time guarantee. Existing `ok` and
+exit-status semantics for completed condition results remain unchanged.

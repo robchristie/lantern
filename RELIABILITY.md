@@ -60,6 +60,18 @@ Use `+` or `-` only when the repo is clearly between two grades.
    profile. Delete it only after stopping its browser and deciding whether a
    service-side logout is also required.
 
+## Bounded Transport
+
+- Bounded commands share an absolute deadline across target selection, attachment,
+  collection and finalisation. Slow partial traffic and continuous events cannot
+  renew the deadline. See `docs/workflows.md` for limits and cleanup semantics.
+- Resource-limited collection reports additive evidence-loss metadata and cannot
+  claim an observed-clean window. HTTP and WebSocket size limits can reject very
+  large target lists, DOM results or screenshots.
+- Transport uncertainty after sending a command does not establish whether an
+  input executed. Inspect state before any further action; never replay mutations
+  automatically after a missing acknowledgement.
+
 ## Known Reliability Gaps
 
 - Feature-specific fixture tests cover the implemented CLI loop, click/type/key/pointer interactions, screenshot regions, and flow observation path, and two-instance Podman and Docker browser smokes have passed, but real-browser smoke coverage is still limited.

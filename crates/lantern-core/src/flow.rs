@@ -7,7 +7,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
-    cdp::{CdpError, CdpEvent, CdpWebSocket, TargetInfo},
+    cdp::{
+        CdpError, CdpEvent, CdpWebSocket, MAX_DRAIN_EVENTS, MAX_DRAIN_TIME, OperationDeadline,
+        TargetInfo,
+    },
     console::{CONSOLE_COLLECTION_GAP_REASON, ConsoleCollector, ConsoleSummary},
     network::{NETWORK_COLLECTION_GAP_REASON, NetworkCollector, NetworkSummary},
     redaction::{RedactionMode, sanitize_title, sanitize_url},
@@ -71,12 +74,23 @@ pub fn run_observation_flow(
     options: FlowOptions,
     mode: RedactionMode,
 ) -> Result<FlowCommandOutput, FlowError> {
+    let budget = OperationDeadline::from(options.timeout);
+    run_observation_flow_until(target, options, mode, budget)
+}
+
+pub fn run_observation_flow_until(
+    target: &TargetInfo,
+    options: FlowOptions,
+    mode: RedactionMode,
+    budget: OperationDeadline,
+) -> Result<FlowCommandOutput, FlowError> {
     let web_socket_debugger_url = target
         .web_socket_debugger_url
         .as_deref()
         .ok_or(FlowError::TargetWebSocketMissing)?;
 
-    let mut socket = CdpWebSocket::connect(web_socket_debugger_url)?;
+    let started = budget.started;
+    let mut socket = CdpWebSocket::connect_until(web_socket_debugger_url, budget.end())?;
     socket.call("Runtime.enable", None)?;
     socket.call("Log.enable", None)?;
     socket.call("Network.enable", None)?;
@@ -99,8 +113,7 @@ pub fn run_observation_flow(
         }
     }
 
-    let started = Instant::now();
-    let wait = if let Some(quiet_ms) = options.quiet_ms {
+    let mut wait = if let Some(quiet_ms) = options.quiet_ms {
         wait_for_flow_quiet(
             &mut socket,
             &mut console,
@@ -120,7 +133,31 @@ pub fn run_observation_flow(
     };
 
     drain_available_events(&mut socket, &mut console, &mut network)?;
-    let page = flow_page_summary(target, &mut socket, mode)?;
+    let page = if Instant::now() < budget.end() {
+        flow_page_summary(target, &mut socket, mode)?
+    } else {
+        socket.mark_collection_deadline();
+        FlowPageSummary {
+            target_id: target.id.clone(),
+            title: target.title.as_ref().map(|t| sanitize_title(t, mode)),
+            url_shape: target.url.as_ref().and_then(|u| sanitize_url(u, mode)),
+            ready_state: None,
+        }
+    };
+    // Finalisation calls may themselves queue events. The queue is bounded.
+    while let Some(event) = socket.pop_pending_event() {
+        if Instant::now() >= budget.end() {
+            socket.mark_collection_deadline();
+            break;
+        }
+        push_observation_event(event, &mut console, &mut network);
+    }
+    let loss = socket.evidence_loss();
+    if loss.incomplete() && wait.condition == WaitConditionName::Quiet {
+        wait.matched = false;
+    }
+    console.record_evidence_loss(loss.clone());
+    network.record_evidence_loss(loss);
     let collection_gap = !opened_url;
     let collection_gap_reason = if collection_gap {
         CONSOLE_COLLECTION_GAP_REASON
@@ -160,7 +197,11 @@ fn wait_for_flow_ready(
 
     loop {
         drain_available_events(socket, console, network)?;
-        let ready_state = document_ready_state(socket)?;
+        let ready_state = if Instant::now() < deadline {
+            document_ready_state(socket)?
+        } else {
+            None
+        };
         if ready_state
             .as_deref()
             .is_some_and(|state| ReadyState::Complete.matches_public(state))
@@ -254,9 +295,22 @@ fn drain_available_events(
     console: &mut ConsoleCollector,
     network: &mut NetworkCollector,
 ) -> Result<(), FlowError> {
-    while let Some(event) = socket.read_event(Duration::from_millis(1))? {
+    let until = Instant::now() + MAX_DRAIN_TIME;
+    for _ in 0..MAX_DRAIN_EVENTS {
+        if socket.deadline().is_some_and(|d| Instant::now() >= d) {
+            socket.mark_collection_deadline();
+            return Ok(());
+        }
+        if Instant::now() >= until {
+            socket.mark_drain_limit();
+            return Ok(());
+        }
+        let Some(event) = socket.read_event(Duration::from_millis(1))? else {
+            return Ok(());
+        };
         push_observation_event(event, console, network);
     }
+    socket.mark_drain_limit();
     Ok(())
 }
 
@@ -369,6 +423,116 @@ impl ReadyStateMatchPublic for ReadyState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn flow_fixture(withhold: Option<&'static str>) -> (TargetInfo, std::thread::JoinHandle<()>) {
+        use std::{io::ErrorKind, net::TcpListener};
+        use tungstenite::Message;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream.set_nodelay(true).unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            socket.get_mut().set_nonblocking(true).unwrap();
+            loop {
+                match socket.read() {
+                    Ok(Message::Text(text)) => {
+                        let command: Value = serde_json::from_str(&text).unwrap();
+                        let method = command["method"].as_str().unwrap();
+                        let title = command["params"]["expression"] == "document.title";
+                        if withhold != Some(method) && !(withhold == Some("title") && title) {
+                            let result = if method == "Runtime.evaluate" {
+                                json!({"result":{"value":"complete"}})
+                            } else {
+                                json!({})
+                            };
+                            if socket
+                                .send(Message::Text(
+                                    json!({"id":command["id"],"result":result})
+                                        .to_string()
+                                        .into(),
+                                ))
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(tungstenite::Error::Io(e)) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(_) => break,
+                }
+                if socket
+                    .send(Message::Text(
+                        json!({"method":"Runtime.executionContextCreated","params":{}})
+                            .to_string()
+                            .into(),
+                    ))
+                    .is_err()
+                {
+                    break;
+                }
+                std::thread::sleep(Duration::from_micros(100));
+            }
+        });
+        (
+            TargetInfo {
+                id: "fixture".into(),
+                kind: "page".into(),
+                title: None,
+                url: Some("about:blank".into()),
+                attached: None,
+                browser_context_id: None,
+                web_socket_debugger_url: Some(format!("ws://{address}/page")),
+            },
+            handle,
+        )
+    }
+
+    #[test]
+    fn sustained_flow_events_finish_at_deadline_without_claiming_clean() {
+        let (target, handle) = flow_fixture(None);
+        let started = Instant::now();
+        let output = run_observation_flow(
+            &target,
+            FlowOptions {
+                open_url: Some("http://example.test".into()),
+                timeout: Duration::from_millis(150),
+                quiet_ms: Some(30),
+            },
+            RedactionMode::Redacted,
+        )
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(!output.flow.wait.matched);
+        assert!(output.flow.wait.timed_out);
+        assert!(!output.console.observed_clean);
+        assert!(!output.network.observed_clean);
+        assert!(output.console.evidence_loss.incomplete());
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn flow_setup_and_finalisation_share_the_operation_deadline() {
+        for withheld in ["Runtime.enable", "title"] {
+            let (target, handle) = flow_fixture(Some(withheld));
+            let started = Instant::now();
+            assert!(
+                run_observation_flow(
+                    &target,
+                    FlowOptions {
+                        open_url: None,
+                        timeout: Duration::from_millis(100),
+                        quiet_ms: None
+                    },
+                    RedactionMode::Redacted
+                )
+                .is_err()
+            );
+            assert!(started.elapsed() < Duration::from_millis(600));
+            handle.join().unwrap();
+        }
+    }
 
     #[test]
     fn ready_wait_timeout_carries_timeout() {

@@ -1126,9 +1126,10 @@ CDP inputs are identical to `lantern click` through point computation, then Lant
 - `mouseReleased` at the computed end point
 
 Lantern caps drag interpolation at 60 movement events, but schedules those
-events across the requested duration. The final interpolated move is scheduled
-at the requested duration before the release event is sent; CDP transport
-latency can still make the wall-clock command runtime slightly longer.
+events across the requested duration while the shared operation budget remains.
+The final interpolated move is scheduled at the requested duration before the
+release event. If the deadline expires first, Lantern stops interpolation and
+attempts one bounded cleanup release; it does not complete or replay the drag.
 
 Command-specific error cases:
 
@@ -1892,6 +1893,31 @@ Breaking changes requiring a `schema_version` bump:
 - changing field types
 - changing redaction defaults for existing fields
 - changing command selection behavior in a way that can alter successful results
+
+## Shared operation deadlines and evidence limits
+
+For `wait`, `flow` and interactions, `--timeout-ms` covers HTTP target selection,
+attachment, setup, commands, collection and finalisation as one absolute budget.
+It is not renewed by responses or events. A budget exhausted during setup or a
+CDP call follows the non-zero transport error path; a completed condition
+observation may still return its existing `matched=false`/`timed_out=true` or
+`dispatched=false` result. Browser readiness polling similarly shares `--wait-ms`
+with its HTTP calls.
+
+A sent command without a definitive response returns exit code `1` with
+`cdp_command_uncertain`. It may have executed; inspect browser state and do not
+automatically replay it. `interaction_transport_failed` also warns that earlier
+input steps may have executed when a later transport step fails. A drag attempts
+one best-effort release after a failure, including an unacknowledged press,
+with a separate 100 ms cleanup budget.
+
+Transport and collectors have finite count, byte and drain limits. Incomplete
+collection adds `evidence_loss` to console/network/interaction summaries or the
+wait output, with dropped event/byte counters and drain/collection deadline
+indicators. Console and network clear `observed_clean` and set `truncated` when
+collection is incomplete. Quiet matching is false when transport evidence is
+incomplete. Zero-loss output omits the additive field. The limits and timing
+qualifications are specified in [Transport budgets and incomplete evidence](../workflows.md#transport-budgets-and-incomplete-evidence).
 
 ## Error Output
 

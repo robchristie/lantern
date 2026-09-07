@@ -16,7 +16,7 @@ use lantern_core::{
         DomSummaryOptions, read_dom_summary,
     },
     endpoint::{EndpointResolutionError, ResolvedEndpoint, resolve_endpoint},
-    flow::{FlowCommandOutput, FlowError, FlowOptions, run_observation_flow},
+    flow::{FlowCommandOutput, FlowError, FlowOptions, run_observation_flow_until},
     interaction::{
         INTERACTION_MAX_DURATION_MS, INTERACTION_MAX_TIMEOUT_MS, InteractionCommandOutput,
         InteractionError, click_element, drag_element, hover_element, press_key, type_text,
@@ -729,7 +729,12 @@ fn run_command(
     delta_y: Option<f64>,
     duration_ms: Option<u64>,
 ) -> Result<(), CliError> {
-    let client = CdpClient::new(endpoint.clone());
+    let budget =
+        timeout_ms.map(|ms| lantern_core::cdp::OperationDeadline::from(Duration::from_millis(ms)));
+    let mut client = CdpClient::new(endpoint.clone());
+    if let Some(budget) = budget {
+        client = client.with_deadline(budget.end());
+    }
 
     match command {
         Command::Doctor => {
@@ -793,7 +798,7 @@ fn run_command(
                 timeout_ms,
                 json,
             )?;
-            let timeout_ms = timeout_ms.expect("wait timeout checked with condition");
+
             let targets = client
                 .targets()
                 .map_err(|error| CliError::from_cdp(error, json))?;
@@ -802,7 +807,7 @@ fn run_command(
             let output = wait_for_condition(
                 &page,
                 condition,
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_wait(error, json))?;
@@ -835,7 +840,7 @@ fn run_command(
                 .map_err(|error| CliError::from_cdp(error, json))?;
             let page = select_page_target(targets, target_id.as_deref())
                 .map_err(|error| error.with_json(json))?;
-            let output = run_observation_flow(
+            let output = run_observation_flow_until(
                 &page,
                 FlowOptions {
                     open_url,
@@ -843,6 +848,7 @@ fn run_command(
                     quiet_ms,
                 },
                 RedactionMode::from_no_redact(no_redact),
+                budget.expect("bounded command budget"),
             )
             .map_err(|error| CliError::from_flow(error, json))?;
             write_flow(output, json)?;
@@ -906,7 +912,7 @@ fn run_command(
             let output = click_element(
                 &page,
                 selector,
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -930,7 +936,7 @@ fn run_command(
                 &page,
                 selector,
                 text,
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -952,7 +958,7 @@ fn run_command(
                 &page,
                 selector,
                 key,
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -972,7 +978,7 @@ fn run_command(
             let output = hover_element(
                 &page,
                 selector,
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -995,7 +1001,7 @@ fn run_command(
                 selector,
                 delta_x.unwrap_or(0.0),
                 delta_y.unwrap_or(0.0),
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -1021,7 +1027,7 @@ fn run_command(
                 delta_x.unwrap_or(0.0),
                 delta_y.unwrap_or(0.0),
                 Duration::from_millis(duration_ms),
-                Duration::from_millis(timeout_ms),
+                budget.expect("bounded command budget"),
                 RedactionMode::from_no_redact(no_redact),
             )
             .map_err(|error| CliError::from_interaction(error, json))?;
@@ -2318,14 +2324,19 @@ fn wait_for_browser_ready(endpoint: &str, timeout: Duration, json: bool) -> Resu
         source: lantern_core::endpoint::EndpointSource::Flag,
         display: endpoint.to_owned(),
     };
-    let client = CdpClient::new(endpoint);
     let started = Instant::now();
+    let deadline = started + timeout;
+    let client = CdpClient::new(endpoint).with_deadline(deadline);
 
-    while started.elapsed() <= timeout {
+    while Instant::now() < deadline {
         if client.browser_version().is_ok() {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(100)),
+        );
     }
 
     Err(CliError::runtime(
@@ -3046,6 +3057,8 @@ fn write_wait(output: WaitCommandOutput, json: bool) -> Result<(), CliError> {
         return Ok(());
     }
 
+    write_evidence_loss("wait", &output.evidence_loss);
+
     println!(
         "wait: {} condition={} matched={} timed_out={} elapsed_ms={} timeout_ms={} observed={}",
         short_target_id(&output.page.target_id),
@@ -3059,11 +3072,25 @@ fn write_wait(output: WaitCommandOutput, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
+fn write_evidence_loss(owner: &str, loss: &lantern_core::cdp::EvidenceLoss) {
+    if loss.incomplete() {
+        println!(
+            "evidence_loss: {owner} dropped_events={} dropped_event_bytes={} drain_limit_reached={} collection_deadline_reached={}",
+            loss.dropped_events,
+            loss.dropped_event_bytes,
+            loss.drain_limit_reached,
+            loss.collection_deadline_reached
+        );
+    }
+}
+
 fn write_console(output: ConsoleCommandOutput, json: bool) -> Result<(), CliError> {
     if json {
         write_json(&output)?;
         return Ok(());
     }
+
+    write_evidence_loss("console", &output.console.evidence_loss);
 
     println!(
         "console: {} title=\"{}\" url={} messages={} exceptions={} observed_clean={} collection_gap={} truncated={}",
@@ -3090,6 +3117,8 @@ fn write_network(output: NetworkCommandOutput, json: bool) -> Result<(), CliErro
         return Ok(());
     }
 
+    write_evidence_loss("network", &output.network.evidence_loss);
+
     println!(
         "network: {} title=\"{}\" url={} failed={} http_errors={} observed_clean={} collection_gap={} truncated={}",
         short_target_id(&output.page.target_id),
@@ -3114,6 +3143,9 @@ fn write_flow(output: FlowCommandOutput, json: bool) -> Result<(), CliError> {
         write_json(&output)?;
         return Ok(());
     }
+
+    write_evidence_loss("console", &output.console.evidence_loss);
+    write_evidence_loss("network", &output.network.evidence_loss);
 
     println!(
         "flow: {} title=\"{}\" url={} opened={} single_attachment={} before_navigation={} wait_condition={} matched={} timed_out={} elapsed_ms={} timeout_ms={} console_messages={} console_exceptions={} network_failed={} network_http_errors={} console_gap={} network_gap={}",
@@ -3211,6 +3243,8 @@ fn write_interaction(output: InteractionCommandOutput, json: bool) -> Result<(),
         write_json(&output)?;
         return Ok(());
     }
+
+    write_evidence_loss("interaction", &output.interaction.evidence_loss);
 
     println!(
         "{}: {} title=\"{}\" url={} selector=\"{}\" dispatched={} timed_out={} elapsed_ms={} timeout_ms={} observed={} error={}",
@@ -4588,6 +4622,12 @@ impl CliError {
 
     fn from_cdp(error: CdpError, json: bool) -> Self {
         match error {
+            CdpError::CommandUncertain { .. } => Self::runtime(
+                json,
+                "cdp_command_uncertain",
+                "CDP command completion is uncertain.",
+                "The command may have executed. Inspect browser state before deciding whether another action is needed; do not automatically replay it.",
+            ),
             CdpError::EndpointUrlInvalid { .. } | CdpError::WebSocketUrlInvalid { .. } => Self {
                 exit_code: 2,
                 json,
@@ -4904,9 +4944,9 @@ impl CliError {
             ),
             InteractionError::Cdp(CdpError::WebSocketTransport { .. }) => Self::runtime(
                 json,
-                "endpoint_unreachable",
-                ENDPOINT_UNREACHABLE_MESSAGE,
-                ENDPOINT_UNREACHABLE_HINT,
+                "interaction_transport_failed",
+                "Interaction transport failed or its deadline expired.",
+                "Earlier input steps may have executed. Inspect browser state before deciding whether another action is needed.",
             ),
             InteractionError::Cdp(CdpError::Command { .. } | CdpError::ResponseInvalid { .. }) => {
                 Self::runtime(

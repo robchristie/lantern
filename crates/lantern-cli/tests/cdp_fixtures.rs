@@ -1388,6 +1388,98 @@ impl WebSocketFixture {
 }
 
 #[test]
+fn bounded_wait_includes_http_target_selection_in_its_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 4096];
+        stream.read(&mut buffer).unwrap();
+        thread::sleep(Duration::from_millis(500));
+        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]");
+    });
+    let started = std::time::Instant::now();
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            &endpoint,
+            "wait",
+            "ready",
+            "--timeout-ms",
+            "40",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert!(started.elapsed() < Duration::from_millis(400));
+    handle.join().unwrap();
+}
+
+#[test]
+fn bounded_flow_reports_uncertain_command_completion_without_replaying_navigation() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}/page", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream.set_nodelay(true).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut socket = tungstenite::accept(stream).unwrap();
+        for method in [
+            "Runtime.enable",
+            "Log.enable",
+            "Network.enable",
+            "Page.enable",
+            "Page.navigate",
+        ] {
+            let command: serde_json::Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+            assert_eq!(command["method"], method);
+            if method != "Page.navigate" {
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({"id":command["id"],"result":{}})
+                            .to_string()
+                            .into(),
+                    ))
+                    .unwrap();
+            }
+        }
+        assert!(
+            socket.read().is_err(),
+            "navigation must not be replayed after acknowledgement loss"
+        );
+    });
+    let fixture = HttpFixture::one_response("/json/list", target_list_with_websocket(&url));
+    let output = lantern(
+        [
+            "--json",
+            "--endpoint",
+            fixture.endpoint(),
+            "flow",
+            "--open",
+            "http://example.test",
+            "--timeout-ms",
+            "100",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    let error: serde_json::Value = serde_json::from_str(&stderr(&output)).unwrap();
+    assert_eq!(error["error"]["code"], "cdp_command_uncertain");
+    assert!(
+        error["error"]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("do not automatically replay")
+    );
+    fixture.finish();
+    handle.join().unwrap();
+}
+
+#[test]
 fn doctor_json_uses_env_endpoint_and_reads_browser_metadata() {
     let fixture = HttpFixture::one_response(
         "/json/version",
@@ -1901,7 +1993,7 @@ fn wait_selector_json_reports_timeout_as_condition_result() {
             "--selector",
             "[data-testid=dashboard]",
             "--timeout-ms",
-            "1",
+            "100",
         ],
         None,
     );
@@ -3105,7 +3197,7 @@ fn click_json_reports_selector_timeout_as_undispatched_action() {
             "--selector",
             "[data-testid=missing]",
             "--timeout-ms",
-            "1",
+            "100",
         ],
         None,
     );
@@ -3142,7 +3234,7 @@ fn key_json_reports_selector_timeout_as_undispatched_action() {
             "--key",
             "ArrowUp",
             "--timeout-ms",
-            "1",
+            "100",
         ],
         None,
     );

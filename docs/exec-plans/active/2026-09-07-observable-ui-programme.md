@@ -19,7 +19,7 @@ The existing persistent-profile plan is unrelated and must be preserved.
 
 | ID | Required outcome | Baseline evidence and gap | Candidate package | State |
 | --- | --- | --- | --- | --- |
-| T | Absolute transport/operation deadlines; bounded event counts and bytes; explicit lost evidence | `crates/lantern-core/src/cdp.rs`, `flow.rs`: socket timeouts and unbounded pending queue/drains | 1: bounded transport | Pending |
+| T | Absolute transport/operation deadlines; bounded event counts and bytes; explicit lost evidence | `crates/lantern-core/src/cdp.rs`, `flow.rs`: socket timeouts and unbounded pending queue/drains | 1: bounded transport | Qualified candidate; reviewed landing pending |
 | I | Unique, scrolled, enabled, stable, hit-tested interactions; diagnostic failures; compatible opt-in strict exit semantics | `interaction.rs` and CLI contract: dispatch does not establish outcome; timeouts can succeed | 2: trustworthy interactions | Pending |
 | F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Pending |
 | V | Task-dependent visual review requiring actual image inspection and explicit visual expectations | Tracked inspection skill privileges text and screenshots as supporting evidence | 4: inspection workflow | Pending |
@@ -27,7 +27,7 @@ The existing persistent-profile plan is unrelated and must be preserved.
 | A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Pending |
 | L | Escaped, unique generated selectors; explicit container configuration; heuristic layout findings and intentional overflow distinction | `layout.rs`: raw identifiers and application-specific container classes | 4: inspection workflow | Pending |
 | Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Pending |
-| C | Discover package/build identity, commands and schemas; split CLI by command family before broader interface expansion | CLI version is package-only; large `main.rs` | 1: CLI foundation | Pending |
+| C | Discover package/build identity, commands and schemas; split CLI by command family before broader interface expansion | CLI version is package-only; large `main.rs` | 2: CLI foundation (separate package) | Pending |
 | S | Short core skill, progressive references for lifecycle/auth/GPU/application recipes; evidence-centred project purpose | Tracked skill contains lengthy setup recipes; README leads with MCP overhead | 4: inspection workflow | Pending |
 | B | Paired external CLI baseline on form, async failure, layout defect, canvas and restart/recovery | No comparative benchmark; source claims are not measured results | 7: comparative qualification | Pending |
 
@@ -67,10 +67,11 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 
 | Package | Owner revision / consumer revision | Aggregate result | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Baseline | Lantern baseline / Polyorama baseline above | Historical review still applies; existing Polyorama evidence reusable | Source paths above | Preparing |
+| Baseline | Lantern `901e419579fbcc3f6ac65df8f0fcd2c7d9cced94` / Polyorama baseline above | Reviewed baseline landed; existing Polyorama evidence reusable | PR #7 | Landed |
+| T: bounded transport | Candidate identified by package PR / no downstream consumers yet | Shared deadlines and bounded evidence; 193 tests and canonical checks passed | `../completed/2026-09-07-bounded-transport.md` | Independent review and landing pending |
 
-Next: land the reviewed baseline; select package 1 for bounded transport and CLI
-foundation, splitting it if the source map identifies independently owned risks.
+Next: select and independently review the bounded transport candidate, then land
+it before the separate CLI foundation package. Other capability rows remain pending.
 
 ## Terminal rule
 
