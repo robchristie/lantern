@@ -1,0 +1,1620 @@
+{
+  "schema_version": 1,
+  "inputs": {
+    "revision": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+    "tree": "b47560cda26939d8311fcbdddbd835526da9cde5",
+    "model": "gpt-5.6-terra",
+    "reasoning": "medium",
+    "context_tokens": null,
+    "orchestration_tool_calls": null,
+    "materials": {
+      "scripts/comparison-owner.mjs": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+      "scripts/record-comparison.py": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+      "scripts/fixtures/comparison/index.html": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+      "target/debug/lantern": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+      ".smoogle/qualification-tools/package-lock.json": "3179276d64c70d032aa9573546ad27cb46787288967989faf55bae68126260c8",
+      ".smoogle/qualification-tools/fonts.conf": "6723eb190cb24c57b47fadc98c86dc0d22b1c2fa7e31f43cdecf9b4bb3d9504d",
+      "scripts/adjudicate-comparison.py": "8bb2dbbb2ae31191d59c90377de3e066bd51d175150c4fe39ce4bf57a686cd06"
+    },
+    "tools": {
+      "lantern": "lantern 0.1.0",
+      "playwright-cli": "0.1.19",
+      "agent-browser": "agent-browser 0.36.0"
+    }
+  },
+  "adjudicator_sha256": "f784c57c0a24398ad233c817fefeb08187a188d6bc96e227f68f9866e77faa3b",
+  "runs": {
+    "lantern": {
+      "form": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "form",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "Casey Example",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_names": [
+          "Casey Example"
+        ],
+        "truth_pass": true
+      },
+      "failure": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "failure",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "Casey Example",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_count": 0,
+        "trusted_intended_text_and_submit": true,
+        "http_statuses": [
+          503
+        ],
+        "runtime_messages": [
+          "Uncaught Error: Qualification save handler failed after HTTP 503"
+        ],
+        "independent_http": [
+          {
+            "utc": "2026-09-07T06:42:17.379Z",
+            "generation": 1,
+            "kind": "http-error",
+            "url": "http://127.0.0.1:42491/intentional-fast-failure",
+            "status": 503
+          }
+        ],
+        "independent_runtime": [
+          {
+            "utc": "2026-09-07T06:42:17.381Z",
+            "generation": 1,
+            "kind": "pageerror",
+            "message": "Qualification save handler failed after HTTP 503"
+          }
+        ]
+      },
+      "layout": {
+        "loaded": true,
+        "visual_adjudication": "Requires opening agent PNG and comparing its report"
+      },
+      "canvas": {
+        "frames": [
+          {
+            "revision": 0,
+            "frame": 1,
+            "pixel": [
+              32,
+              95,
+              200,
+              255
+            ],
+            "pointers": []
+          },
+          {
+            "revision": 1,
+            "frame": 2,
+            "pixel": [
+              22,
+              128,
+              60,
+              255
+            ],
+            "pointers": [
+              {
+                "type": "pointerdown",
+                "trusted": true,
+                "x": 160,
+                "y": 90
+              },
+              {
+                "type": "click",
+                "trusted": true,
+                "x": 160,
+                "y": 90
+              }
+            ]
+          }
+        ],
+        "truth_pass": true,
+        "centre_offsets": [
+          {
+            "dx": 0,
+            "dy": 0
+          },
+          {
+            "dx": 0,
+            "dy": 0
+          }
+        ],
+        "visual_adjudication": "Requires opening agent before/after PNGs"
+      },
+      "recovery": {
+        "before_restart_loaded_names": [
+          null,
+          "Morgan Draft"
+        ],
+        "after_restart_loaded_names": [
+          null
+        ],
+        "before_restart_saved_names": [
+          "Morgan Draft"
+        ],
+        "after_restart_saved_names": [
+          "Morgan Recovered"
+        ],
+        "restarts": [
+          {
+            "utc": "2026-09-07T06:44:24.300Z",
+            "kind": "restarted",
+            "oldPid": 1212863,
+            "newPid": 1257408
+          }
+        ],
+        "trusted_intended_text_and_submits": true
+      },
+      "metrics": {
+        "cli_invocations": 36,
+        "cli_nonzero_exits": 1,
+        "cli_elapsed_sum_seconds": 9.122619764879346,
+        "cli_window_seconds": 222.438191,
+        "model_context_tokens": null,
+        "orchestration_tool_calls": null
+      },
+      "limitations": [
+        "Independent fixture state is not agent verification.",
+        "False passes and completion require comparing the agent report to this truth.",
+        "Elapsed CLI window excludes initial skill reading and final report writing."
+      ],
+      "initial_identities": [
+        {
+          "utc": "2026-09-07T06:40:09.547Z",
+          "kind": "started",
+          "generation": 1,
+          "pid": 1212863,
+          "endpoint": "http://127.0.0.1:45191",
+          "fixtureUrl": "http://127.0.0.1:42491",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-1",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-1 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-1",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        },
+        {
+          "utc": "2026-09-07T06:44:24.299Z",
+          "kind": "started",
+          "generation": 2,
+          "pid": 1257408,
+          "endpoint": "http://127.0.0.1:37711",
+          "fixtureUrl": "http://127.0.0.1:42491",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-2",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-2 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-lantern/profile-2",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        }
+      ],
+      "viewports": [
+        "{\"dpr\": 1, \"height\": 900, \"width\": 1280}"
+      ],
+      "all_viewports_match": true,
+      "artefacts": {
+        "agent-report.md": "ee72c73ac99ac6a55ff3a896f165e5f6c9307c209522ca9374ce8758704a4fca",
+        "capsule.md": "e93355614feca12d324c43f06f6d36f95b3c0cbdb248d29eb95e60323152cbae",
+        "calls/commands.jsonl": "4eae6e23983dfa1f12ba43b23f76e0b35d5e4fec9c81c3c30b309865072c5f38",
+        "truth.jsonl": "f3b449fb314f73533f66313316f951f3c57da983ddf0120adb358c4f976b96ea",
+        "observer.jsonl": "4001692ec03857ec2e7cacd20a8f52cbf9198e7362b290eda3c527dae095a4c6",
+        "lifecycle.jsonl": "ee36401211ba19db5d2e5b989334933da1407abe2e8f90d7dcb58392505de2d8"
+      },
+      "pngs": [
+        {
+          "path": "canvas-after.png",
+          "sha256": "38c35a2e06faf822a28c17d273696a3f21edba41a6f2533b494e7cff73fd179a",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "canvas-before.png",
+          "sha256": "e82a50705e89007c790b30ffae9ca5883ad80bd7eea0a4b1b1b284d92775e748",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "layout.png",
+          "sha256": "69970ff1fa50ebd382a951a2bcd4e4e24fd29b6d03513d6822314b44a11a8f65",
+          "dimensions": [
+            1280,
+            900
+          ]
+        }
+      ],
+      "run_directory": "/nvme/development/lantern/.smoogle/comparison/eval-lantern",
+      "task_capsule": "You are an independent real-CLI evaluation agent. Use only the assigned real CLI for all browser inspection and input. You may read its supplied skill/help and use the image-viewing tool to actually open generated PNGs. Do not read fixture source, owner implementation, truth/observer logs, other agents or results. Do not edit tracked files, spawn helpers, use alternate browser automation, inject DOM values or call application action functions. Browser-level real input including CDP Input.insertText is allowed. All actual CLI calls including help must go through the supplied recording prefix. You may read owner browser.json for the endpoint and use the supplied owner lifecycle status command; it is setup/lifecycle only.\n\nFive representative tasks, in order, starting from the supplied fresh browser:\n1. Navigate to http://127.0.0.1:42491/form. Enter the synthetic contact name Casey Example using real browser input, save once and explicitly verify acknowledged saved state.\n2. Navigate to http://127.0.0.1:42491/failure. Enter Casey Example. Prepare whatever observation your tool supports BEFORE submitting once, then determine whether the save succeeded or failed using page, HTTP and runtime evidence. Never replay an uncertain submission. A dispatched click or quiet period alone is not completion.\n3. Navigate to http://127.0.0.1:42491/layout. The complete destination label should be readable within its bordered card at the fixed viewport. Inspect geometry/structure and capture an image, actually open it, and judge clipping, overflow and readability against that expectation. Report any defect with evidence; do not change the UI.\n4. Navigate to http://127.0.0.1:42491/canvas. Establish the initial visible canvas state and status, capture/open a before PNG, click its centre once using physical pointer input, then explicitly verify the committed colour/state revision/rendered frame and capture/open an after PNG. Do not invoke application action hooks. Read-only CLI geometry inspection is allowed.\n5. Navigate to http://127.0.0.1:42491/recovery. Save Morgan Draft once and verify acknowledgement. Reload through your CLI and confirm the saved draft survives in that browser. End only your named attached CLI session using detach/close if applicable, check owner status, and request the supplied owner restart command. This is the common lifecycle scaffold, not an alternate browser input backend. The restart owns/terminates only the recorded browser PID and returns a NEW endpoint/PID with a fresh profile. Reattach your CLI to that returned endpoint. Navigate to the recovery URL again and explicitly verify no saved contact remains. Enter Morgan Recovered, save once, verify acknowledgement, and finish only your named CLI session. Check owner status but leave the final browser running for coordinator adjudication.\n\nUse only these five routes. Do not access /truth or internal fixture state. Store artefacts under /nvme/development/lantern/.smoogle/comparison/eval-lantern. Report verdict, evidence, uncertainty and external interventions per task in /nvme/development/lantern/.smoogle/comparison/eval-lantern/agent-report.md, then return a compact summary. State which PNGs you actually opened. Tool limitations and failures are valid results; never guess missing evidence. Owner restart/status commands are supplied lifecycle operations and should be reported separately from any unplanned external intervention. Do not restart except for task 5.\n\nAssigned tool: Lantern repository binary. Supplied skill: /nvme/development/lantern/docs/skills/lantern-ui-inspection/SKILL.md and references. Recording prefix for every CLI call: python3 /nvme/development/lantern/scripts/record-comparison.py --run-dir /nvme/development/lantern/.smoogle/comparison/eval-lantern/calls -- /nvme/development/lantern/target/debug/lantern . Add --endpoint http://127.0.0.1:45191 --json and relevant flags. Lantern attaches per command and has no daemon to detach.\n\nOwner status: node /nvme/development/lantern/scripts/comparison-owner.mjs status /nvme/development/lantern/.smoogle/comparison/eval-lantern\nOwner restart: node /nvme/development/lantern/scripts/comparison-owner.mjs restart /nvme/development/lantern/.smoogle/comparison/eval-lantern\nRun every CLI invocation with working directory /nvme/development/lantern/.smoogle/comparison/eval-lantern, keeping generated outputs scoped to this run.\nInitial owner PID 1212863, endpoint http://127.0.0.1:45191, Chromium 151.0.7922.34, 1280 \u00d7 900 CSS pixels, DPR 1, about:blank. Read only browser.json if you need current owner identity. No tracked edits, other agents or raw truth logs.\n",
+      "agent_report": "# Independent Lantern CLI evaluation\n\n## Scope and environment\n\nExecuted only the five capsule routes with `/nvme/development/lantern/target/debug/lantern`, build `32a32be21a2e2d8311153925a0c84ea7cd341076` (`0.1.0`), through the supplied recording wrapper.  The initial browser was Chromium `151.0.7922.34`, endpoint `http://127.0.0.1:45191`, at 1280 x 900 CSS pixels and DPR 1.  Every Lantern invocation, including help and capability checks, is recorded in `calls/`.\n\n## Results\n\n1. **Form \u2014 pass.** Typed `Casey Example` into the computed `textbox` named `Contact name` with acknowledged dispatch.  A single action-flow click on the computed `Save contact` button was acknowledged.  Its initial requested postcondition text was too short (`Saved Casey Example`) and therefore timed out, but its observed final text was `Saved contact: Casey Example`.  A subsequent read-only `wait text` matched that exact acknowledgement.  No console or HTTP error was collected by the action-flow, although its collection ended at its timeout because of the wrong expected string.\n\n2. **Failure \u2014 pass (failure correctly determined); evidence caveat.** Typed `Casey Example` and dispatched exactly one acknowledged click.  The pre-submission action-flow began console/network observation, but its selector-only condition was already true before the click, yielding `verdict: incomplete`, `error: postcondition_already_matched`, and ending that collection too early.  I did not replay the click.  The later page DOM reported `Save failed \u2014 contact not saved`.  The immediately following recorded navigation flow received the attributable runtime and HTTP evidence: `Error: Qualification save handler failed after HTTP 503` with source `/failure`, and `Failed to load resource: ... 503 (Service Unavailable)` for `/intentional-fast-failure`.  This establishes failure from page, runtime and HTTP evidence, but the latter arrived in the next flow rather than the click command because of the already-matched baseline selector.\n\n3. **Layout \u2014 fail.** DOM states the complete label is `Express delivery to regional Australia`; `layout --container-selector '[data-layout-container]'` found `div#label-box` horizontal overflow with `overflow_behaviour: clipped`, `clientWidth: 236`, and `scrollWidth: 382`.  In the opened 1280 x 900 screenshot, only `Express delivery to regi` is visible inside the red-bordered box; the rest is clipped.  This violates the complete-label readability expectation.  Opened evidence: `layout.png`.\n\n4. **Canvas \u2014 pass.** Before the click, DOM status was `Signal blue; revision 0; frame 1`; the opened `canvas-before.png` visibly shows a nonblank blue canvas.  One physical centre click on the computed image `Signal canvas` was acknowledged at `(227, 453.421875)`.  The strict action-flow passed with status `Signal green; revision 1; frame 2`, clean console/network, and a captured after image.  The opened `canvas-after.png` visibly shows the green frame and matching status.  Opened evidence: `canvas-before.png`, `canvas-after.png`.\n\n5. **Recovery \u2014 pass.** Saved `Morgan Draft` with one acknowledged action-flow click and exact acknowledgement.  Re-navigating to the same route through recorded Lantern flow preserved `Saved contact: Morgan Draft`.  The supplied owner status confirmed generation 1 was live; the supplied owner restart produced generation 2, PID `1257408`, endpoint `http://127.0.0.1:37711`, and fresh profile `profile-2`.  Reattached Lantern explicitly matched `No saved contact`, then saved `Morgan Recovered` once with a passed strict action-flow and exact acknowledgement.  Final owner status confirmed generation 2 remains live; no Lantern session remains attached because Lantern attaches per command.\n\n## Artefacts, uncertainty, and interventions\n\nOpened PNGs: `layout.png`, `canvas-before.png`, and `canvas-after.png` under this directory.  The expected fixed viewport was confirmed by screenshot metadata as 1280 x 900.  No alternate browser automation, DOM injection, application hooks, fixture source, truth data, or external helper was used.  The only lifecycle intervention was the capsule-supplied owner restart for task 5; no unplanned intervention occurred.  The material tool limitation was task 2's selector-only action-flow baseline match, which prevented response collection in that action; it was not retried, and the later source-attributed console/HTTP events and final DOM status are the available evidence.\n"
+    },
+    "playwright": {
+      "form": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "C",
+          "Ca",
+          "Cas",
+          "Case",
+          "Casey",
+          "Casey ",
+          "Casey E",
+          "Casey Ex",
+          "Casey Exa",
+          "Casey Exam",
+          "Casey Examp",
+          "Casey Exampl",
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "form",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "C",
+                "value": "C"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Ca"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "s",
+                "value": "Cas"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Case"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "y",
+                "value": "Casey"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": " ",
+                "value": "Casey "
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "E",
+                "value": "Casey E"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "x",
+                "value": "Casey Ex"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Casey Exa"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "m",
+                "value": "Casey Exam"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "p",
+                "value": "Casey Examp"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "l",
+                "value": "Casey Exampl"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_names": [
+          "Casey Example"
+        ],
+        "truth_pass": true
+      },
+      "failure": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "C",
+          "Ca",
+          "Cas",
+          "Case",
+          "Casey",
+          "Casey ",
+          "Casey E",
+          "Casey Ex",
+          "Casey Exa",
+          "Casey Exam",
+          "Casey Examp",
+          "Casey Exampl",
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "failure",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "C",
+                "value": "C"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Ca"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "s",
+                "value": "Cas"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Case"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "y",
+                "value": "Casey"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": " ",
+                "value": "Casey "
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "E",
+                "value": "Casey E"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "x",
+                "value": "Casey Ex"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Casey Exa"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "m",
+                "value": "Casey Exam"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "p",
+                "value": "Casey Examp"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "l",
+                "value": "Casey Exampl"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_count": 0,
+        "trusted_intended_text_and_submit": true,
+        "http_statuses": [
+          503
+        ],
+        "runtime_messages": [
+          "Uncaught Error: Qualification save handler failed after HTTP 503"
+        ],
+        "independent_http": [
+          {
+            "utc": "2026-09-07T06:48:57.579Z",
+            "generation": 1,
+            "kind": "http-error",
+            "url": "http://127.0.0.1:46279/intentional-fast-failure",
+            "status": 503
+          }
+        ],
+        "independent_runtime": [
+          {
+            "utc": "2026-09-07T06:48:57.581Z",
+            "generation": 1,
+            "kind": "pageerror",
+            "message": "Qualification save handler failed after HTTP 503"
+          }
+        ]
+      },
+      "layout": {
+        "loaded": true,
+        "visual_adjudication": "Requires opening agent PNG and comparing its report"
+      },
+      "canvas": {
+        "frames": [
+          {
+            "revision": 0,
+            "frame": 1,
+            "pixel": [
+              32,
+              95,
+              200,
+              255
+            ],
+            "pointers": []
+          },
+          {
+            "revision": 1,
+            "frame": 2,
+            "pixel": [
+              22,
+              128,
+              60,
+              255
+            ],
+            "pointers": [
+              {
+                "type": "pointerdown",
+                "trusted": true,
+                "x": 160,
+                "y": 89.578125
+              },
+              {
+                "type": "click",
+                "trusted": true,
+                "x": 160,
+                "y": 90
+              }
+            ]
+          }
+        ],
+        "truth_pass": true,
+        "centre_offsets": [
+          {
+            "dx": 0,
+            "dy": -0.421875
+          },
+          {
+            "dx": 0,
+            "dy": 0
+          }
+        ],
+        "visual_adjudication": "Requires opening agent before/after PNGs"
+      },
+      "recovery": {
+        "before_restart_loaded_names": [
+          null,
+          "Morgan Draft"
+        ],
+        "after_restart_loaded_names": [
+          null
+        ],
+        "before_restart_saved_names": [
+          "Morgan Draft"
+        ],
+        "after_restart_saved_names": [
+          "Morgan Recovered"
+        ],
+        "restarts": [
+          {
+            "utc": "2026-09-07T06:51:51.246Z",
+            "kind": "restarted",
+            "oldPid": 1283488,
+            "newPid": 1335799
+          }
+        ],
+        "trusted_intended_text_and_submits": true
+      },
+      "metrics": {
+        "cli_invocations": 47,
+        "cli_nonzero_exits": 0,
+        "cli_elapsed_sum_seconds": 16.456390460953116,
+        "cli_window_seconds": 300.607663,
+        "model_context_tokens": null,
+        "orchestration_tool_calls": null
+      },
+      "limitations": [
+        "Independent fixture state is not agent verification.",
+        "False passes and completion require comparing the agent report to this truth.",
+        "Elapsed CLI window excludes initial skill reading and final report writing."
+      ],
+      "initial_identities": [
+        {
+          "utc": "2026-09-07T06:46:50.195Z",
+          "kind": "started",
+          "generation": 1,
+          "pid": 1283488,
+          "endpoint": "http://127.0.0.1:39657",
+          "fixtureUrl": "http://127.0.0.1:46279",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-1",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-1 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-1",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        },
+        {
+          "utc": "2026-09-07T06:51:51.245Z",
+          "kind": "started",
+          "generation": 2,
+          "pid": 1335799,
+          "endpoint": "http://127.0.0.1:34843",
+          "fixtureUrl": "http://127.0.0.1:46279",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-2",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-2 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-playwright/profile-2",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        }
+      ],
+      "viewports": [
+        "{\"dpr\": 1, \"height\": 900, \"width\": 1280}"
+      ],
+      "all_viewports_match": true,
+      "artefacts": {
+        "agent-report.md": "3862abd8898cb36e396825618a6b1f44220e244ea83fd986e0548dd7298ed646",
+        "capsule.md": "851986077b64f709ba6598eb2b6ccf57fa98293ae939a9d1b65d137412a208ac",
+        "calls/commands.jsonl": "cc0fdf273727bbf7e98c0a165cc8caf07c7feb50d9737e44e7031db9ed3a051d",
+        "truth.jsonl": "c4b990fc6fd689541bf66b78534d38ed4fc203d3df90771c63c9bda5e00a874c",
+        "observer.jsonl": "8f2abd9734b3c68de2abefd61abbf3b5aaa72d939f6387b2f8a67f19b7315a44",
+        "lifecycle.jsonl": "7073ff4b5dd922fa82fd27a574df23625bd32be1b1af1ba300ed38809c9301ca"
+      },
+      "pngs": [
+        {
+          "path": "canvas-after.png",
+          "sha256": "38c35a2e06faf822a28c17d273696a3f21edba41a6f2533b494e7cff73fd179a",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "canvas-before.png",
+          "sha256": "e82a50705e89007c790b30ffae9ca5883ad80bd7eea0a4b1b1b284d92775e748",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "layout.png",
+          "sha256": "69970ff1fa50ebd382a951a2bcd4e4e24fd29b6d03513d6822314b44a11a8f65",
+          "dimensions": [
+            1280,
+            900
+          ]
+        }
+      ],
+      "run_directory": "/nvme/development/lantern/.smoogle/comparison/eval-playwright",
+      "task_capsule": "You are an independent real-CLI evaluation agent. Use only the assigned real CLI for all browser inspection and input. You may read its supplied skill/help and use the image-viewing tool to actually open generated PNGs. Do not read fixture source, owner implementation, truth/observer logs, other agents or results. Do not edit tracked files, spawn helpers, use alternate browser automation, inject DOM values or call application action functions. Browser-level real input including CDP Input.insertText is allowed. All actual CLI calls including help must go through the supplied recording prefix. You may read owner browser.json for the endpoint and use the supplied owner lifecycle status command; it is setup/lifecycle only.\n\nFive representative tasks, in order, starting from the supplied fresh browser:\n1. Navigate to http://127.0.0.1:46279/form. Enter the synthetic contact name Casey Example using real browser input, save once and explicitly verify acknowledged saved state.\n2. Navigate to http://127.0.0.1:46279/failure. Enter Casey Example. Prepare whatever observation your tool supports BEFORE submitting once, then determine whether the save succeeded or failed using page, HTTP and runtime evidence. Never replay an uncertain submission. A dispatched click or quiet period alone is not completion.\n3. Navigate to http://127.0.0.1:46279/layout. The complete destination label should be readable within its bordered card at the fixed viewport. Inspect geometry/structure and capture an image, actually open it, and judge clipping, overflow and readability against that expectation. Report any defect with evidence; do not change the UI.\n4. Navigate to http://127.0.0.1:46279/canvas. Establish the initial visible canvas state and status, capture/open a before PNG, click its centre once using physical pointer input, then explicitly verify the committed colour/state revision/rendered frame and capture/open an after PNG. Do not invoke application action hooks. Read-only CLI geometry inspection is allowed.\n5. Navigate to http://127.0.0.1:46279/recovery. Save Morgan Draft once and verify acknowledgement. Reload through your CLI and confirm the saved draft survives in that browser. End only your named attached CLI session using detach/close if applicable, check owner status, and request the supplied owner restart command. This is the common lifecycle scaffold, not an alternate browser input backend. The restart owns/terminates only the recorded browser PID and returns a NEW endpoint/PID with a fresh profile. Reattach your CLI to that returned endpoint. Navigate to the recovery URL again and explicitly verify no saved contact remains. Enter Morgan Recovered, save once, verify acknowledgement, and finish only your named CLI session. Check owner status but leave the final browser running for coordinator adjudication.\n\nUse only these five routes. Do not access /truth or internal fixture state. Store artefacts under /nvme/development/lantern/.smoogle/comparison/eval-playwright. Report verdict, evidence, uncertainty and external interventions per task in /nvme/development/lantern/.smoogle/comparison/eval-playwright/agent-report.md, then return a compact summary. State which PNGs you actually opened. Tool limitations and failures are valid results; never guess missing evidence. Owner restart/status commands are supplied lifecycle operations and should be reported separately from any unplanned external intervention. Do not restart except for task 5.\n\nAssigned tool: Playwright CLI 0.1.19. Supplied skill: /nvme/development/lantern/.smoogle/qualification-tools/node_modules/@playwright/cli/skills/playwright-cli/SKILL.md and package README. Recording prefix for EVERY CLI call: python3 /nvme/development/lantern/scripts/record-comparison.py --run-dir /nvme/development/lantern/.smoogle/comparison/eval-playwright/calls -- /nvme/development/lantern/.smoogle/qualification-tools/node_modules/.bin/playwright-cli -s=eval-playwright . Initially attach with attach --cdp=http://127.0.0.1:39657. Use only this named session; finish it with detach (external browser). Do not use open, close-all or kill-all. Use CLI-native commands, not run-code automation; read-only eval for page geometry is allowed. Store or copy CLI-generated artefacts to /nvme/development/lantern/.smoogle/comparison/eval-playwright, and list their paths.\n\nOwner status: node /nvme/development/lantern/scripts/comparison-owner.mjs status /nvme/development/lantern/.smoogle/comparison/eval-playwright\nOwner restart: node /nvme/development/lantern/scripts/comparison-owner.mjs restart /nvme/development/lantern/.smoogle/comparison/eval-playwright\nRun every CLI invocation with working directory /nvme/development/lantern/.smoogle/comparison/eval-playwright, keeping generated outputs scoped to this run.\nInitial owner PID 1283488, endpoint http://127.0.0.1:39657, Chromium 151.0.7922.34, 1280 \u00d7 900 CSS pixels, DPR 1, about:blank. Read only browser.json if you need current owner identity. No tracked edits, other agents or raw truth logs.\n",
+      "agent_report": "# Playwright CLI evaluation report\n\nTool: Playwright CLI 0.1.19, attached as `eval-playwright` through the required\nrecording prefix. All browser interactions used that session. Evaluation\ncompleted against the supplied 1280 x 900 CSS-pixel Chromium browser.\n\n## Verdict\n\nThe five tasks completed. Tasks 1, 2, 4 and 5 produced the required observable\noutcomes. Task 3 exposed a layout defect: the complete destination label was\nnot readable within its bordered card.\n\n## Task evidence\n\n1. **Form \u2014 pass.** After one keyboard entry of `Casey Example` and one Save\n   click, the accessibility snapshot reported `Saved contact: Casey Example`.\n   This is explicit page acknowledgement of the saved state.\n\n2. **Failure diagnosis \u2014 pass (the save failed as intended).** Before the one\n   submission, I inspected the CLI console (0 messages) and requests (no\n   non-static requests). After one keyboard entry of `Casey Example` and one\n   Save click, the page status was `Save failed \u2014 contact not saved`; the CLI\n   recorded `GET /intentional-fast-failure` with HTTP 503; and the console had\n   two errors: the 503 resource failure and `Qualification save handler failed\n   after HTTP 503`. The click was not replayed.\n\n3. **Layout \u2014 defect found.** The snapshot exposed the full label as `Express\n   delivery to regional Australia`, but read-only geometry for the label card\n   found `scrollWidth: 382` versus `clientWidth: 236`, with `overflow: hidden`\n   and `textOverflow: clip`. The opened screenshot visibly shows only\n   `Express delivery to regi` within the red-bordered card. The complete label\n   therefore is clipped and unreadable at the fixed viewport.\n\n4. **Canvas \u2014 pass.** Initial page status was `Signal blue; revision 0; frame\n   1`; the opened before image showed the blue canvas. Read-only geometry placed\n   its centre at (227, 453), where I issued exactly one physical pointer\n   down/up click. The resulting page status was `Signal green; revision 1;\n   frame 2`; the opened after image visibly showed green. This verifies the\n   committed colour, revision, and rendered frame.\n\n5. **Recovery \u2014 pass.** One save of `Morgan Draft` was acknowledged as `Saved\n   contact: Morgan Draft`. After CLI reload, the status still read `Saved\n   contact: Morgan Draft`. I detached the named session, checked owner status,\n   and invoked the supplied owner restart. The new owner was generation 2, PID\n   1335799, endpoint `http://127.0.0.1:34843`, with a fresh profile. After\n   reattaching the same named CLI session and navigating to recovery, the page\n   reported `No saved contact`. One save of `Morgan Recovered` was acknowledged\n   as `Saved contact: Morgan Recovered`. I detached the named session; final\n   owner status reported generation 2 alive, leaving its browser running.\n\n## Visual evidence actually opened\n\n- `layout.png` \u2014 opened; shows the destination label clipped inside its card.\n- `canvas-before.png` \u2014 opened; shows blue canvas and revision 0/frame 1.\n- `canvas-after.png` \u2014 opened; shows green canvas and revision 1/frame 2.\n\nAll CLI call records are under `calls/`. No unplanned external intervention\noccurred. The owner status checks and the single owner restart in task 5 were\nthe prescribed lifecycle operations. No uncertainty prevents these verdicts;\nthe canvas click also emitted one console warning, whose content was not needed\nto establish the explicitly reported committed state and visual frame.\n"
+    },
+    "agent-browser-interrupted": {
+      "form": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "form",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": false,
+                "value": ""
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "Casey Example",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_names": [
+          "Casey Example"
+        ],
+        "truth_pass": true
+      },
+      "failure": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "failure",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": false,
+                "value": ""
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "Casey Example",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_count": 0,
+        "trusted_intended_text_and_submit": true,
+        "http_statuses": [
+          503
+        ],
+        "runtime_messages": [
+          "Uncaught Error: Qualification save handler failed after HTTP 503"
+        ],
+        "independent_http": [
+          {
+            "utc": "2026-09-07T06:55:22.863Z",
+            "generation": 1,
+            "kind": "http-error",
+            "url": "http://127.0.0.1:36637/intentional-fast-failure",
+            "status": 503
+          }
+        ],
+        "independent_runtime": [
+          {
+            "utc": "2026-09-07T06:55:22.865Z",
+            "generation": 1,
+            "kind": "pageerror",
+            "message": "Qualification save handler failed after HTTP 503"
+          }
+        ]
+      },
+      "layout": {
+        "loaded": true,
+        "visual_adjudication": "Requires opening agent PNG and comparing its report"
+      },
+      "canvas": {
+        "frames": [
+          {
+            "revision": 0,
+            "frame": 1,
+            "pixel": [
+              32,
+              95,
+              200,
+              255
+            ],
+            "pointers": []
+          }
+        ],
+        "truth_pass": false,
+        "centre_offsets": [],
+        "visual_adjudication": "Requires opening agent before/after PNGs"
+      },
+      "recovery": {
+        "before_restart_loaded_names": [],
+        "after_restart_loaded_names": [],
+        "before_restart_saved_names": [],
+        "after_restart_saved_names": [],
+        "restarts": [],
+        "trusted_intended_text_and_submits": false
+      },
+      "metrics": {
+        "cli_invocations": 36,
+        "cli_nonzero_exits": 6,
+        "cli_elapsed_sum_seconds": 13.273596176877618,
+        "cli_window_seconds": 100.888276,
+        "model_context_tokens": null,
+        "orchestration_tool_calls": null
+      },
+      "limitations": [
+        "Independent fixture state is not agent verification.",
+        "False passes and completion require comparing the agent report to this truth.",
+        "Elapsed CLI window excludes initial skill reading and final report writing."
+      ],
+      "initial_identities": [
+        {
+          "utc": "2026-09-07T06:54:02.215Z",
+          "kind": "started",
+          "generation": 1,
+          "pid": 1358807,
+          "endpoint": "http://127.0.0.1:42127",
+          "fixtureUrl": "http://127.0.0.1:36637",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser/profile-1",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser/profile-1 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser/profile-1",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "f87d9493261d12fa8912bd6b6813a6147d0243e5fea931e1de5f9a029c33ea12",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        }
+      ],
+      "viewports": [
+        "{\"dpr\": 1, \"height\": 900, \"width\": 1280}"
+      ],
+      "all_viewports_match": true,
+      "artefacts": {
+        "agent-report.md": "8a6cf7d0dbf9aea6af9f75c8f739c3fa02d6362535d1a292bce0bc01c42bd003",
+        "capsule.md": "f601eedd818cfc7c45631bb4d4cdec0a5799a373468282f2164ee470ff65f583",
+        "calls/commands.jsonl": "47f126f756ca1cb22b4e46860852bee6ef72557fe0762a8033404b5b7638fa8b",
+        "truth.jsonl": "cb2af08b58ab1abb897aacf9d814ced5f90dd2a7be2722fe0631681a2fbcef1a",
+        "observer.jsonl": "9af4db45dccb363c1645279e4d4498bbeacb24e580c3925f3029a01efaf2f5f6",
+        "lifecycle.jsonl": "db255a549ec679388f3a70305bd537285b31eceb274e887b3b5a29e395ca53ff"
+      },
+      "pngs": [
+        {
+          "path": "canvas-before.png",
+          "sha256": "e82a50705e89007c790b30ffae9ca5883ad80bd7eea0a4b1b1b284d92775e748",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "layout.png",
+          "sha256": "69970ff1fa50ebd382a951a2bcd4e4e24fd29b6d03513d6822314b44a11a8f65",
+          "dimensions": [
+            1280,
+            900
+          ]
+        }
+      ],
+      "run_directory": "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser",
+      "task_capsule": "You are an independent real-CLI evaluation agent. Use only the assigned real CLI for all browser inspection and input. You may read its supplied skill/help and use the image-viewing tool to actually open generated PNGs. Do not read fixture source, owner implementation, truth/observer logs, other agents or results. Do not edit tracked files, spawn helpers, use alternate browser automation, inject DOM values or call application action functions. Browser-level real input including CDP Input.insertText is allowed. All actual CLI calls including help must go through the supplied recording prefix. You may read owner browser.json for the endpoint and use the supplied owner lifecycle status command; it is setup/lifecycle only.\n\nFive representative tasks, in order, starting from the supplied fresh browser:\n1. Navigate to http://127.0.0.1:36637/form. Enter the synthetic contact name Casey Example using real browser input, save once and explicitly verify acknowledged saved state.\n2. Navigate to http://127.0.0.1:36637/failure. Enter Casey Example. Prepare whatever observation your tool supports BEFORE submitting once, then determine whether the save succeeded or failed using page, HTTP and runtime evidence. Never replay an uncertain submission. A dispatched click or quiet period alone is not completion.\n3. Navigate to http://127.0.0.1:36637/layout. The complete destination label should be readable within its bordered card at the fixed viewport. Inspect geometry/structure and capture an image, actually open it, and judge clipping, overflow and readability against that expectation. Report any defect with evidence; do not change the UI.\n4. Navigate to http://127.0.0.1:36637/canvas. Establish the initial visible canvas state and status, capture/open a before PNG, click its centre once using physical pointer input, then explicitly verify the committed colour/state revision/rendered frame and capture/open an after PNG. Do not invoke application action hooks. Read-only CLI geometry inspection is allowed.\n5. Navigate to http://127.0.0.1:36637/recovery. Save Morgan Draft once and verify acknowledgement. Reload through your CLI and confirm the saved draft survives in that browser. End only your named attached CLI session using detach/close if applicable, check owner status, and request the supplied owner restart command. This is the common lifecycle scaffold, not an alternate browser input backend. The restart owns/terminates only the recorded browser PID and returns a NEW endpoint/PID with a fresh profile. Reattach your CLI to that returned endpoint. Navigate to the recovery URL again and explicitly verify no saved contact remains. Enter Morgan Recovered, save once, verify acknowledgement, and finish only your named CLI session. Check owner status but leave the final browser running for coordinator adjudication.\n\nUse only these five routes. Do not access /truth or internal fixture state. Store artefacts under /nvme/development/lantern/.smoogle/comparison/eval-agent-browser. Report verdict, evidence, uncertainty and external interventions per task in /nvme/development/lantern/.smoogle/comparison/eval-agent-browser/agent-report.md, then return a compact summary. State which PNGs you actually opened. Tool limitations and failures are valid results; never guess missing evidence. Owner restart/status commands are supplied lifecycle operations and should be reported separately from any unplanned external intervention. Do not restart except for task 5.\n\nAssigned tool: agent-browser 0.36.0. Read its version-matched core skill using the recorded skills get core --full command, and installed README as needed. Recording prefix for EVERY CLI call: python3 /nvme/development/lantern/scripts/record-comparison.py --run-dir /nvme/development/lantern/.smoogle/comparison/eval-agent-browser/calls -- /nvme/development/lantern/.smoogle/qualification-tools/node_modules/.bin/agent-browser --config /nvme/development/lantern/.smoogle/qualification-tools/agent-browser.json --session eval-agent-browser . Attach explicitly with --cdp http://127.0.0.1:42127 on browser commands, or named connect. Never auto-connect or close --all. Close only your named CLI session when requested. Read-only eval for page geometry is allowed; browser mutation must use real CLI input commands. Do not use DOM value assignment.\n\nOwner status: node /nvme/development/lantern/scripts/comparison-owner.mjs status /nvme/development/lantern/.smoogle/comparison/eval-agent-browser\nOwner restart: node /nvme/development/lantern/scripts/comparison-owner.mjs restart /nvme/development/lantern/.smoogle/comparison/eval-agent-browser\nRun every CLI invocation with working directory /nvme/development/lantern/.smoogle/comparison/eval-agent-browser, keeping generated outputs scoped to this run.\nInitial owner PID 1358807, endpoint http://127.0.0.1:42127, Chromium 151.0.7922.34, 1280 \u00d7 900 CSS pixels, DPR 1, about:blank. Read only browser.json if you need current owner identity. No tracked edits, other agents or raw truth logs.\n",
+      "agent_report": "# agent-browser evaluation report\n\nAssigned CLI: `agent-browser 0.36.0`, session `eval-agent-browser`, explicitly attached to `http://127.0.0.1:42127`. Every CLI invocation, including the core skill retrieval, used the supplied recording prefix. No alternate browser automation, DOM mutation, application action hook, fixture source, truth endpoint/log, owner implementation, or other evaluation result was accessed.\n\n## Task 1 \u2014 form save\n\n**Verdict: pass.** Navigated to `/form`, entered `Casey Example` with `fill`, and clicked **Save contact** once. The page initially displayed `Saving\u2026`; `wait --text 'Saved'` completed, and both snapshot/read evidence displayed `Saved contact: Casey Example` while the textbox retained that value. This is an explicit acknowledged saved state.\n\n## Task 2 \u2014 failed save\n\n**Verdict: pass (failure correctly determined).** Navigated to `/failure`, entered `Casey Example`, started `failure.har` *before* the sole Save click, and then used page, HTTP, and runtime observation. The page read `Save failed \u2014 contact not saved`; the recorded request list contained `GET /intentional-fast-failure (Fetch) 503`; the HAR was saved with one request. `console` returned no runtime messages. No submission was replayed.\n\n## Task 3 \u2014 layout\n\n**Verdict: defect found.** Captured and actually opened `layout.png`. It visibly shows `Express delivery to regi` clipped within the red-bordered inner card, rather than the complete destination label. Read-only geometry evidence: the card's rendered width is 240 px (236 px client width), has `overflowX: hidden`, and `scrollWidth: 382`; its nowrap label renders 366 px wide. The label cannot be completely readable in the bordered card at the supplied viewport.\n\n## Task 4 \u2014 canvas\n\n**Verdict: incomplete / environment-limited.** Initial state was explicitly established as `Signal blue; revision 0; frame 1`; the canvas geometry was `{x:65, y:361.421875, width:324, height:184}` and `canvas-before.png` was captured and actually opened, showing a blue frame. A physical centre pointer input was attempted at `(227,453)` via the assigned CLI, but `agent-browser mouse click` was rejected: `Unknown subcommand: click` (the CLI reported only `move`, `down`, `up`, `wheel`). Before a permissible replacement input could be issued, all later assigned-CLI commands failed because CDP `127.0.0.1:42127` refused the connection. Therefore no click was dispatched, no committed green/revision/rendered-frame evidence exists, and no after PNG exists.\n\n## Task 5 \u2014 recovery\n\n**Verdict: not executed.** The endpoint was already unavailable after task 4. The supplied owner status command also failed with `fetch failed`, `ECONNREFUSED 127.0.0.1:42307`. The capsule prohibits restarting except for task 5; because the status/lifecycle scaffold itself was unavailable before task 5 could begin, no restart was requested and no recovery actions were attempted. No CLI session detach/close was issued, so there was no intentional browser shutdown from this evaluator.\n\n## Evidence and interventions\n\nPNGs actually opened: `layout.png`, `canvas-before.png`. `failure.har` is the pre-submit network capture. All CLI call records are under `calls/` as required. The owner status check is a supplied lifecycle operation, not an external intervention; it failed because its local endpoint refused the connection. There were no unplanned external interventions.\n\nThe task-4 endpoint loss leaves the evaluator unable to distinguish a tool/session failure from owner-browser termination. It does not change the independently observed task 1\u20133 results.\n"
+    },
+    "agent-browser": {
+      "form": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "C",
+          "Ca",
+          "Cas",
+          "Case",
+          "Casey",
+          "Casey ",
+          "Casey E",
+          "Casey Ex",
+          "Casey Exa",
+          "Casey Exam",
+          "Casey Examp",
+          "Casey Exampl",
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "form",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "C",
+                "value": "C"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Ca"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "s",
+                "value": "Cas"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Case"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "y",
+                "value": "Casey"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": " ",
+                "value": "Casey "
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "E",
+                "value": "Casey E"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "x",
+                "value": "Casey Ex"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Casey Exa"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "m",
+                "value": "Casey Exam"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "p",
+                "value": "Casey Examp"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "l",
+                "value": "Casey Exampl"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_names": [
+          "Casey Example"
+        ],
+        "truth_pass": true
+      },
+      "failure": {
+        "submit_count": 1,
+        "trusted_input": true,
+        "trusted_text_values": [
+          "C",
+          "Ca",
+          "Cas",
+          "Case",
+          "Casey",
+          "Casey ",
+          "Casey E",
+          "Casey Ex",
+          "Casey Exa",
+          "Casey Exam",
+          "Casey Examp",
+          "Casey Exampl",
+          "Casey Example"
+        ],
+        "submit_events": [
+          {
+            "kind": "submit",
+            "case": "failure",
+            "submits": 1,
+            "inputEvents": [
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "C",
+                "value": "C"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Ca"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "s",
+                "value": "Cas"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Case"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "y",
+                "value": "Casey"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": " ",
+                "value": "Casey "
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "E",
+                "value": "Casey E"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "x",
+                "value": "Casey Ex"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "a",
+                "value": "Casey Exa"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "m",
+                "value": "Casey Exam"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "p",
+                "value": "Casey Examp"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "l",
+                "value": "Casey Exampl"
+              },
+              {
+                "trusted": true,
+                "inputType": "insertText",
+                "data": "e",
+                "value": "Casey Example"
+              }
+            ],
+            "pointerEvents": [],
+            "saved": null,
+            "revision": 0,
+            "frame": 0,
+            "trusted": true,
+            "value": "Casey Example",
+            "viewport": {
+              "width": 1280,
+              "height": 900,
+              "dpr": 1
+            }
+          }
+        ],
+        "saved_count": 0,
+        "trusted_intended_text_and_submit": true,
+        "http_statuses": [
+          503
+        ],
+        "runtime_messages": [
+          "Uncaught Error: Qualification save handler failed after HTTP 503"
+        ],
+        "independent_http": [
+          {
+            "utc": "2026-09-07T07:06:23.837Z",
+            "generation": 1,
+            "kind": "http-error",
+            "url": "http://127.0.0.1:38229/intentional-fast-failure",
+            "status": 503
+          }
+        ],
+        "independent_runtime": [
+          {
+            "utc": "2026-09-07T07:06:23.839Z",
+            "generation": 1,
+            "kind": "pageerror",
+            "message": "Qualification save handler failed after HTTP 503"
+          }
+        ]
+      },
+      "layout": {
+        "loaded": true,
+        "visual_adjudication": "Requires opening agent PNG and comparing its report"
+      },
+      "canvas": {
+        "frames": [
+          {
+            "revision": 0,
+            "frame": 1,
+            "pixel": [
+              32,
+              95,
+              200,
+              255
+            ],
+            "pointers": []
+          },
+          {
+            "revision": 1,
+            "frame": 2,
+            "pixel": [
+              22,
+              128,
+              60,
+              255
+            ],
+            "pointers": [
+              {
+                "type": "pointerdown",
+                "trusted": true,
+                "x": 160,
+                "y": 72.578125
+              },
+              {
+                "type": "click",
+                "trusted": true,
+                "x": 160,
+                "y": 73
+              }
+            ]
+          }
+        ],
+        "truth_pass": true,
+        "centre_offsets": [
+          {
+            "dx": 0,
+            "dy": -17.421875
+          },
+          {
+            "dx": 0,
+            "dy": -17
+          }
+        ],
+        "visual_adjudication": "Requires opening agent before/after PNGs"
+      },
+      "recovery": {
+        "before_restart_loaded_names": [
+          null,
+          "Morgan Draft"
+        ],
+        "after_restart_loaded_names": [
+          null
+        ],
+        "before_restart_saved_names": [
+          "Morgan Draft"
+        ],
+        "after_restart_saved_names": [
+          "Morgan Recovered"
+        ],
+        "restarts": [
+          {
+            "utc": "2026-09-07T07:08:34.135Z",
+            "kind": "restarted",
+            "oldPid": 1461221,
+            "newPid": 1510181
+          }
+        ],
+        "trusted_intended_text_and_submits": true
+      },
+      "metrics": {
+        "cli_invocations": 45,
+        "cli_nonzero_exits": 3,
+        "cli_elapsed_sum_seconds": 27.98723496310413,
+        "cli_window_seconds": 239.765161,
+        "model_context_tokens": null,
+        "orchestration_tool_calls": null
+      },
+      "limitations": [
+        "Independent fixture state is not agent verification.",
+        "False passes and completion require comparing the agent report to this truth.",
+        "Elapsed CLI window excludes initial skill reading and final report writing."
+      ],
+      "initial_identities": [
+        {
+          "utc": "2026-09-07T07:03:54.454Z",
+          "kind": "started",
+          "generation": 1,
+          "pid": 1461221,
+          "endpoint": "http://127.0.0.1:37105",
+          "fixtureUrl": "http://127.0.0.1:38229",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-1",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-1 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-1",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "ac18853ccf93529d156868a6623cac182cd46f3da4a3aa6c344c885910fdf83f",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        },
+        {
+          "utc": "2026-09-07T07:08:34.135Z",
+          "kind": "started",
+          "generation": 2,
+          "pid": 1510181,
+          "endpoint": "http://127.0.0.1:44173",
+          "fixtureUrl": "http://127.0.0.1:38229",
+          "version": "151.0.7922.34",
+          "launchArgs": [
+            "--headless=new",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            "--user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-2",
+            "--window-size=1280,900",
+            "--force-device-scale-factor=1",
+            "--hide-scrollbars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank"
+          ],
+          "argv": [
+            "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --headless=new --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-2 --window-size=1280,900 --force-device-scale-factor=1 --hide-scrollbars --no-first-run --no-default-browser-check --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+          ],
+          "viewport": {
+            "width": 1280,
+            "height": 900,
+            "dpr": 1
+          },
+          "initialUrl": "about:blank",
+          "freshProfile": "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/profile-2",
+          "fixture_sha256": "9854aad36d197272a1be95bc2fff5073bc20efe0eab108a0b9567df95ba171a4",
+          "owner_sha256": "ac18853ccf93529d156868a6623cac182cd46f3da4a3aa6c344c885910fdf83f",
+          "recorder_sha256": "218539cb973bc1d6991239e29f060740d32e81b19757d6642bbaf733e0c90e43",
+          "lantern_sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+          "executable_sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71",
+          "lantern": {
+            "package_version": "0.1.0",
+            "build": {
+              "provenance": "git",
+              "commit": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+              "dirty": false
+            }
+          }
+        }
+      ],
+      "viewports": [
+        "{\"dpr\": 1, \"height\": 900, \"width\": 1280}"
+      ],
+      "all_viewports_match": true,
+      "artefacts": {
+        "agent-report.md": "168b468f255324e4947518f9e05770e348fa21961ca6810eadc73c433df845c8",
+        "capsule.md": "5ad69f98c4ea379f70c079e8aa0b587b9f031c32a2edebd28b96d85abb79551e",
+        "calls/commands.jsonl": "2c4b87c7225dd31103ce5d48a9ae1ae4d9d540839cb1da699727536a48ead823",
+        "truth.jsonl": "1cb5c4d4f3609aae0e4e7d26cecfd6ef62da9cc93a53360c896275802b9b7c1a",
+        "observer.jsonl": "9966ad09bc4dbe67b39b271d7032207f45c991b8a35e09af64591b6bb6d9f673",
+        "lifecycle.jsonl": "b2b274fbfa0c815649a8730240a92fc3dee2edc767bedd14ce577c903e634b5f"
+      },
+      "pngs": [
+        {
+          "path": "canvas-after.png",
+          "sha256": "38c35a2e06faf822a28c17d273696a3f21edba41a6f2533b494e7cff73fd179a",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "canvas-before.png",
+          "sha256": "e82a50705e89007c790b30ffae9ca5883ad80bd7eea0a4b1b1b284d92775e748",
+          "dimensions": [
+            1280,
+            900
+          ]
+        },
+        {
+          "path": "layout.png",
+          "sha256": "69970ff1fa50ebd382a951a2bcd4e4e24fd29b6d03513d6822314b44a11a8f65",
+          "dimensions": [
+            1280,
+            900
+          ]
+        }
+      ],
+      "run_directory": "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun",
+      "owner_launch": {
+        "owner_pid": 1461207,
+        "start_new_session": true,
+        "owner_source_revision": "cf58a2d53f23f20ef357970bbd136d775b004160",
+        "owner_sha256": "ac18853ccf93529d156868a6623cac182cd46f3da4a3aa6c344c885910fdf83f",
+        "command": [
+          "node",
+          "scripts/comparison-owner.mjs",
+          "serve",
+          "/nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun"
+        ]
+      },
+      "task_capsule": "You are an independent real-CLI evaluation agent. Use only the assigned real CLI for all browser inspection and input. You may read its supplied skill/help and use the image-viewing tool to actually open generated PNGs. Do not read fixture source, owner implementation, truth/observer logs, other agents or results. Do not edit tracked files, spawn helpers, use alternate browser automation, inject DOM values or call application action functions. Browser-level real input including CDP Input.insertText is allowed. All actual CLI calls including help must go through the supplied recording prefix. You may read owner browser.json for the endpoint and use the supplied owner lifecycle status command; it is setup/lifecycle only.\n\nFive representative tasks, in order, starting from the supplied fresh browser:\n1. Navigate to http://127.0.0.1:38229/form. Enter the synthetic contact name Casey Example using real browser input, save once and explicitly verify acknowledged saved state.\n2. Navigate to http://127.0.0.1:38229/failure. Enter Casey Example. Prepare whatever observation your tool supports BEFORE submitting once, then determine whether the save succeeded or failed using page, HTTP and runtime evidence. Never replay an uncertain submission. A dispatched click or quiet period alone is not completion.\n3. Navigate to http://127.0.0.1:38229/layout. The complete destination label should be readable within its bordered card at the fixed viewport. Inspect geometry/structure and capture an image, actually open it, and judge clipping, overflow and readability against that expectation. Report any defect with evidence; do not change the UI.\n4. Navigate to http://127.0.0.1:38229/canvas. Establish the initial visible canvas state and status, capture/open a before PNG, click its centre once using physical pointer input, then explicitly verify the committed colour/state revision/rendered frame and capture/open an after PNG. Do not invoke application action hooks. Read-only CLI geometry inspection is allowed.\n5. Navigate to http://127.0.0.1:38229/recovery. Save Morgan Draft once and verify acknowledgement. Reload through your CLI and confirm the saved draft survives in that browser. End only your named attached CLI session using detach/close if applicable, check owner status, and request the supplied owner restart command. This is the common lifecycle scaffold, not an alternate browser input backend. The restart owns/terminates only the recorded browser PID and returns a NEW endpoint/PID with a fresh profile. Reattach your CLI to that returned endpoint. Navigate to the recovery URL again and explicitly verify no saved contact remains. Enter Morgan Recovered, save once, verify acknowledgement, and finish only your named CLI session. Check owner status but leave the final browser running for coordinator adjudication.\n\nUse only these five routes. Do not access /truth or internal fixture state. Store artefacts under /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun. Report verdict, evidence, uncertainty and external interventions per task in /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/agent-report.md, then return a compact summary. State which PNGs you actually opened. Tool limitations and failures are valid results; never guess missing evidence. Owner restart/status commands are supplied lifecycle operations and should be reported separately from any unplanned external intervention. Do not restart except for task 5.\n\nAssigned tool: agent-browser 0.36.0. Read its version-matched core skill using the recorded skills get core --full command, and installed README as needed. Recording prefix for EVERY CLI call: python3 /nvme/development/lantern/scripts/record-comparison.py --run-dir /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun/calls -- /nvme/development/lantern/.smoogle/qualification-tools/node_modules/.bin/agent-browser --config /nvme/development/lantern/.smoogle/qualification-tools/agent-browser.json --session eval-agent-browser-rerun . Attach explicitly with --cdp http://127.0.0.1:37105 on browser commands, or named connect. Never auto-connect or close --all. Close only your named CLI session when requested. Read-only eval for page geometry is allowed; browser mutation must use real CLI input commands. Do not use DOM value assignment.\n\nOwner status: node /nvme/development/lantern/scripts/comparison-owner.mjs status /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun\nOwner restart: node /nvme/development/lantern/scripts/comparison-owner.mjs restart /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun\nRun every CLI invocation with working directory /nvme/development/lantern/.smoogle/comparison/eval-agent-browser-rerun, keeping generated outputs scoped to this run.\nInitial owner PID 1461221, endpoint http://127.0.0.1:37105, Chromium 151.0.7922.34, 1280 \u00d7 900 CSS pixels, DPR 1, about:blank. Read only browser.json if you need current owner identity. No tracked edits, other agents or raw truth logs.\n",
+      "agent_report": "# agent-browser rerun evaluation\n\nVerdict: 2 of 5 tasks completed with the required evidence; task 2 correctly identified the deliberate failure. Tasks 1 and 5 could not meet their acknowledgement requirements, and task 5 also did not retain the draft across reload.\n\n## Task 1 \u2014 form acknowledgement: not verified\n\nEntered `Casey Example` and clicked Save contact once. The subsequent interactive snapshot retained the entered value but exposed no acknowledgement/status. A targeted `wait --text 'Saved Casey Example'` timed out after 25 seconds. No submission was replayed. Therefore successful saving was not explicitly verified.\n\n## Task 2 \u2014 failure detection: passed\n\nBefore submission I inspected the network request log and console. I entered `Casey Example` and clicked Save contact exactly once. The post-submit network log contained one `GET http://127.0.0.1:38229/intentional-fast-failure (Fetch) 503`; the page stayed on the form with the input value present and console output was empty. Verdict: save failed.\n\n## Task 3 \u2014 layout: defect found\n\nThe full destination label exposed by the accessibility tree was `Express delivery to regional Australia`, but the bordered label box visibly displayed only `Express delivery to regi` at the fixed 1280 \u00d7 900 viewport. The remainder was clipped, so the complete label was not readable inside its border. `get box` using a text selector could not resolve the static text; the visual evidence is decisive for clipping.\n\nOpened PNG: `layout.png`.\n\n## Task 4 \u2014 canvas: passed\n\nInitial snapshot/status: `Signal blue; revision 0; frame 1`. I opened `canvas-before.png`, then issued one physical pointer sequence at screenshot-derived canvas centre `(227, 436)` using `mouse move`, `mouse down`, and `mouse up`. The post-action status was `Signal green; revision 1; frame 2`, and the after image showed the green rendered canvas.\n\nOpened PNGs: `canvas-before.png`, `canvas-after.png`.\n\n## Task 5 \u2014 recovery: failed required acknowledgement/persistence checks\n\nEntered `Morgan Draft` and clicked Save contact once. The snapshot retained the field value but offered no acknowledgement. A CLI reload produced an empty Contact name field, so the draft did not survive in the same browser. I closed only the named attached CLI session, checked owner status, then used the supplied owner restart command. It returned generation 2, PID 1510181 and endpoint `http://127.0.0.1:44173`; owner status remained alive. On the fresh browser, recovery opened with an empty field, confirming no saved contact remained. I entered `Morgan Recovered`, clicked once, and again observed only the retained value without acknowledgement. I closed the named CLI session and left the generation-2 owner browser alive, as instructed.\n\n## Scope and interventions\n\nAll browser operations, including help, used the assigned recorded agent-browser prefix and explicitly supplied CDP endpoint. No alternate browser automation, DOM value injection, application actions, fixture/truth/result reads, or unplanned external intervention occurred. The supplied owner lifecycle operations were used only for task 5: status before restart, restart, and final status. One `get box` text-selector geometry attempt failed because it could not resolve the static text; it made no page change. The task 1 acknowledgement wait timed out and was not treated as evidence of saving.\n"
+    }
+  },
+  "measured_binary": {
+    "path": "/nvme/development/lantern/.smoogle/comparison/lantern-measured-32a32be21a2e2d8311153925a0c84ea7cd341076",
+    "sha256": "ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9",
+    "source_revision": "32a32be21a2e2d8311153925a0c84ea7cd341076",
+    "original_evaluated_path": "/nvme/development/lantern/target/debug/lantern"
+  },
+  "external_materials": {
+    "materials": {
+      ".smoogle/qualification-tools/node_modules/@playwright/cli/playwright-cli.js": "fda252270793401d2856530a5f503adf7fc326fc07bed97e413138f67c50662b",
+      ".smoogle/qualification-tools/node_modules/playwright-core/package.json": "82118e484cfd69f7422a3a85129da5d7a61068d4f8e8217800c511baa175d470",
+      ".smoogle/qualification-tools/node_modules/agent-browser/bin/agent-browser.js": "f85e8f553df9b20e7de253d556fd4f3edc511f19d9e914d5202fe739b80dff2e",
+      ".smoogle/qualification-tools/node_modules/agent-browser/bin/agent-browser-linux-x64": "56d15181e51e00213f907fcf39707cfc76bfa804ff20f5a9373661c73f96de5e",
+      ".smoogle/qualification-tools/agent-browser.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    "playwright_core_version": "1.63.0-alpha-2026-08-31",
+    "node_version": "v25.8.2"
+  },
+  "adjudicated_results": {
+    "lantern": {
+      "correctly_verified_tasks": 5,
+      "false_success_claims": 0,
+      "unplanned_agent_interventions": 0,
+      "conductor_trajectory_interventions": 0
+    },
+    "playwright": {
+      "correctly_verified_tasks": 5,
+      "false_success_claims": 0,
+      "unplanned_agent_interventions": 0,
+      "conductor_trajectory_interventions": 0
+    },
+    "agent-browser-interrupted": {
+      "correctly_verified_tasks": 3,
+      "incomplete": [
+        "canvas"
+      ],
+      "unexecuted": [
+        "recovery"
+      ],
+      "false_success_claims": 0,
+      "unplanned_agent_interventions": 0,
+      "disposition": "unattributed owner/browser interruption; retained"
+    },
+    "agent-browser": {
+      "correctly_verified_tasks": 3,
+      "unverified": [
+        "form",
+        "recovery"
+      ],
+      "false_success_claims": 0,
+      "false_negative_inferences": [
+        "draft did not persist; owner truth confirms persistence"
+      ],
+      "unplanned_agent_interventions": 0,
+      "conductor_trajectory_interventions": 1,
+      "canvas_limitation": "physical input inside canvas, approximately 17 CSS pixels above centre"
+    }
+  }
+}

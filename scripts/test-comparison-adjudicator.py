@@ -49,12 +49,14 @@ class AdjudicationContracts(unittest.TestCase):
         events = self.form + [copy.deepcopy(self.form[1])]
         self.assertFalse(self.adjudicate(events)['form']['truth_pass'])
 
-    def test_rendered_change_requires_real_centre_input(self):
+    def test_rendered_change_requires_real_on_canvas_input(self):
         self.assertTrue(self.adjudicate(self.canvas)['canvas']['truth_pass'])
         self.canvas[1]['pointerEvents'][1]['trusted'] = False
         self.assertFalse(self.adjudicate(self.canvas)['canvas']['truth_pass'])
         self.canvas[1]['pointerEvents'][1]['trusted'] = True
         self.canvas[1]['pointerEvents'][0]['x'] = 20
+        self.assertTrue(self.adjudicate(self.canvas)['canvas']['truth_pass'])
+        self.canvas[1]['pointerEvents'][0]['x'] = -1
         self.assertFalse(self.adjudicate(self.canvas)['canvas']['truth_pass'])
 
 

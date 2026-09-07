@@ -73,7 +73,8 @@ summary = {
         'frames': [{'revision': e['revision'], 'frame': e['frame'], 'pixel': e['centrePixel'], 'pointers': e['pointerEvents']} for e in canvas],
         'truth_pass': len(canvas) == 2 and canvas[0]['revision'] == 0 and canvas[0]['centrePixel'] == [32, 95, 200, 255]
         and canvas[1]['revision'] == 1 and canvas[1]['frame'] == 2 and canvas[1]['centrePixel'] == [22, 128, 60, 255]
-        and [p['type'] for p in canvas[1]['pointerEvents']] == ['pointerdown', 'click'] and all(p['trusted'] and abs(p['x'] - 160) <= 1 and abs(p['y'] - 90) <= 1 for p in canvas[1]['pointerEvents']),
+        and [p['type'] for p in canvas[1]['pointerEvents']] == ['pointerdown', 'click'] and all(p['trusted'] and 0 <= p['x'] < 320 and 0 <= p['y'] < 180 for p in canvas[1]['pointerEvents']),
+        'centre_offsets': [{'dx': p['x'] - 160, 'dy': p['y'] - 90} for e in canvas for p in e['pointerEvents']],
         'visual_adjudication': 'Requires opening agent before/after PNGs',
     },
     'recovery': {

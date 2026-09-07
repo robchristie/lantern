@@ -1,6 +1,77 @@
 # Paired UI qualification
 
-Status: bounded calibration; no comparative result selected yet.
+Status: comparison selected; aggregate qualification follows below.
+
+## Selected paired results
+
+The three tool trajectories produced the following bounded results. Finding the
+intentional layout defect is successful task completion; the UI itself fails
+its readability expectation. Correct failure diagnosis likewise does not mean
+the save succeeded. The fresh contexts all used `gpt-5.6-terra`, medium reasoning,
+with equivalent outcome instructions. There were no agent false-success claims.
+
+| Tool / attempt | Correctly verified tasks | False-success claims | CLI invocations / nonzero exits | CLI window seconds | Summed CLI execution seconds |
+| --- | --- | --- | --- | --- | --- |
+| Lantern | 5/5 | 0 | 36 / 1 | 222.438 | 9.123 |
+| Playwright CLI 0.1.19 | 5/5 | 0 | 47 / 0 | 300.608 | 16.456 |
+| agent-browser 0.36.0, interrupted | 3 verified; canvas incomplete; recovery unexecuted | 0 | 36 / 6 | 100.888 | 13.274 |
+| agent-browser 0.36.0, fresh run after lifetime hardening | 3/5; form and recovery unverified | 0 | 45 / 3 | 239.765 | 27.987 |
+
+**The agent-browser trajectory required one conductor-directed owner-lifetime
+hardening and fresh run after an unattributed interruption.** Each agent run
+needed zero unplanned in-run assistance; those zeros do not erase that overall
+intervention. The common prescribed owner restart in task 5 is separate from an
+unplanned intervention. Both agent-browser attempts remain in the evidence.
+
+Lantern's form expected text omitted `contact:`, producing a timeout, followed
+by an explicit read-only acknowledgement check. Its failure action selected a
+condition already true before the click and correctly returned incomplete.
+The next flow recovered a source-attributed runtime exception and an HTTP 503
+**console message**; it did not retain the direct Network response. The agent
+used the actual failure status and attributed observations without replay.
+Playwright retained explicit acknowledgement, direct HTTP 503 and runtime error,
+opened layout/canvas images and verified the fresh-profile recovery semantics.
+
+In agent-browser's fresh run, the owner independently recorded successful form
+and both recovery saves, trusted intended text, single submissions, draft
+persistence across reload, and reset after restart. The agent used interactive-
+only snapshots that omitted status output and a mismatched acknowledgement
+string, so it did not verify form or recovery. Its inference that the draft
+failed to persist because the input was empty is a **false negative**: the saved
+status and owner truth retained `Morgan Draft`. This describes that agent's
+observation choices, not a claim that agent-browser cannot inspect status.
+Its failure diagnosis used HTTP 503; its empty console missed the independently
+observed runtime exception and was not proof of no error. Its canvas click was
+trusted and inside the canvas, changing blue/revision 0/frame 1 to green/revision
+1/frame 2. The screenshot-derived point was about 17 CSS pixels above centre;
+that capsule precision deviation is retained, while the required physical canvas
+interaction and verified rendered outcome passed.
+
+Every required layout and before/after canvas PNG in the completed visual tasks
+was opened by its agent and independently opened during adjudication. All saved
+comparison images decoded at 1280 × 900; all fixture viewport observations were
+1280 × 900 at DPR 1. The canvas owner observed blue RGBA `[32,95,200,255]` and
+green `[22,128,60,255]`, two committed frames and trusted physical pointer events.
+The owner could distinguish successful application changes from agent uncertainty.
+
+One representative run (plus the disclosed interruption/replacement) cannot
+establish statistical superiority. Invocation counts and elapsed windows depend
+on chosen observations and command mistakes; they are not model context or total
+agent runtime. Actual model context/token and orchestration tool-call metrics
+were unavailable and remain null. The fixed software-rendered fixture does not
+establish hardware or broad website coverage.
+
+The measured Lantern executable is from
+`32a32be21a2e2d8311153925a0c84ea7cd341076`; its SHA-256 is
+`ebc280537a9cb0d1d62b0a1fe24260ba9a74cb71b8672ad1caa58a19767cdbe9`.
+A read/execute-only retained copy is
+`.smoogle/comparison/lantern-measured-32a32be21a2e2d8311153925a0c84ea7cd341076`.
+Subsequent qualification builds at `target/debug/lantern` are separate artefacts.
+The public [evidence manifest](comparative-ui-evidence.json) retains exact input
+hashes, equivalent capsules, original agent reports, independent summaries,
+per-run owner identities, screenshot hashes, and raw-record hashes. Detailed
+local records remain under `.smoogle/comparison/`. The owner's later diagnostic
+and detached-session delta is documented above and in its per-run identity.
 
 ## Question and scope
 
