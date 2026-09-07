@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "qualification_source": {
+    "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+    "dirty": false
+  },
+  "canonical": {
+    "result": "passed",
+    "rust_tests": 231,
+    "adjudication_tests": 4,
+    "current_compiler_check": "passed",
+    "msrv_1_85_check": "passed",
+    "docs_check": "passed",
+    "log_sha256": "9031a2dfc0405213042d8db01ca065b9c523abbb1f70920bff921f9b2e3ab7bc"
+  },
+  "browser_contracts": {
+    "result": "pass",
+    "case_count": 64,
+    "run_id": "c8de80e8-0f84-4132-bb67-ee3749bd1705",
+    "browser": {
+      "executable": "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome",
+      "headless": "new",
+      "product": "Chrome/151.0.7922.34",
+      "profile": "fresh-temporary-directory",
+      "protocol_version": "1.3",
+      "requested_window_size": {
+        "height": 700,
+        "width": 1000
+      }
+    },
+    "build": {
+      "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "dirty": false,
+      "provenance": "git"
+    },
+    "evidence_sha256": "5b05b7baa3ae0743e79086728d2afb863c78611b89fb6bae2919b14384c5e58a",
+    "opened_visual_captures": [
+      {
+        "fixture_url": "http://127.0.0.1:33685/layout",
+        "path": "/nvme/development/lantern/.smoogle/comparison/aggregate-browser-contracts/layout-1000x800.png",
+        "png_dimensions": {
+          "height": 800,
+          "width": 1000
+        },
+        "sha256": "df57abc9b391fbbff6e2ce72c8b0d953ec27827eaa3e94e12d2e357f174515a6",
+        "viewport": {
+          "device_scale_factor": 1,
+          "height": 800,
+          "width": 1000
+        },
+        "visual_review": "opened; expected layout, scroll/ellipsis and clipping fixtures confirmed"
+      },
+      {
+        "fixture_url": "http://127.0.0.1:33685/layout",
+        "path": "/nvme/development/lantern/.smoogle/comparison/aggregate-browser-contracts/layout-390x844.png",
+        "png_dimensions": {
+          "height": 844,
+          "width": 390
+        },
+        "sha256": "fa99d90421494fbcab3e7120765ef70d9e8ccf513a7f4c917d6a9325b89cba92",
+        "viewport": {
+          "device_scale_factor": 1,
+          "height": 844,
+          "width": 390
+        },
+        "visual_review": "opened; expected layout, scroll/ellipsis and clipping fixtures confirmed"
+      }
+    ]
+  },
+  "hardened_owner": {
+    "result": "passed",
+    "source_revision": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+    "owner_sha256": "ac18853ccf93529d156868a6623cac182cd46f3da4a3aa6c344c885910fdf83f",
+    "build": {
+      "provenance": "git",
+      "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "dirty": false
+    },
+    "initial_pid": 1607675,
+    "restarted_pid": 1608074,
+    "viewport": {
+      "width": 1280,
+      "height": 900,
+      "dpr": 1
+    },
+    "actual_png_dimensions": [
+      1280,
+      900
+    ],
+    "trusted_single_form_submit": true,
+    "fresh_profile_restart": true,
+    "owner_separate_process_session": true,
+    "signal_and_exit_records": true,
+    "profile_and_browser_cleanup": true,
+    "png_sha256": "769d1f0ea2602039f3e2fc102d5e10a9b37e180c83332a7d73b3bd868b4818e0"
+  },
+  "polyorama": {
+    "owner_revision": "db534693a36157e04323f0acec6a1a34e4c08994",
+    "owner_checkout_revision": "db534693a36157e04323f0acec6a1a34e4c08994",
+    "owner_status": "",
+    "lantern_build": {
+      "provenance": "git",
+      "commit": "3c29e48596dab102d54acc2b398e2dcb15c70cef",
+      "dirty": false
+    },
+    "browser": "151.0.7922.34",
+    "materialisations": {
+      "/nvme/development/polyorama/target/wasm32-unknown-unknown/release/polyorama_gallery.wasm": {
+        "bytes": 12151196,
+        "sha256": "d9860b0e5bf1e35c877a940322d9caed032d5ed127596d4a87a5e9af29fe47db"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/pkg/polyorama_gallery_bg.wasm": {
+        "bytes": 10452019,
+        "sha256": "ee84f55d41532acc739e56ae046e9b1160433d44b3565e1f1982fefe126b7a1d"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/pkg/polyorama_gallery.js": {
+        "bytes": 158309,
+        "sha256": "d960cafe247679b9278eb68b94a8fe9f1b1650ef5c14fdd9900e8d0158f53aed"
+      },
+      "/nvme/development/polyorama/apps/polyorama-gallery/web/bootstrap.js": {
+        "bytes": 511,
+        "sha256": "58e3042adc4f3c4b73b9851081453c30ee47eb1852d0f8596edb48cbbb3e49cf"
+      },
+      "/nvme/development/lantern/target/debug/lantern": {
+        "bytes": 37225032,
+        "sha256": "d37604aeb3a68b4d8454c04096b81d167f1d999ce8994a0d884acacfb708ddd4"
+      },
+      "/home/rob/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome": {
+        "bytes": 290614600,
+        "sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71"
+      }
+    },
+    "identity_sha256": "5e19ac08554132ccdd4474053135ab770e02c2722bf56d778a6d0d42f7799672",
+    "live_result_sha256": "6f1fac2ce402b1a0a0c0290b4081561aa39774550a31539e4f439ecc812fc3c9",
+    "screenshot": {
+      "bytes": 80421,
+      "format": "png",
+      "height": 900,
+      "overwritten": true,
+      "path": "/nvme/development/lantern/.smoogle/qualification-tools/polyorama/live-shell.png",
+      "pixel_frame": null,
+      "redaction_caveat": "screenshot_contains_visible_page_pixels",
+      "sha256": "f503313263c2a8dc83e3bc1a2a3926428b2542dd7fbec20dd67b51f2504299e7",
+      "viewport_correlation": "same_dimensions",
+      "width": 1440
+    },
+    "opened_by": "programme conductor",
+    "visual_result": "Expected nonblank dark application shell, two panes and intentional tab ellipsis",
+    "repeatability": "PNG SHA-256 identical to prior reviewed owner capture",
+    "frame_correlation": {
+      "after": 10,
+      "atomicity": "not_established",
+      "before": 10,
+      "pixel_frame": null,
+      "status": "same_observed_frame"
+    },
+    "readiness": {
+      "application_ready": null,
+      "bootstrap_ready": true,
+      "frame_observed": 10,
+      "status": "partial"
+    },
+    "coverage": {
+      "status": "known",
+      "value": {
+        "attempted_components": 6,
+        "excluded_categories": [
+          "ordinary_egui_labels",
+          "native_combo_box_text",
+          "native_button_text",
+          "native_selectable_text"
+        ],
+        "failed_components": 0,
+        "measured_components": 6,
+        "native_text_controls": 26,
+        "observed_native_controls": 0,
+        "successful_components": 6
+      }
+    },
+    "hardware_qualification": false
+  }
+}

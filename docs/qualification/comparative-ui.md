@@ -1,6 +1,6 @@
 # Paired UI qualification
 
-Status: comparison selected; aggregate qualification follows below.
+Status: qualified candidate; terminal review and landing evidence belong to its pull request.
 
 ## Selected paired results
 
@@ -222,3 +222,38 @@ byte-identical across all runs. Earlier completed Lantern/Playwright runs retain
 their successful lifecycle evidence. Local evidence owners are
 `.smoogle/comparison/eval-agent-browser/`, `lifetime-probe/`, and
 `detached-lifetime-probe/` beneath the same comparison directory.
+
+## Aggregate qualification
+
+At clean source `3c29e48596dab102d54acc2b398e2dcb15c70cef`, canonical validation
+passed 231 Rust tests and four adjudication contracts, current compiler and
+Rust 1.85 checks, and documentation hygiene. The audited real-Chromium suite
+passed all 64 cases. Its desktop and narrow layout PNGs were opened: expected
+two-column/one-column layout, scrolling affordance, intentional ellipsis and
+known clipping/container escapes were confirmed. The action-flow canvas PNG
+was opened and showed the expected rendered red/green halves.
+
+The hardened owner also passed an exact-source detached-session check: fresh
+about:blank, 1280 × 900 CSS and decoded PNG dimensions, one trusted submitted
+form and acknowledgement, new PID/profile on restart, and recorded SIGTERM
+cleanup of browser and both profiles. These scripted checks are qualification
+evidence, not additional agent comparison runs.
+
+The actual Polyorama owner capture used clean owner
+`db534693a36157e04323f0acec6a1a34e4c08994` and the same Lantern qualification
+source. Materialisation hashes were checked around capture. The conductor opened
+the 1440 × 900 dark application shell: two panes, deterministic pane text,
+intentional tab ellipsis and nonblank content matched expectations. PNG SHA-256
+`f503313263c2a8dc83e3bc1a2a3926428b2542dd7fbec20dd67b51f2504299e7`
+matched the prior reviewed owner capture, establishing this declared software
+renderer/fixture's repeatability. Frames were 10/10, but pixel-frame identity
+remained null and atomicity was not established. Readiness was partial
+(bootstrap true, application readiness unavailable). Coverage was six successful
+measured components, zero failed, with 26 native controls unobserved and explicit
+text exclusions. No hardware support or app-wide readiness claim follows.
+
+The [aggregate manifest](aggregate-ui-evidence.json) retains qualification input,
+result and artefact identities. The [programme assessment](observable-ui-assessment.md)
+reconciles every row and remaining scope limits. Final exact-head review, CI,
+landing and merged-head executable/skill reconciliation remain conductor
+delivery gates; their terminal facts belong to the pull-request evidence.

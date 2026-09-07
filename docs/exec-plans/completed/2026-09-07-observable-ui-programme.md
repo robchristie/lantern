@@ -1,6 +1,6 @@
 # Observable and verifiable UI outcomes
 
-Status: active
+Status: completed
 
 ## Outcome and authority
 
@@ -26,10 +26,10 @@ The existing persistent-profile plan is unrelated and must be preserved.
 | P | Consume existing Polyorama versioned semantic/text/visual evidence; narrow on-demand adapter where live inspection needs it; explicit revision/coverage correlation | Polyorama `docs/ui-snapshots/README.md`, `docs/ui-guides/ui-review.md`; existing artefacts and browser accessibility limitation | 5: application evidence | Implemented and qualified (PR #13) |
 | A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Implemented and qualified (PR #14) |
 | L | Escaped, unique generated selectors; explicit container configuration; heuristic layout findings and intentional overflow distinction | `layout.rs`: raw identifiers and application-specific container classes | 4: inspection workflow | Implemented and qualified (PR #12) |
-| Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Partial: interaction and action-flow fixtures qualified; final qualification pending |
+| Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Implemented and qualified; 64 audited browser cases plus aggregate owner/comparison evidence |
 | C | Discover package/build identity, commands and schemas; split CLI by command family before broader interface expansion | CLI version is package-only; large `main.rs` | 2: CLI foundation (separate package) | Implemented and qualified (PR #9) |
 | S | Short core skill, progressive references for lifecycle/auth/GPU/application recipes; evidence-centred project purpose | Tracked skill contains lengthy setup recipes; README leads with MCP overhead | 4: inspection workflow | Implemented and qualified (PR #12) |
-| B | Paired external CLI baseline on form, async failure, layout defect, canvas and restart/recovery | No comparative benchmark; source claims are not measured results | 7: comparative qualification | Pending |
+| B | Paired external CLI baseline on form, async failure, layout defect, canvas and restart/recovery | No comparative benchmark; source claims are not measured results | 7: comparative qualification | Paired case study recorded; incomplete outcomes and intervention retained |
 
 ## Boundaries and acceptance
 
@@ -77,17 +77,31 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | P: application evidence | Polyorama `db534693a36157e04323f0acec6a1a34e4c08994` / Lantern `c61fe1169538444feae0f40a7ccd7baed2f3a93a` | Version 1 owner bundle and fixed read-only live hook; 227 tests and 44 browser cases | [PR #13 landing evidence](https://github.com/robchristie/lantern/pull/13#issuecomment-5565670734); `../completed/2026-09-07-application-evidence.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
 | A: semantic DOM inspection | Lantern `bb9fdd6cd868571ab99a9d77fe83ff7834f0321d` / Q/B uses this base | Computed AX view and exact semantic targets; 231 tests and 64 browser cases | [PR #14 landing evidence](https://github.com/robchristie/lantern/pull/14#issuecomment-5565904470); `../completed/2026-09-07-semantic-dom.md` | Landed; PR/post-merge CI passed; installed skill validated and task Git cleaned |
 
-Current phase: Q/B comparison candidate selected at
-`32a32be21a2e2d8311153925a0c84ea7cd341076`. Calibration established equivalent
-real CLI input and owned attachment lifecycles, corrected actual PNG viewport
-alignment, and selected private observer reporting. Detailed decisions and
-provisional observations are in `../../qualification/comparative-ui.md`.
-Fresh five-task agents now use identical frozen fixture/browser/tool inputs;
-complete their independent adjudication, aggregate checks and owner journey
-before selecting the final report candidate.
-P reviewed head `655e4f4acb80adb7667dd5d348e3fbd0793d248f` and landed revision
-share tree `781fbca4b58d60fbee2f56ab5e674f8cb9d48431`; PR CI 34087614365 and
-post-merge CI 34087942651 passed. Q remains partial until aggregate qualification and comparison are recorded.
+Final qualification selected at clean Lantern
+`3c29e48596dab102d54acc2b398e2dcb15c70cef`. Canonical validation passed 231
+Rust tests, four independent-adjudication contracts, current/MSRV checks and
+documentation hygiene; all 64 audited browser cases passed. The actual Polyorama
+capture retained reviewed owner `db534693a36157e04323f0acec6a1a34e4c08994`
+and reproduced the same opened 1440 × 900 software-rendered shell PNG.
+
+The paired agents used frozen Lantern `32a32be21a2e2d8311153925a0c84ea7cd341076`,
+Playwright CLI 0.1.19 and agent-browser 0.36.0, the same model/reasoning,
+fixture, Chromium and viewport. Lantern/Playwright verified 5/5 tasks;
+agent-browser's fresh run verified 3/5 with form/recovery unverified and a false
+negative persistence inference. No false-success claim occurred. Its first run
+was interrupted after three tasks by unattributed owner/browser loss, requiring
+one conductor-directed lifetime hardening and fresh run. Both attempts and the
+owner implementation delta remain explicit; no statistical superiority follows.
+
+| Final package | Owner / consumer revision | Aggregate result | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Q/B: comparative and aggregate qualification | Lantern qualification `3c29e48596dab102d54acc2b398e2dcb15c70cef` / Polyorama owner above; measured inputs in report | 231 Rust + 4 adjudication + 64 browser cases; actual repeatable owner capture; paired results and limitations retained | `../../qualification/comparative-ui.md`, `../../qualification/aggregate-ui-evidence.json`, `../../qualification/observable-ui-assessment.md` | Qualified candidate; exact-head review, CI, landing and merged-head reconciliation recorded by the conductor in the final PR |
+
+All programme rows have implementation and qualification evidence within the
+declared envelope. The unrelated persistent-profile plan remains active.
+Final code review/repair, CI, landing, installed executable/skill identity and
+Git cleanup are delivery gates owned by the conductor, not additional product
+packages or reasons for recursive closeout commits.
 
 ## Terminal rule
 

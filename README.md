@@ -33,6 +33,7 @@ interface against the task; a capture alone is not a visual review.
 - `docs/architecture.md`: detailed architecture
 - `docs/headless-chromium.md`: operator-owned Chromium, container, and VNC-compatible CDP setup
 - `docs/authenticated-browser-testing.md`: safety checklist and workflow for dedicated logged-in browser profiles
+- `docs/qualification/comparative-ui.md`: paired CLI case study, aggregate qualification and explicit limitations
 - `docs/skills/lantern-ui-inspection/`: tracked Codex skill for dogfooding Lantern during UI work
 - `docs/product-specs/lantern.md`: generated product spec
 - `docs/product-specs/cli-contract.md`: first-milestone CLI contract

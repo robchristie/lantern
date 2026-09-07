@@ -4,11 +4,19 @@ This file is the repository's current quality scorecard. It is a contract for fu
 
 ## Current Grade
 
-Overall grade: **C+**
+Overall grade: **B-**
 
 Last reviewed: **2026-09-07**
 
-Rationale: `Lantern` now has a Rust workspace with a narrow implemented CLI contract for local Chromium CDP inspection and frontend feedback: `doctor`, `targets`, `page`, `dom`, computed `accessibility`, exact semantic interaction targets, explicit `--target-id` selection, `open`, `wait`, `console`, `network`, `layout`, `screenshot` with optional regions, `click`, `type`, `key`, `hover`, `wheel`, `drag`, session-oriented flow observation, bounded action/assertion/capture results, and explicit opt-in managed browser containers. The command surface is documented, fixture-tested, redacted by default, and covered by the standard validation script. Two-instance Podman and Docker managed-browser smokes have passed, but the repo remains below `B` until real-browser smoke coverage, recovery behavior, and unattended landing confidence are proven across representative local setups.
+Rationale: Lantern has bounded CDP transport, guarded semantic/CSS interactions,
+explicit action postconditions, heuristic layout, opened-image workflows and
+source-correlated owner application evidence. Canonical verification covers 231
+Rust tests plus four adjudication contracts; 64 real-Chromium cases audit actual
+input and application state. A paired agent case study and repeated software-
+rendered Polyorama shell qualify representative use. Known gaps remain bounded:
+broader host/container and hardware coverage, app-wide readiness, non-atomic
+capture correlation and agent choices that can leave successful actions unverified.
+See `docs/qualification/observable-ui-assessment.md` for the evidence envelope.
 
 ## Grade Scale
 
@@ -26,9 +34,9 @@ Use `+` or `-` only when the repo is clearly between two grades.
 | --- | --- | --- | --- |
 | Architecture boundaries | C+ | Crates separate core CDP services, storage, and CLI presentation; managed browser registry/runtime command construction lives in `lantern-storage` while endpoint-based CDP commands remain in the CLI/core path. | Boundaries still need pressure from future non-CLI adapters and broader runtime behavior before they can be treated as stable. |
 | Workflow clarity | B- | `AGENTS.md`, `PLANS.md`, `docs/workflows.md`, completed ExecPlans, CLI contract docs, and validation scripts describe the expected agent and operator loops. | Guidance should keep tightening as recovery, landing, and browser-matrix evidence accumulates. |
-| Validation posture | C+ | `scripts/validate.sh` covers formatting, `cargo check`, workspace tests, and docs hygiene; fixture tests cover the implemented CLI feedback loop, including click/type/key/pointer interaction metadata and screenshot regions; two-instance managed-browser smokes have passed with rootless Podman and Docker. | A separate real-Chromium interaction CI job verifies fixture state, strict exits and blockers; action-flow and bounded heuristic layout have real-browser contracts; broader application visual qualification and the host/container matrix remain incomplete. |
+| Validation posture | B | `scripts/validate.sh` covers formatting, `cargo check`, workspace tests, and docs hygiene; fixture tests cover the implemented CLI feedback loop, including click/type/key/pointer interaction metadata and screenshot regions; two-instance managed-browser smokes have passed with rootless Podman and Docker. | A separate real-Chromium interaction CI job verifies fixture state, strict exits and blockers; action-flow and bounded heuristic layout have real-browser contracts; the paired five-task case study and actual Polyorama shell are qualified; the broader host/container/hardware matrix remains incomplete. |
 | Maintainability | C+ | Product specs, design docs, completed ExecPlans, current-state scorecards, and the tech debt tracker provide durable context without rewriting milestone history. | Future command expansion needs the same docs-first discipline to avoid drifting from the narrow v1 contract. |
-| Automation readiness | C | Checked-in prompt templates, conservative `smoogle.toml` defaults, and stable JSON/error contracts support assisted automation. | Auto landing should wait until validation, review, and real-browser signals are consistently clean. |
+| Automation readiness | B- | Checked-in prompt templates, conservative `smoogle.toml` defaults, and stable JSON/error contracts support assisted automation. | Exact-revision review and passing CI remain landing gates. Agent verification is independently adjudicated; the comparison retained one owner interruption and conductor-directed rerun, plus missed acknowledgements. |
 
 ## Quality Bar For Changes
 
