@@ -165,6 +165,39 @@
       if (event.key === 'ArrowDown') mark(document.activeElement === node ? 'key-focused' : 'key-unfocused');
     });
     fixture.append(node);
+  } else if (scenario === 'native-key-backspace') {
+    fixture.innerHTML = '<input id="target" aria-label="Native editing" value="abc">';
+    const input = document.querySelector('#target');
+    input.addEventListener('input', () => mark(`value-${input.value}`));
+    input.focus();
+    input.setSelectionRange(3, 3);
+  } else if (scenario === 'native-key-enter') {
+    fixture.innerHTML = '<form><button id="target" type="submit">Submit</button></form>';
+    let clicks = 0;
+    let submissions = 0;
+    const report = () => mark(`clicks-${clicks}-submissions-${submissions}`);
+    document.querySelector('#target').addEventListener('click', () => {
+      clicks += 1;
+      report();
+    });
+    fixture.querySelector('form').addEventListener('submit', event => {
+      event.preventDefault();
+      submissions += 1;
+      report();
+    });
+    document.querySelector('#target').focus();
+  } else if (scenario === 'native-key-space') {
+    fixture.innerHTML = '<button id="target" type="button">Activate</button>';
+    let clicks = 0;
+    document.querySelector('#target').addEventListener('click', () => {
+      clicks += 1;
+      mark(`clicks-${clicks}`);
+    });
+    document.querySelector('#target').focus();
+  } else if (scenario === 'native-key-tab') {
+    fixture.innerHTML = '<input id="target" aria-label="First"><input id="next" aria-label="Next"><input id="last" aria-label="Last">';
+    document.querySelector('#target').focus();
+    fixture.addEventListener('focusin', () => mark(`focus-${document.activeElement.id}`));
   } else if (scenario === 'pointer') {
     fixture.innerHTML = '<div id="surface" tabindex="0">Pointer surface</div>';
     const surface = document.querySelector('#surface');

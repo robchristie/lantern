@@ -1106,11 +1106,13 @@ Redaction behavior:
 
 Purpose: focus the selected element and dispatch one keyboard key press as a `keyDown`/`keyUp` pair.
 
-`lantern key` is a bounded keyboard interaction helper. It does not insert text, synthesize shortcuts, hold keys, repeat keys, infer selectors, evaluate operator-supplied JavaScript, validate application state, or run multi-step interaction sessions. The command requires an explicit selector, explicit key, and explicit timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
+`lantern key` is a bounded keyboard interaction helper. Ordinary text insertion uses `type`; Enter and Space retain their native editing and activation behaviour. It does not synthesise shortcuts, hold keys, repeat keys, infer selectors, evaluate operator-supplied JavaScript, validate application state, or run multi-step interaction sessions. The command requires an explicit selector, explicit key, and explicit timeout. Preparation, diagnostics, strict exit status and dispatch uncertainty follow the shared interaction contract above.
 
 Supported form:
 
 - `lantern key --selector <CSS_SELECTOR> --key <KEY> --timeout-ms <MS>`
+
+Supported keys are `Enter`, `Space` (or a literal space), `Tab`, `Backspace`, `Delete`, `Escape`, `ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`, `Home`, `End`, `PageUp`, and `PageDown`. Names are case-sensitive. Unsupported names, printable characters, chords and modifier forms fail with a usage error before browser access. Use `type` for ordinary text.
 
 Timeouts are explicit and bounded. `--timeout-ms` is required and must be from `1` through `30000`.
 
@@ -1119,7 +1121,7 @@ CDP inputs:
 - `GET /json/list`
 - The selected page target's WebSocket debugger endpoint.
 - Fixed Runtime preparation checks, including focus and action-specific state, as defined above.
-- `Input.dispatchKeyEvent` for exactly one `keyDown` and one `keyUp` event using the supplied key.
+- `Input.dispatchKeyEvent` for exactly one `keyDown` and one `keyUp` event with explicit DOM `key`, physical `code`, and portable `windowsVirtualKeyCode`. Enter keydown includes `text` and `unmodifiedText` as carriage return; Space includes a space. Keyup carries no text. Platform-specific native virtual codes are left unset.
 
 Target selection, WebSocket requirements, and target-related error cases are identical to `lantern click`.
 

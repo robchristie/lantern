@@ -378,6 +378,19 @@ pub(crate) fn validate_endpoint_invocation(
         ));
     }
 
+    if command == Command::Key
+        && invocation
+            .key
+            .as_deref()
+            .is_some_and(|key| !lantern_core::interaction::is_supported_key(key))
+    {
+        return Err(CliError::usage(
+            invocation.json,
+            "Unsupported key.",
+            lantern_core::interaction::SUPPORTED_KEY_HINT,
+        ));
+    }
+
     if command == Command::Key && invocation.wait_text.is_some() {
         return Err(CliError::usage(
             invocation.json,
