@@ -530,6 +530,12 @@ impl CliError {
 
     pub(crate) fn from_layout_read(error: LayoutReadError, json: bool) -> Self {
         match error {
+            LayoutReadError::ContainerSelectorInvalid => Self::runtime(
+                json,
+                "layout_container_selector_invalid",
+                "Layout container selector is invalid.",
+                "Pass a non-empty valid CSS selector of at most 2048 UTF-8 bytes.",
+            ),
             LayoutReadError::TargetWebSocketMissing => Self::runtime(
                 json,
                 "target_websocket_missing",

@@ -1,6 +1,6 @@
 # Browser contracts
 
-The browser contract suite qualifies Lantern interactions against a real,
+The browser contract suite qualifies Lantern interactions and heuristic layout against a real,
 explicitly selected Chromium binary. It is separate from ordinary Rust tests:
 Rust tests do not install or start a browser.
 
@@ -116,3 +116,25 @@ AppArmor user-namespace policy. Moving the functional contract to macOS retains
 the browser sandbox without weakening host policy or passing an unsafe browser
 flag. Local Linux and CI macOS runs are separate platform observations; neither
 establishes visual equivalence or hardware graphics qualification.
+
+The layout fixture adds seven contracts for default and explicit containers,
+quoted selector configuration, CSS punctuation and deep duplicate selectors,
+intentional scroll/ellipsis versus clipped text, 40-finding truncation,
+unprovable bounded paths, the 10,000-element scan limit, and invalid CSS. The
+runner resolves each emitted selector independently through read-only CDP and
+checks unique node identity, text and geometry; it also checks container identity.
+App classes acquire container meaning only when explicitly configured. The
+fixture's repeated rows share a punctuation ID below seven identical ancestors.
+
+The runner captures `layout.html` at 1000×800 and 390×844 CSS pixels with device
+scale factor 1. It records fixture and image SHA-256 identities and viewport
+configuration. These captures remain marked as awaiting image inspection: a
+reviewer must open them. At desktop width, expect two aligned columns, readable
+headings and ready state, and consistent card gaps; at narrow width, expect one
+column and ordinary vertical scrolling. The yellow scroll row must expose a
+scrolling affordance, the abbreviation row an ellipsis, and the two suspected
+clipping rows must visibly cut text without ellipses. Red strips intentionally
+escape dashed containers. These are known defects to detect, not an example of
+a visually passing application. The lower repeated-structure card is outside
+the initial narrow viewport and is covered by desktop capture and DOM contracts.
+This fixture does not establish application-specific design or hardware quality.

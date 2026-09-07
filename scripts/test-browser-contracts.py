@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import http.server
@@ -23,6 +24,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "scripts/fixtures/browser-contracts/index.html"
+LAYOUT_FIXTURE = FIXTURE.with_name("layout.html")
 COMMAND_TIMEOUT_SECONDS = 12
 SUITE_TIMEOUT_SECONDS = 120
 
@@ -31,6 +33,8 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/intentional-fast-failure"):
             body, status, content_type = b"intentional failure\n", 500, "text/plain"
+        elif self.path.startswith("/layout"):
+            body, status, content_type = LAYOUT_FIXTURE.read_bytes(), 200, "text/html; charset=utf-8"
         elif self.path.startswith("/favicon.ico"):
             body, status, content_type = b"", 204, "image/x-icon"
         else:
@@ -196,6 +200,48 @@ def receive_frame(connection):
     return header + extension + mask + wire_payload, opcode, payload
 
 
+@contextmanager
+def fixture_cdp_session(endpoint):
+    # Keep emulation attached through navigation/capture: Chromium resets some
+    # emulation state on CDP detach, so separate calls cannot prove a viewport.
+    with urllib.request.urlopen(endpoint + "/json/list", timeout=3) as response:
+        target = next(item for item in json.load(response) if item.get("type") == "page")
+    websocket = urlparse(target["webSocketDebuggerUrl"])
+    with socket.create_connection((websocket.hostname, websocket.port), timeout=3) as connection:
+        key = base64.b64encode(os.urandom(16)).decode()
+        connection.sendall((
+            f"GET {websocket.path} HTTP/1.1\r\nHost: {websocket.netloc}\r\n"
+            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        ).encode())
+        assert receive_headers(connection).startswith(b"HTTP/1.1 101")
+        sequence = 0
+
+        def call(method, params):
+            nonlocal sequence
+            assert method in ("Runtime.evaluate", "Emulation.setDeviceMetricsOverride")
+            sequence += 1
+            payload = json.dumps({"id": sequence, "method": method, "params": params}).encode()
+            mask = os.urandom(4)
+            length = len(payload)
+            header = bytes([0x81, 0x80 | length]) if length < 126 else bytes([0x81, 0xFE]) + length.to_bytes(2, "big")
+            connection.sendall(header + mask + bytes(value ^ mask[i % 4] for i, value in enumerate(payload)))
+            while True:
+                _, opcode, response = receive_frame(connection)
+                if opcode != 1:
+                    continue
+                value = json.loads(response)
+                if value.get("id") == sequence:
+                    assert "error" not in value, value
+                    return value["result"]
+        yield call
+
+
+def fixture_cdp(endpoint, method, params):
+    with fixture_cdp_session(endpoint) as call:
+        return call(method, params)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lantern", default="target/debug/lantern")
@@ -210,7 +256,7 @@ def main():
         "result": "fail",
         "run_id": str(uuid.uuid4()),
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "Real-Chromium interaction contracts; not visual or hardware qualification.",
+        "scope": "Real-Chromium interaction and layout contracts; captures require separate visual review; no hardware qualification.",
         "fixture": None,
         "source_revision": None,
         "lantern_capabilities": None,
@@ -250,6 +296,10 @@ def main():
     evidence["fixture"] = {
         "path": str(FIXTURE.relative_to(ROOT)),
         "sha256": hashlib.sha256(fixture_bytes).hexdigest(),
+    }
+    evidence["layout_fixture"] = {
+        "path": str(LAYOUT_FIXTURE.relative_to(ROOT)),
+        "sha256": hashlib.sha256(LAYOUT_FIXTURE.read_bytes()).hexdigest(),
     }
     evidence["source_revision"] = source_revision()
     evidence["lantern_capabilities"] = command_json(
@@ -1002,6 +1052,112 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         extra_arguments=("--output", str(canvas_capture), "--overwrite"),
         verify=verify_canvas_capture,
     )
+
+    def layout_case(case, mode="", container=None, verify=None):
+        evidence["active_case"] = case
+        url = f"{fixture_base}/layout?mode={mode}"
+        invoke("open", url)
+        invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
+        arguments = ["layout"]
+        if container is not None:
+            arguments += ["--container-selector", container]
+        value, elapsed, actual_exit, stdout, stderr = invoke_retained(*arguments)
+        record = {"case": case, "actual_output": value, "actual_exit_code": actual_exit,
+                  "actual_stdout": stdout, "actual_stderr": stderr, "elapsed_ms": elapsed,
+                  "verdict": "fail"}
+        evidence["cases"].append(record)
+        assert actual_exit == 0 and value.get("ok") is True, value
+        layout = value["layout"]
+        assert layout["heuristic"] is True, layout
+        assert layout["container_selector"] == (container or "[data-layout-container]"), layout
+        assert layout["finding_count"] == len(layout["findings"]) <= 40, layout
+        # Resolve each returned selector independently in real Chromium, including
+        # duplicate IDs and punctuation. Check observed node metadata and geometry.
+        expression = """(() => {
+          const findings = FINDINGS;
+          return findings.map(finding => {
+            const matches = document.querySelectorAll(finding.selector);
+            if (matches.length !== 1) return false;
+            const node = matches[0], rect = node.getBoundingClientRect();
+            if (node.localName !== finding.tag || (node.id || null) !== finding.id) return false;
+            if (Math.abs(rect.left - finding.metrics.left) > 0.1 || Math.abs(rect.right - finding.metrics.right) > 0.1) return false;
+            if (finding.text_sample && (node.innerText || node.textContent).trim() !== finding.text_sample) return false;
+            if (finding.container_selector) {
+              const containers = document.querySelectorAll(finding.container_selector);
+              if (containers.length !== 1 || !containers[0].contains(node)) return false;
+            }
+            return true;
+          });
+        })()""".replace("FINDINGS", json.dumps(layout["findings"]))
+        checked = fixture_cdp(endpoint, "Runtime.evaluate", {"expression": expression, "returnByValue": True})
+        assert all(checked["result"]["value"]), checked
+        record["independent_selector_identity"] = checked["result"]["value"]
+        if verify:
+            verify(layout)
+        record["verdict"] = "pass"
+        evidence.pop("active_case")
+        return url
+
+    def verify_layout(layout):
+        findings = layout["findings"]
+        assert not layout["truncated"], layout
+        clipped = [f for f in findings if f["kind"] == "element-horizontal-overflow" and f["overflow_behaviour"] == "clipped"]
+        assert {f["id"] for f in clipped} >= {"status:ready.1", "duplicate:id"}, clipped
+        assert any("state\\:warning" in f["selector"] for f in clipped), clipped
+        duplicates = [f for f in clipped if f["id"] == "duplicate:id"]
+        assert len(duplicates) == 2 and len({f["selector"] for f in duplicates}) == 2, duplicates
+        for target, kind, behaviour in [("scroll", "intentional-horizontal-scroll", "scroll"), ("ellipsis", "intentional-text-ellipsis", "ellipsis")]:
+            rows = [f for f in findings if f["id"] == target]
+            assert len(rows) == 1 and rows[0]["kind"] == kind and rows[0]["severity"] == "info" and rows[0]["overflow_behaviour"] == behaviour, rows
+        assert not any(f["kind"] == "element-escapes-viewport" for f in findings), findings
+        escapes = {f["id"] for f in findings if f["kind"] == "element-escapes-container"}
+        expected = {"default-child"} if layout["container_selector"] == "[data-layout-container]" else {"app-child", "default-child"}
+        assert escapes == expected, (escapes, expected)
+
+    layout_case("layout-default-selectors-and-intent", verify=verify_layout)
+    layout_case("layout-explicit-container", container=".panel, [data-layout-container]", verify=verify_layout)
+    layout_case("layout-quoted-container", container=".panel, [data-layout-container], [title='\"); throw new Error(\"injected\"); //']", verify=verify_layout)
+
+    def verify_bound(layout):
+        assert layout["truncated"] and layout["finding_count"] == 40, layout
+    layout_case("layout-bounded-findings", mode="bounded", verify=verify_bound)
+
+    def verify_deep(layout):
+        assert layout["truncated"] and layout["finding_count"] == 0, layout
+    layout_case("layout-unprovable-path-truncated", mode="deep", verify=verify_deep)
+    layout_case("layout-scan-bound", mode="scan-bound", verify=verify_deep)
+
+    evidence["active_case"] = "layout-invalid-container"
+    value, elapsed, actual_exit, stdout, stderr = invoke_retained("layout", "--container-selector", "[")
+    record = {"case": "layout-invalid-container", "actual_output": value,
+              "actual_exit_code": actual_exit, "actual_stdout": stdout, "actual_stderr": stderr,
+              "elapsed_ms": elapsed, "verdict": "fail"}
+    evidence["cases"].append(record)
+    assert actual_exit != 0 and value.get("error", {}).get("code") == "layout_container_selector_invalid", value
+    record["verdict"] = "pass"
+    evidence.pop("active_case")
+
+    evidence["visual_captures"] = []
+    with fixture_cdp_session(endpoint) as capture_cdp:
+        for width, height in [(1000, 800), (390, 844)]:
+            capture_cdp("Emulation.setDeviceMetricsOverride", {
+                "width": width, "height": height, "deviceScaleFactor": 1, "mobile": False,
+            })
+            invoke("open", f"{fixture_base}/layout")
+            invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
+            actual_viewport = capture_cdp("Runtime.evaluate", {
+                "expression": "({width: innerWidth, height: innerHeight, device_scale_factor: devicePixelRatio})",
+                "returnByValue": True,
+            })["result"]["value"]
+            assert actual_viewport == {"width": width, "height": height, "device_scale_factor": 1}, actual_viewport
+            capture_path = output / f"layout-{width}x{height}.png"
+            captured, _ = invoke("screenshot", "--output", str(capture_path), "--overwrite")
+            assert captured.get("ok") is True and capture_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), captured
+            evidence["visual_captures"].append({
+                "path": str(capture_path), "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
+                "viewport": actual_viewport,
+                "fixture_url": f"{fixture_base}/layout", "visual_review": "pending image inspection",
+            })
 
 
 if __name__ == "__main__":

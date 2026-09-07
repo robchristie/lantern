@@ -21,14 +21,14 @@ The existing persistent-profile plan is unrelated and must be preserved.
 | --- | --- | --- | --- | --- |
 | T | Absolute transport/operation deadlines; bounded event counts and bytes; explicit lost evidence | `crates/lantern-core/src/cdp.rs`, `flow.rs`: socket timeouts and unbounded pending queue/drains | 1: bounded transport | Implemented and qualified (PR #8) |
 | I | Unique, scrolled, enabled, stable, hit-tested interactions; diagnostic failures; compatible opt-in strict exit semantics | `interaction.rs` and CLI contract: dispatch does not establish outcome; timeouts can succeed | 2: trustworthy interactions | Implemented and qualified (PR #10) |
-| F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Candidate implemented; final review and qualification pending |
-| V | Task-dependent visual review requiring actual image inspection and explicit visual expectations | Tracked inspection skill privileges text and screenshots as supporting evidence | 4: inspection workflow | Pending |
+| F | Observe before one action, await typed explicit postcondition, capture state and failures, return verdict without mutation replay | `flow.rs`: navigation observation only; separate interaction commands lose intervening events | 3: action/assertion/capture | Implemented and qualified (PR #11) |
+| V | Task-dependent visual review requiring actual image inspection and explicit visual expectations | Tracked inspection skill privileges text and screenshots as supporting evidence | 4: inspection workflow | Candidate implemented; qualification pending |
 | P | Consume existing Polyorama versioned semantic/text/visual evidence; narrow on-demand adapter where live inspection needs it; explicit revision/coverage correlation | Polyorama `docs/ui-snapshots/README.md`, `docs/ui-guides/ui-review.md`; existing artefacts and browser accessibility limitation | 5: application evidence | Pending |
 | A | Compact computed accessibility view and semantic role/name or test-ID targeting for ordinary DOM applications | DOM summary is not an accessibility snapshot; avoid invented snapshot-reference lifetimes | 6: semantic DOM inspection | Pending |
-| L | Escaped, unique generated selectors; explicit container configuration; heuristic layout findings and intentional overflow distinction | `layout.rs`: raw identifiers and application-specific container classes | 4: inspection workflow | Pending |
-| Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Partial: interaction fixtures; action-flow and final qualification pending |
+| L | Escaped, unique generated selectors; explicit container configuration; heuristic layout findings and intentional overflow distinction | `layout.rs`: raw identifiers and application-specific container classes | 4: inspection workflow | Candidate implemented; qualification pending |
+| Q | Real-Chromium contracts for duplicates, disabled/occluded/offscreen/moving controls, delayed state, fast request/runtime failures and known canvas | `.github/workflows/check.yml`: Rust checks only; hardware qualification distinct | 2–3, 7: browser qualification | Partial: interaction and action-flow fixtures qualified; final qualification pending |
 | C | Discover package/build identity, commands and schemas; split CLI by command family before broader interface expansion | CLI version is package-only; large `main.rs` | 2: CLI foundation (separate package) | Implemented and qualified (PR #9) |
-| S | Short core skill, progressive references for lifecycle/auth/GPU/application recipes; evidence-centred project purpose | Tracked skill contains lengthy setup recipes; README leads with MCP overhead | 4: inspection workflow | Pending |
+| S | Short core skill, progressive references for lifecycle/auth/GPU/application recipes; evidence-centred project purpose | Tracked skill contains lengthy setup recipes; README leads with MCP overhead | 4: inspection workflow | Candidate implemented; qualification pending |
 | B | Paired external CLI baseline on form, async failure, layout defect, canvas and restart/recovery | No comparative benchmark; source claims are not measured results | 7: comparative qualification | Pending |
 
 ## Boundaries and acceptance
@@ -72,14 +72,14 @@ No baseline row is complete merely because a plan, harness or draft PR exists.
 | T: bounded transport | Lantern `0f4b87815e968b0bafea3d35b86c0273009d066d` / no downstream consumers yet | Shared deadlines and bounded evidence; 195 canonical tests and PR/post-merge CI passed | [PR #8 landing evidence](https://github.com/robchristie/lantern/pull/8#issuecomment-5564132394); `../completed/2026-09-07-bounded-transport.md` | Landed; task Git state cleaned |
 | C: CLI foundation | Lantern `e6171f136e2418eb1d52eb146fb8eb445862d1fe` / I uses this base | Command-family ownership and discovery; 201 tests and PR/post-merge CI passed | [PR #9 landing evidence](https://github.com/robchristie/lantern/pull/9#issuecomment-5564283462); `../completed/2026-09-07-cli-foundation.md` | Landed; task Git state cleaned |
 | I: trustworthy interactions | Lantern `c5c8f82b1f15a56a3ced080e4c809ad87eea3feb` / F uses this base | Unique, scrolled, stable hit-tested input; strict exits; 23 real-Chromium contracts with CDP input audit and a fresh-browser focus regression | [PR #10 landing evidence](https://github.com/robchristie/lantern/pull/10#issuecomment-5564795233); `../completed/2026-09-07-trustworthy-interactions.md` | Landed; 209 tests, 23 Linux/macOS browser cases, PR/post-merge CI passed; task Git state cleaned |
-| F: action/assertion/capture | Candidate identified by package PR / no downstream consumers yet | Explicit false-to-true condition, single observed click, retained failure/capture result; 31 real-browser contracts including input audit | `../completed/2026-09-07-action-assertion-flow.md`; `../../testing/browser-contracts.md` | Candidate selected; final exact-head review and CI pending |
+| F: action/assertion/capture | Lantern `b1527dd47e832e3dfe1bb1fee5b4d90119920491` / V/L/S uses this base | Explicit false-to-true condition, single observed click, retained failure/capture result; 217 tests and 31 Linux/macOS browser contracts | [PR #11 landing evidence](https://github.com/robchristie/lantern/pull/11#issuecomment-5565022068); `../completed/2026-09-07-action-assertion-flow.md` | Landed; PR/post-merge CI passed; task Git state cleaned |
+| V/L/S: inspection workflow | Candidate identified by package PR / no downstream consumers | Task-dependent evidence, heuristic layout, progressive skill; 38 browser contracts | `../completed/2026-09-07-inspection-workflow.md` | Candidate selected; exact-head review and qualification pending |
 
-Next: independently review and qualify the implemented F candidate; see
-`../completed/2026-09-07-action-assertion-flow.md`. I reviewed head was `2aa8f00`, landed
-tree `e5556415fef7e368709c0d1fdaf4cb51aa3ead3e`; CI runs 34080821072 and
-34081061859 passed.
-Q remains partial until action-flow contracts and final qualification pass; other
-capability rows remain pending.
+Next: independently review and qualify V/L/S; see `../completed/2026-09-07-inspection-workflow.md`.
+F reviewed head `a05ffc6102914c3e07b443db498434e937c2ce9e`, landed tree
+`79d743de08f724a89e2371a39c14583a75f0f7a9`; PR CI 34082586479 and post-merge CI
+34082823945 passed. Branch, tracking reference, live head and worktree were cleaned.
+Q remains partial until final qualification passes; other capability rows remain pending.
 
 ## Terminal rule
 

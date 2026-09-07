@@ -15,7 +15,10 @@ use lantern_core::dom::{
 };
 use lantern_core::endpoint::ResolvedEndpoint;
 use lantern_core::flow::{FlowCommandOutput, FlowOptions, run_observation_flow_until};
-use lantern_core::layout::{LayoutCommandOutput, LayoutFinding, read_layout_audit};
+use lantern_core::layout::{
+    DEFAULT_CONTAINER_SELECTOR, LayoutCommandOutput, LayoutFinding,
+    read_layout_audit_with_container,
+};
 use lantern_core::navigation::{NavigationCommandOutput, navigate_page, validate_navigation_url};
 use lantern_core::network::{NetworkCommandOutput, NetworkEntry, read_network_failures};
 use lantern_core::redaction::RedactionMode;
@@ -46,6 +49,7 @@ pub(crate) fn run_inspection(context: EndpointContext) -> Result<(), CliError> {
         wait_selector,
         wait_text,
         quiet_ms,
+        container_selector,
         dom_depth,
         dom_max_nodes,
         ..
@@ -173,8 +177,14 @@ pub(crate) fn run_inspection(context: EndpointContext) -> Result<(), CliError> {
                 .map_err(|error| CliError::from_cdp(error, json))?;
             let page = select_page_target(targets, target_id.as_deref())
                 .map_err(|error| error.with_json(json))?;
-            let output = read_layout_audit(&page, RedactionMode::from_no_redact(no_redact))
-                .map_err(|error| CliError::from_layout_read(error, json))?;
+            let output = read_layout_audit_with_container(
+                &page,
+                RedactionMode::from_no_redact(no_redact),
+                container_selector
+                    .as_deref()
+                    .unwrap_or(DEFAULT_CONTAINER_SELECTOR),
+            )
+            .map_err(|error| CliError::from_layout_read(error, json))?;
             write_layout(output, json)?;
         }
         _ => unreachable!("dispatcher routes only inspection commands"),
@@ -522,7 +532,7 @@ fn write_layout(output: LayoutCommandOutput, json: bool) -> Result<(), CliError>
     }
 
     println!(
-        "layout: {} title=\"{}\" url={} findings={} truncated={} scroll_width={} client_width={}",
+        "layout: {} title=\"{}\" url={} heuristic=true findings={} truncated={} scroll_width={} client_width={}",
         short_target_id(&output.page.target_id),
         escape_human(output.page.title.as_deref().unwrap_or("null")),
         output.page.url_shape.as_deref().unwrap_or("null"),
@@ -599,9 +609,10 @@ fn write_console_entry(entry: &ConsoleEntry) {
 
 fn write_layout_finding(finding: &LayoutFinding) {
     println!(
-        "  {} severity={} selector={} text=\"{}\" right={} container_right={}",
+        "  {} severity={} overflow_behaviour={} selector={} text=\"{}\" right={} container_right={}",
         finding.kind,
         finding.severity,
+        finding.overflow_behaviour,
         escape_human(&finding.selector),
         escape_human(finding.text_sample.as_deref().unwrap_or("")),
         finding.metrics.right,

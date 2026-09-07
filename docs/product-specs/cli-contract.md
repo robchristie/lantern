@@ -1745,6 +1745,50 @@ Redaction behavior:
 - `--no-redact` may expose full request URLs in `url_shape` for this invocation only.
 - `--no-redact` does not cause Lantern to collect headers, bodies, cookies, storage, or raw CDP payloads.
 
+### `lantern layout`
+
+Purpose: collect bounded, heuristic horizontal geometry findings for the selected
+page. `ok=true` means the audit completed; neither zero findings nor an
+untruncated audit establishes visual quality. Appearance and responsive-layout
+work also requires opening rendered captures and judging explicit expectations.
+
+`--container-selector <CSS>` selects ancestor containers, defaulting to
+`[data-layout-container]`. The nearest matching ancestor is used. Application
+classes such as `.panel`, `.next-action` and `.tracker-space` have no implicit
+meaning; opt into them with a selector list when they are actual containers.
+The override replaces the default, so include `[data-layout-container]` in the
+list to retain both. Empty, whitespace-only, oversized (over 2048 UTF-8 bytes), or
+browser-invalid CSS returns `layout_container_selector_invalid`; other commands
+reject the flag. The selector is safely encoded as data for the browser script.
+
+Schema version 1 retains its fields and adds `layout.heuristic=true`,
+`layout.container_selector`, and each finding's `overflow_behaviour`:
+
+- `scroll`: CSS `overflow-x: auto` or `scroll`; overflowing text produces an
+  `intentional-horizontal-scroll` informational finding.
+- `ellipsis`: clipped horizontal overflow with `text-overflow: ellipsis` produces
+  an `intentional-text-ellipsis` informational finding.
+- `clipped`: `overflow-x: hidden` or `clip` without an ellipsis; text overflow is
+  a suspected `element-horizontal-overflow` defect.
+- `visible`: overflow is exposed; geometry may indicate horizontal overflow or
+  escape from the viewport or a configured container.
+
+CSS intent signals are not proof of usability: check whether scrolling is
+reachable and abbreviation is appropriate. Descendants clipped by an overflow
+ancestor do not independently escape that ancestor or the viewport. Existing
+`p1`/`p2` severities remain priorities for investigation; intentional findings use
+`info`. All findings remain heuristic, including document-level overflow.
+
+Generated ID and class identifiers use `CSS.escape`. Every emitted element and
+container selector is checked to resolve to exactly the intended node in that
+observation. Duplicate identifiers require a uniquely resolving structural path;
+selectors have no promised lifetime across DOM changes. Construction is bounded
+to 64 ancestors and 2048 selector characters; unprovable findings are omitted and
+`truncated` is set. At most 40 findings are retained and 10,000 body descendants are examined;
+omitting further evidence at either bound also sets `truncated`. The
+browser evaluation timeout and transport limits still apply. Text samples retain
+the existing metadata redaction; screenshot pixels are separately unredacted.
+
 ### `lantern screenshot`
 
 Purpose: capture the selected page target's current visible viewport as a local PNG artifact for frontend feedback.

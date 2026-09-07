@@ -14,6 +14,17 @@ pub(crate) fn validate_endpoint_invocation(
     invocation: &Invocation,
     command: Command,
 ) -> Result<(), CliError> {
+    if let Some(selector) = invocation.container_selector.as_deref() {
+        if command != Command::Layout {
+            return Err(CliError::usage(
+                invocation.json,
+                "--container-selector requires layout.",
+                "Run lantern layout --container-selector <CSS>.",
+            ));
+        }
+        lantern_core::layout::validate_container_selector(selector)
+            .map_err(|error| CliError::from_layout_read(error, invocation.json))?;
+    }
     if invocation.has_browser_lifecycle_flags() {
         return Err(CliError::usage(
             invocation.json,
