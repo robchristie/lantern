@@ -758,6 +758,41 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         ],
         1, False, "element_disabled", "ready",
     )
+    # Sample the actual page-side preparation once: a later poll must not be
+    # needed to discover that a focus listener disabled and blurred the target.
+    # These are isolated preparation probes, not CLI interaction observations.
+    actionability = (ROOT / "crates/lantern-core/src/actionability.js").read_text()
+    for action in ("type", "key"):
+        for selector in ("#target", None):
+            case = f"first-focus-disabled-{action}-{'css' if selector else 'resolved'}"
+            evidence["active_case"] = case
+            navigate("focus-disables")
+            checkpoint = audit.checkpoint()
+            expression = """(() => {
+                const target = document.querySelector('#target');
+                const focused_before = document.hasFocus();
+                const probe = (%s).call(target, %s, %s, null);
+                return {focused_before, probe, disabled_after: target.disabled,
+                    target_focused_after: document.activeElement === target};
+            })()""" % (actionability, json.dumps(selector), json.dumps(action))
+            observed = fixture_cdp(endpoint, "Runtime.evaluate", {
+                "expression": expression, "returnByValue": True,
+            })["result"]["value"]
+            inputs = audit.commands_since(checkpoint)
+            passed = (observed["focused_before"] is True
+                      and observed["disabled_after"] is True
+                      and observed["target_focused_after"] is False
+                      and observed["probe"].get("error") == "element_disabled"
+                      and not inputs)
+            evidence["cases"].append({
+                "case": case, "scope": "single page-side preparation sample",
+                "actionability_sha256": hashlib.sha256(actionability.encode()).hexdigest(),
+                "observed": observed, "audited_input_commands": inputs,
+                "verdict": "pass" if passed else "fail",
+            })
+            evidence.pop("active_case")
+            assert passed, f"{case}: {observed!r}; input={inputs!r}"
+
     interaction(
         "unique-click", "unique",
         ["click", "--selector", "#target", "--timeout-ms", "2000", "--strict"],

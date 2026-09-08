@@ -225,3 +225,35 @@ Its five synthetic tasks and software-renderer results do not establish broad
 website or hardware support. The canonical validation entrypoint also runs four
 independent-adjudication contracts; the external agent case study is not a
 deterministic CI benchmark.
+
+## Local Installed-tool Delivery
+
+When a task includes updating the local Lantern installation, landing the source
+is an intermediate state. Complete the installed-tool qualification before
+reporting the task complete:
+
+1. Wait for the merged revision's required CI, including browser contracts, to
+   pass. A passing pull-request retry does not discharge a failing post-merge
+   run; diagnose and repair the failure before installing that revision.
+2. Synchronise a clean checkout to that exact merged revision. Record its full
+   commit ID and verify `git status --porcelain` is empty. Build and install
+   from this checkout with `cargo install --locked --path crates/lantern-cli
+   --force`. This changes only the requested local installation; release and
+   package publication remain separate operations.
+3. Resolve the executable the operator actually invokes with `command -v
+   lantern`, check the intended Cargo installation path, and invoke that exact
+   path for `capabilities --json`. Require `build.provenance=git`,
+   `build.commit` equal to the qualified merged revision and `build.dirty=false`.
+   A version string or a workspace debug binary is insufficient evidence.
+4. Exercise representative behaviour with that installed executable. For a
+   browser interaction repair, run `scripts/test-browser-contracts.py --lantern
+   /absolute/path/to/installed/lantern --output-dir
+   .smoogle/installed-browser-contracts` with the explicitly selected
+   `LANTERN_CHROMIUM` and necessary local runtime environment. Require the
+   relevant regression and full suite verdict to pass. Retain the evidence's
+   build, browser, fixture and source identities; inspect captures separately
+   whenever the task includes visual acceptance.
+5. Record the installed path, full build revision, clean provenance and actual
+   behavioural result in the task closeout. If qualification fails, repair or
+   explicitly report the remaining installation gap; do not infer installed
+   behaviour from source or CI success.

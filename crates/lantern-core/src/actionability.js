@@ -26,9 +26,6 @@ function(selector, action, previous) {
         this.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
         if (action === 'type' || action === 'key') this.focus({preventScroll: true});
     }
-    if ((action === 'type' || action === 'key') &&
-        (!document.hasFocus() || document.activeElement !== this))
-        return {error: 'element_not_focused', node_name: this.nodeName.slice(0, 64)};
     // Focus/scroll listeners may synchronously replace or disable the target.
     if (!this.isConnected || (selector !== null && (document.querySelectorAll(selector).length !== 1 ||
         document.querySelector(selector) !== this))) return {error: 'element_unstable'};
@@ -36,6 +33,11 @@ function(selector, action, previous) {
         return {error: 'element_disabled', node_name: this.nodeName.slice(0, 64)};
     if (action === 'type' && !editable())
         return {error: 'element_not_editable', node_name: this.nodeName.slice(0, 64)};
+    // Disabling an input in its focus listener also blurs it. Diagnose the
+    // changed target state before the resulting loss of focus, on this sample.
+    if ((action === 'type' || action === 'key') &&
+        (!document.hasFocus() || document.activeElement !== this))
+        return {error: 'element_not_focused', node_name: this.nodeName.slice(0, 64)};
     const box = this.getBoundingClientRect();
     const rect = [box.x, box.y, box.width, box.height];
     const style = getComputedStyle(this);
