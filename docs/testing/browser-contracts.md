@@ -22,7 +22,10 @@ stops Chromium, closes the server and removes the profile even after failure.
 The runner never adds `--no-sandbox` and never connects to a daily browser
 profile.
 
-Lantern performs every click, text, key and pointer interaction. A successful
+Lantern performs every CLI click, text, key and pointer interaction. Four
+isolated page-side preparation probes additionally execute the actual
+`actionability.js` once against the focus-disabling fixture; their evidence
+explicitly distinguishes these samples from CLI dispatch observations. A successful
 dispatch is not accepted as the application postcondition: the fixture changes
 its title from event handlers, and a separate read-only `lantern page` call
 checks the resulting state. Negative fixtures also install document-level event
@@ -156,3 +159,49 @@ replacement and new ambiguity, semantic type/key/hover/action-flow, output bound
 and redaction, omitted input values, and excluded frame/shadow content. Protocol
 fixtures separately prove backend IDs are resolved rather than joined to frontend
 IDs, and an unsupported Accessibility method fails without input or fallback.
+
+## Focus blocker qualification (8 September 2026)
+
+The bounded investigation asks whether a synchronous focus listener can disable
+and blur a target before the first actionability sample diagnoses the blocker.
+The smallest probe runs the actual `actionability.js` once on the real
+`focus-disables` fixture, records document focus, disabled state and active
+element, and requires `element_disabled` without input. This document owns the
+probe evidence. Exit requires a failing baseline, a passing corrected first
+sample, unchanged CLI semantics and timeouts, canonical validation and the full
+browser contracts; macOS CI remains a separate required platform observation.
+
+The baseline script at `e564a356e9d5223e68c212e4a634da1fd3464592`
+(SHA-256 `f93f22c0e57b1a1e302c7d6fbed89bfa9813ff2f5aa38468f307fa04cc7970f7`)
+returned `element_not_focused` while the document was focused and the target was
+already disabled and blurred. No input was sent. This reproduces the diagnostic
+ordering defect independently of the slower semantic resolution path: a later
+poll could repair the diagnostic, but must not be required to discover a state
+already observed in the first sample. The macOS failures retained the same
+incorrect blocker when the 700 ms operation budget expired:
+[PR 16 post-merge run](https://github.com/robchristie/lantern/actions/runs/34121412513)
+and [PR 17 post-merge run](https://github.com/robchristie/lantern/actions/runs/34123388184).
+
+Retain the candidate that checks connectivity, enabled and editable state after
+focus/scroll listeners and before diagnosing lost focus. It preserves the actual
+focus requirement, semantic target checks, timeout and no-input contracts. The
+four permanent regressions cover type/key and CSS/resolved-object preparation,
+require the disabled-and-blurred observation and reject the baseline after one
+sample, regardless of machine speed.
+
+Local calibration evidence uses Chrome 151.0.7922.34 on Linux and fixture SHA-256
+`f1b4d58871fe51f260a33ceb5fde4e8afbda8c0b17333b3c7c4135ded97c0727`:
+
+- `.smoogle/focus-baseline/evidence.json`, run
+  `cd2133d2-010a-4c48-b873-4a8519d4a227`: rejected first sample above. The harness
+  used an existing clean `8f52adc06a5cbdabb758ef8adc79eea8fb6c53d3` binary to
+  activate/navigate the page; the sampled script is the exact baseline identified
+  above. A subsequent temporary-profile cleanup error does not change that
+  retained probe result.
+- `.smoogle/focus-candidate/evidence.json`, run
+  `4a9ca51a-2e87-409c-bc79-68b275ffe301`: retained candidate script SHA-256
+  `31940992efd96feda9ad1e935365b97c2fe3c6a3ff7c322dfbb007af539d745d`, built on
+  the same base with these edits, passes all 77 cases, including the unchanged
+  semantic focus-disabled CLI assertion. `scripts/validate.sh` passes 234 Rust
+  tests, four adjudicator tests, formatting, workspace and Rust 1.85 checks and
+  docs hygiene. macOS CI qualification remains required at delivery.

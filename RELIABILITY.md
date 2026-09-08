@@ -105,6 +105,11 @@ qualification remains separate from synthetic adapter/browser contracts.
   preparation before input. Geometry and hit testing use the same target object;
   the latest blocker survives timeout. `--strict` opts into failed interaction
   exit status; application outcomes remain explicitly unverified.
+- Local installation delivery requires a clean qualified merged build and
+  provenance plus behaviour checks against the installed executable; see
+  `docs/workflows.md` for the closeout sequence.
+- Focus-time state changes are diagnosed before resulting blur, so disabling a
+  text/key target reports `element_disabled` on the first preparation sample.
 - Text/key preparation first activates the selected page and requires actual
   document focus; a retained active element alone cannot establish focus-event
   delivery. Failed activation prevents input without focus emulation.
