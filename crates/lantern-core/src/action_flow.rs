@@ -1,7 +1,7 @@
 //! One observed click and an explicit postcondition; never replay uncertain input.
 use crate::semantic::InteractionTarget;
 use crate::{
-    cdp::{CdpError, CdpWebSocket, OperationDeadline, TargetInfo},
+    cdp::{CdpCallError, CdpError, CdpWebSocket, OperationDeadline, TargetInfo, command_deadline},
     console::{ConsoleAttribution, ConsoleCollector, ConsoleSummary},
     flow::{FlowError, drain_available_events, push_observation_event},
     interaction::{ActionRequest, DispatchState, InteractionSummary, interact_on_socket},
@@ -101,7 +101,9 @@ pub fn run_action_flow_until(
     let mut network = NetworkCollector::new(mode);
     drain_available_events(&mut socket, &mut console, &mut network)?;
     // A malformed or unavailable baseline must fail before any input.
-    let (before, observed) = condition.probe(&mut socket, mode)?;
+    let (before, observed) = condition
+        .probe(&mut socket, mode)
+        .map_err(|error| error.error)?;
     let mut postcondition = PostconditionSummary {
         matched_before_action: Some(before),
         observed_before_action: observed,
@@ -177,6 +179,10 @@ pub fn run_action_flow_until(
                     if matched {
                         break;
                     }
+                }
+                Err(failure) if failure.deadline_reached => {
+                    postcondition.timed_out = true;
+                    break;
                 }
                 Err(_) => {
                     error = Some("postcondition_observation_failed");
@@ -294,7 +300,7 @@ impl Postcondition {
         &self,
         socket: &mut CdpWebSocket,
         mode: RedactionMode,
-    ) -> Result<(bool, Value), CdpError> {
+    ) -> Result<(bool, Value), CdpCallError> {
         // Match in the page against original text/URL, redact only reported
         // metadata. Distinct secrets must never become equal via redaction.
         let expression = match self {
@@ -312,7 +318,7 @@ impl Postcondition {
                 json!(url)
             ),
         };
-        let result = socket.call(
+        let result = socket.call_classified(
             "Runtime.evaluate",
             Some(json!({"expression":expression,"returnByValue":true,"timeout":1000})),
         )?;
@@ -320,7 +326,8 @@ impl Postcondition {
             return Err(CdpError::ResponseInvalid {
                 context: "postcondition evaluation failed",
                 source: "runtime exception".into(),
-            });
+            }
+            .into());
         }
         let value = &result["result"]["value"];
         let matched = value["matched"]
@@ -340,6 +347,9 @@ impl Postcondition {
                 json!({"kind":"url","expected_url":sanitize_url(url,mode),"current_url":value["url"].as_str().and_then(|s|sanitize_url(s,mode))})
             }
         };
+        if let Some(deadline) = socket.deadline() {
+            command_deadline(deadline, true)?;
+        }
         Ok((matched, observed))
     }
 }
@@ -392,14 +402,21 @@ mod tests {
                         result = json!({"result":{"objectId":"target"}});
                     } else {
                         probes += 1;
-                        if scenario == "probe_stall" && probes > 1 {
+                        if scenario == "probe_stall" && probes > 2 {
+                            continue;
+                        }
+                        if scenario == "probe_disconnect" && probes > 1 {
+                            break;
+                        }
+                        if scenario == "probe_protocol_error" && probes > 1 {
+                            ws.send(Message::Text(json!({"id":c["id"],"error":{"code":-32000,"message":"CDP operation deadline exceeded"}}).to_string().into())).unwrap();
                             continue;
                         }
                         if scenario == "probe_error" && probes > 1 {
                             result = json!({"exceptionDetails":{}});
                         } else {
-                            let matched =
-                                scenario == "preexisting" || (probes > 1 && scenario != "timeout");
+                            let matched = scenario == "preexisting"
+                                || (probes > 1 && !matches!(scenario, "timeout" | "probe_stall"));
                             result = json!({"result":{"value":{"matched":matched,"count":1,"text":"saved"}}});
                         }
                     }
@@ -555,6 +572,26 @@ mod tests {
                 assert!(o.postcondition.matched);
                 assert_eq!(o.capture.error, Some("screenshot_write_failed"));
             }
+        }
+    }
+
+    #[test]
+    fn assertion_expiry_retains_the_last_observation_without_a_probe_failure() {
+        for scenario in ["timeout", "probe_stall"] {
+            let (output, inputs) = fixture(scenario, false);
+            assert_eq!(output.error, None);
+            assert_eq!(output.verdict, Verdict::Incomplete);
+            assert!(output.postcondition.timed_out);
+            assert!(!output.postcondition.matched);
+            assert_eq!(output.postcondition.observed.unwrap()["count"], 1);
+            assert!(output.console.evidence_loss.collection_deadline_reached);
+            assert!(output.network.evidence_loss.collection_deadline_reached);
+            assert_eq!(inputs, ["mouseMoved", "mousePressed", "mouseReleased"]);
+        }
+        for scenario in ["probe_error", "probe_protocol_error", "probe_disconnect"] {
+            let (output, _) = fixture(scenario, false);
+            assert_eq!(output.error, Some("postcondition_observation_failed"));
+            assert!(!output.postcondition.timed_out);
         }
     }
 

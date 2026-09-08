@@ -76,6 +76,49 @@ fn transport_error(source: impl ToString) -> CdpError {
     }
 }
 
+/// Preserve the cause of a command failure without changing public input
+/// uncertainty: a deadline after sending still cannot establish execution.
+#[derive(Debug)]
+pub(crate) struct CdpCallError {
+    pub error: CdpError,
+    pub deadline_reached: bool,
+}
+
+impl From<CdpError> for CdpCallError {
+    fn from(error: CdpError) -> Self {
+        Self {
+            error,
+            deadline_reached: false,
+        }
+    }
+}
+
+fn command_io_error(source: tungstenite::Error) -> CdpCallError {
+    let deadline_reached = matches!(&source, tungstenite::Error::Io(error)
+        if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock));
+    CdpCallError {
+        error: CdpError::CommandUncertain {
+            source: source.to_string(),
+        },
+        deadline_reached,
+    }
+}
+
+pub(crate) fn command_deadline(deadline: Instant, sent: bool) -> Result<(), CdpCallError> {
+    remaining(deadline)
+        .map(|_| ())
+        .map_err(|source| CdpCallError {
+            error: if sent {
+                CdpError::CommandUncertain {
+                    source: source.to_string(),
+                }
+            } else {
+                transport_error(source)
+            },
+            deadline_reached: true,
+        })
+}
+
 // Track only wire boundaries, never payload contents. Tungstenite can read a
 // complete event and part of the next frame in one TCP read. Its private input
 // buffer otherwise makes a later timeout indistinguishable from silence.
@@ -397,40 +440,44 @@ impl CdpWebSocket {
         let deadline = self
             .deadline
             .unwrap_or_else(|| Instant::now() + DEFAULT_OPERATION_TIMEOUT);
+        let result = self
+            .call_classified(method, params)
+            .map_err(|error| error.error)?;
+        command_deadline(deadline, true).map_err(|error| error.error)?;
+        Ok(result)
+    }
+
+    /// Callers validate the received result before checking the final deadline,
+    /// so a genuine evaluation failure at the boundary is never erased.
+    pub(crate) fn call_classified(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<Value, CdpCallError> {
+        let deadline = self
+            .deadline
+            .unwrap_or_else(|| Instant::now() + DEFAULT_OPERATION_TIMEOUT);
         self.socket.get_mut().deadline = deadline;
-        remaining(deadline).map_err(transport_error)?;
+        command_deadline(deadline, false)?;
         let id = self.next_id;
         self.next_id += 1;
         let request = serde_json::to_string(&CdpCommandRequest { id, method, params })
             .map_err(transport_error)?;
         self.socket
             .send(Message::Text(request.into()))
-            .map_err(|source| CdpError::CommandUncertain {
-                source: source.to_string(),
-            })?;
+            .map_err(command_io_error)?;
         loop {
-            remaining(deadline).map_err(|source| CdpError::CommandUncertain {
-                source: source.to_string(),
-            })?;
-            let message = self
-                .socket
-                .read()
-                .map_err(|source| CdpError::CommandUncertain {
-                    source: source.to_string(),
-                })?;
-            remaining(deadline).map_err(|source| CdpError::CommandUncertain {
-                source: source.to_string(),
-            })?;
+            command_deadline(deadline, true)?;
+            let message = self.socket.read().map_err(command_io_error)?;
             let Message::Text(text) = message else {
                 continue;
             };
+            // Retain a received protocol failure even at the deadline boundary.
+            // Only successful observations must still fit the operation budget.
             let response: CdpCommandResponse =
                 serde_json::from_str(&text).map_err(|source| CdpError::CommandUncertain {
                     source: source.to_string(),
                 })?;
-            remaining(deadline).map_err(|source| CdpError::CommandUncertain {
-                source: source.to_string(),
-            })?;
             if response.id != Some(id) {
                 self.buffer_event_from_text(&text)?;
                 continue;
@@ -439,7 +486,8 @@ impl CdpWebSocket {
                 return Err(CdpError::Command {
                     code: error.code,
                     message: error.message,
-                });
+                }
+                .into());
             }
             return Ok(response.result.unwrap_or(Value::Null));
         }
@@ -704,6 +752,42 @@ mod tests {
             serve(tungstenite::accept(stream).unwrap());
         });
         (format!("ws://{address}/devtools/page/test"), handle)
+    }
+
+    #[test]
+    fn deadline_provenance_does_not_hide_other_failures_at_expiry() {
+        let expired = Instant::now() - Duration::from_secs(1);
+        for sent in [false, true] {
+            let failure = command_deadline(expired, sent).unwrap_err();
+            assert!(failure.deadline_reached);
+            assert_eq!(
+                matches!(failure.error, CdpError::CommandUncertain { .. }),
+                sent
+            );
+        }
+        for kind in [ErrorKind::TimedOut, ErrorKind::WouldBlock] {
+            assert!(
+                command_io_error(tungstenite::Error::Io(io::Error::from(kind))).deadline_reached
+            );
+        }
+        // These occur after the same expired boundary. Cause, not elapsed time
+        // or matching words in a remote message, determines classification.
+        for failure in [
+            command_io_error(tungstenite::Error::Io(io::Error::from(
+                ErrorKind::ConnectionReset,
+            ))),
+            command_io_error(tungstenite::Error::ConnectionClosed),
+            CdpCallError::from(CdpError::Command {
+                code: -32000,
+                message: "CDP operation deadline exceeded".into(),
+            }),
+            CdpCallError::from(CdpError::ResponseInvalid {
+                context: "evaluation failed",
+                source: "runtime exception".into(),
+            }),
+        ] {
+            assert!(!failure.deadline_reached);
+        }
     }
 
     #[test]

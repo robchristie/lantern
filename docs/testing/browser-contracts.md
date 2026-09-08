@@ -90,6 +90,13 @@ runner checks `matched_before_action`, `matched`, `timed_out`, the final observe
 value, console and network collection gaps, capture status and error, and the
 top-level verdict and error.
 
+An assertion exhausting the shared budget remains `incomplete` with
+`postcondition.timed_out=true`, retained observations and collection-deadline
+flags, without a fabricated observation error. Deterministic CDP tests cover
+expiry before a command and while a probe is awaiting its response, and preserve
+protocol, evaluation and transport failures as errors even when their text
+mentions a deadline. A missing input acknowledgement remains uncertain.
+
 The audit proxy intentionally observes frames without delaying, dropping or
 rewriting CDP traffic. Real browser cases therefore cover acknowledged and
 blocked dispatch plus a genuine collection deadline. Deterministic protocol
