@@ -405,6 +405,13 @@ mod tests {
                         if scenario == "probe_stall" && probes > 2 {
                             continue;
                         }
+                        if scenario == "probe_close" && probes > 1 {
+                            ws.send(Message::Close(None)).unwrap();
+                            // A received close is already a transport failure;
+                            // delayed TCP teardown must not turn it into expiry.
+                            thread::sleep(Duration::from_millis(500));
+                            break;
+                        }
                         if scenario == "probe_disconnect" && probes > 1 {
                             break;
                         }
@@ -593,6 +600,18 @@ mod tests {
             assert_eq!(output.error, Some("postcondition_observation_failed"));
             assert!(!output.postcondition.timed_out);
         }
+    }
+
+    #[test]
+    fn received_close_retains_observation_failure_before_tcp_teardown() {
+        let (output, inputs) = fixture("probe_close", false);
+        assert_eq!(output.error, Some("postcondition_observation_failed"));
+        assert_eq!(output.verdict, Verdict::Incomplete);
+        assert_eq!(
+            output.interaction.dispatch_state,
+            DispatchState::Acknowledged
+        );
+        assert_eq!(inputs, ["mouseMoved", "mousePressed", "mouseReleased"]);
     }
 
     #[test]

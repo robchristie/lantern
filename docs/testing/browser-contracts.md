@@ -95,7 +95,9 @@ An assertion exhausting the shared budget remains `incomplete` with
 flags, without a fabricated observation error. Deterministic CDP tests cover
 expiry before a command and while a probe is awaiting its response, and preserve
 protocol, evaluation and transport failures as errors even when their text
-mentions a deadline. A missing input acknowledgement remains uncertain.
+mentions a deadline. A received WebSocket close remains an observation failure
+when the peer delays TCP teardown beyond the operation budget. A missing input
+acknowledgement remains uncertain.
 
 The audit proxy intentionally observes frames without delaying, dropping or
 rewriting CDP traffic. Real browser cases therefore cover acknowledged and

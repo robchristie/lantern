@@ -469,8 +469,12 @@ impl CdpWebSocket {
         loop {
             command_deadline(deadline, true)?;
             let message = self.socket.read().map_err(command_io_error)?;
-            let Message::Text(text) = message else {
-                continue;
+            let text = match message {
+                Message::Text(text) => text,
+                Message::Close(_) => {
+                    return Err(command_io_error(tungstenite::Error::ConnectionClosed));
+                }
+                _ => continue,
             };
             // Retain a received protocol failure even at the deadline boundary.
             // Only successful observations must still fit the operation budget.
