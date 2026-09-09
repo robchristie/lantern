@@ -1426,7 +1426,9 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             png_dimensions = struct.unpack(">II", capture_path.read_bytes()[16:24])
             assert png_dimensions == (width * scale, height * scale), (actual_viewport, png_dimensions)
             summary = captured["screenshot"]
-            assert (summary["width"], summary["height"]) == (width, height), summary
+            css_viewport = capture_cdp("Page.getLayoutMetrics")["cssVisualViewport"]
+            viewport_dimensions = (round(css_viewport["clientWidth"]), round(css_viewport["clientHeight"]))
+            assert (summary["width"], summary["height"]) == viewport_dimensions, summary
             assert (summary["pixel_width"], summary["pixel_height"]) == png_dimensions, summary
             region_path = output / f"layout-region-dpr{scale}-{width}.png"
             region_capture, _ = invoke(
@@ -1439,7 +1441,7 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             region_summary = region_capture["screenshot"]
             assert region_dimensions == (160 * scale, 120 * scale), region_dimensions
             assert (region_summary["pixel_width"], region_summary["pixel_height"]) == region_dimensions, region_summary
-            assert (region_summary["width"], region_summary["height"]) == (width, height), region_summary
+            assert (region_summary["width"], region_summary["height"]) == viewport_dimensions, region_summary
             evidence["visual_captures"].append({
                 "path": str(capture_path), "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
                 "viewport": actual_viewport,
