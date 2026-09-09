@@ -63,6 +63,8 @@ pub(crate) fn run_screenshot(context: EndpointContext) -> Result<(), CliError> {
                     format: capture.format,
                     width: capture.width,
                     height: capture.height,
+                    pixel_width: capture.pixel_width,
+                    pixel_height: capture.pixel_height,
                     region: capture.region,
                     byte_count: capture.bytes.len(),
                     path: output_path.to_owned(),
@@ -135,11 +137,13 @@ fn write_screenshot(output: ScreenshotCommandOutput, json: bool) -> Result<(), C
         .unwrap_or_else(|| "null".to_owned());
 
     println!(
-        "screenshot: {} title=\"{}\" url={} dimensions={} region={} bytes={} path={} overwritten={} caveat={}",
+        "screenshot: {} title=\"{}\" url={} dimensions={} pixel_dimensions={}x{} region={} bytes={} path={} overwritten={} caveat={}",
         short_target_id(&output.page.target_id),
         escape_human(output.page.title.as_deref().unwrap_or("null")),
         output.page.url_shape.as_deref().unwrap_or("null"),
         dimensions,
+        output.screenshot.pixel_width,
+        output.screenshot.pixel_height,
         region,
         output.screenshot.byte_count,
         output.screenshot.path,

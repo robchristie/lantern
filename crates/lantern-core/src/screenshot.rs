@@ -15,8 +15,12 @@ pub const SCREENSHOT_REDACTION_CAVEAT: &str = "screenshot_contains_visible_page_
 pub struct CapturedScreenshot {
     pub page: ScreenshotPageSummary,
     pub format: &'static str,
+    /// Viewport dimensions from CDP; retained for schema compatibility.
     pub width: Option<u64>,
     pub height: Option<u64>,
+    /// Actual dimensions of the returned PNG in device pixels.
+    pub pixel_width: u32,
+    pub pixel_height: u32,
     pub region: Option<ScreenshotRegion>,
     pub bytes: Vec<u8>,
 }
@@ -52,8 +56,12 @@ pub struct ScreenshotPageSummary {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ScreenshotSummary {
     pub format: &'static str,
+    /// Viewport dimensions from CDP; retained for schema compatibility.
     pub width: Option<u64>,
     pub height: Option<u64>,
+    /// Actual dimensions of the returned PNG in device pixels.
+    pub pixel_width: u32,
+    pub pixel_height: u32,
     pub region: Option<ScreenshotRegion>,
     pub byte_count: usize,
     pub path: String,
@@ -136,6 +144,8 @@ pub(crate) fn capture_on_socket(
             source: source.to_string(),
         })?;
 
+    let (pixel_width, pixel_height) = png_dimensions(&bytes)?;
+
     Ok(CapturedScreenshot {
         page: ScreenshotPageSummary {
             target_id: target.id.clone(),
@@ -148,9 +158,22 @@ pub(crate) fn capture_on_socket(
         format: SCREENSHOT_FORMAT,
         width,
         height,
+        pixel_width,
+        pixel_height,
         region,
         bytes,
     })
+}
+
+fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), ScreenshotError> {
+    let reader =
+        png::Decoder::new(bytes)
+            .read_info()
+            .map_err(|source| CdpError::ResponseInvalid {
+                context: "failed to read CDP screenshot PNG dimensions",
+                source: source.to_string(),
+            })?;
+    Ok((reader.info().width, reader.info().height))
 }
 
 fn viewport_metrics(socket: &mut CdpWebSocket) -> Result<CdpViewport, ScreenshotError> {
@@ -206,6 +229,13 @@ struct CdpViewport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_missing_or_invalid_png_metadata() {
+        for bytes in [b"".as_slice(), b"\x89PNG\r\n\x1a\n", b"not a PNG"] {
+            assert!(png_dimensions(bytes).is_err());
+        }
+    }
 
     #[test]
     fn parses_css_viewport_dimensions_before_legacy_dimensions() {

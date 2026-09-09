@@ -7,7 +7,7 @@ use crate::{
     selection::select_page_target,
 };
 use lantern_core::{
-    action_flow::{Postcondition, Verdict, run_action_flow_until},
+    action_flow::{Postcondition, Verdict, run_action_flow_with_preflight_until},
     redaction::RedactionMode,
     screenshot::{SCREENSHOT_REDACTION_CAVEAT, ScreenshotSummary},
 };
@@ -72,13 +72,14 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
             selector: i.expect_selector.unwrap(),
         }
     };
-    let output = run_action_flow_until(
+    let output = run_action_flow_with_preflight_until(
         &page,
         &target,
         condition,
         RedactionMode::from_no_redact(i.no_redact),
         budget.unwrap(),
         i.screenshot_output.is_some(),
+        i.strict,
         |capture| {
             let path = i.screenshot_output.as_deref().unwrap();
             let overwritten =
@@ -88,6 +89,8 @@ pub(crate) fn run_action_flow(context: EndpointContext) -> Result<bool, CliError
                 format: capture.format,
                 width: capture.width,
                 height: capture.height,
+                pixel_width: capture.pixel_width,
+                pixel_height: capture.pixel_height,
                 region: capture.region,
                 byte_count: capture.bytes.len(),
                 path: path.to_owned(),

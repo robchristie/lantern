@@ -446,13 +446,12 @@ fn run_interaction(
     ))
 }
 
-pub(crate) fn interact_on_socket(
-    socket: &mut CdpWebSocket,
+pub(crate) fn undispatched_summary(
     selector: &InteractionTarget,
     request: ActionRequest<'_>,
     budget: OperationDeadline,
 ) -> InteractionSummary {
-    let mut summary = InteractionSummary {
+    InteractionSummary {
         action: request.action,
         selector: selector.css().unwrap_or("").to_owned(),
         target: selector.css().is_none().then(|| selector.clone()),
@@ -464,8 +463,18 @@ pub(crate) fn interact_on_socket(
         timeout_ms: duration_millis(budget.timeout),
         observed: request.observed(None, None, 0),
         immediate_error: None,
-        evidence_loss: socket.evidence_loss(),
-    };
+        evidence_loss: Default::default(),
+    }
+}
+
+pub(crate) fn interact_on_socket(
+    socket: &mut CdpWebSocket,
+    selector: &InteractionTarget,
+    request: ActionRequest<'_>,
+    budget: OperationDeadline,
+) -> InteractionSummary {
+    let mut summary = undispatched_summary(selector, request, budget);
+    summary.evidence_loss = socket.evidence_loss();
     // A retained activeElement alone does not establish document focus or
     // focus-event delivery in a background/headless page. Activate the exact
     // selected page before text/key preparation, within the original budget.

@@ -191,7 +191,11 @@ entries do not fail a successful action. Inspect entry `source_timestamp_ms`
 and `observation_phase` alongside `action_boundary_timestamp_ms`; unknown
 attribution or truncation makes the verdict incomplete. Network failure policy
 still covers the whole attachment. A condition already matched at baseline
-cannot pass. `ok: true` records structured command completion, while `--strict`
+cannot pass; `--strict` rejects it before input so the expectation can be corrected
+without having mutated the page. Non-strict mode retains the legacy click.
+Requested capture reserves a quarter of the remaining post-input budget, capped
+at 500 ms, for diagnostics and finalisation; assertion timeout still yields an
+incomplete verdict. `ok: true` records structured command completion, while `--strict`
 requires `verdict=passed`. Never automatically replay uncertain or possibly
 partial input. Preserve pre-input, dispatch, postcondition, observation and
 capture failures as distinct evidence. Capture is sequenced evidence and still

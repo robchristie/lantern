@@ -1210,12 +1210,31 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
         verify=verify_timeout_loss,
     )
 
+    timeout_capture = output / "action-timeout.png"
+
+    def verify_timeout_capture(value):
+        data = timeout_capture.read_bytes()
+        assert data.startswith(b"\x89PNG\r\n\x1a\n"), "missing diagnostic PNG"
+        dimensions = struct.unpack(">II", data[16:24])
+        capture = value["capture"]["screenshot"]
+        assert dimensions == (capture["pixel_width"], capture["pixel_height"])
+        assert value["postcondition"]["observed"]["count"] == 0
+
+    action_flow(
+        "action-flow-timeout-diagnostic-capture", "action-timeout",
+        ["--expect-selector", "#never-created"],
+        1, True, "clicked-1", False, False, True, "incomplete",
+        timeout_ms=2000, capture_status="captured",
+        extra_arguments=("--output", str(timeout_capture), "--overwrite"),
+        verify=verify_timeout_capture,
+    )
+
     action_flow(
         "action-flow-preexisting-condition", "action-preexisting",
         ["--expect-selector", "#status", "--expect-text", "Record saved"],
-        1, True, "clicked-1", True, True, False, "incomplete",
+        1, False, "ready", True, False, False, "incomplete",
         error="postcondition_already_matched",
-        verify=lambda value: verify_text_observed(value, "Record saved"),
+        immediate_error="postcondition_already_matched",
     )
 
     action_flow(
@@ -1387,9 +1406,9 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
 
     evidence["visual_captures"] = []
     with fixture_cdp_session(endpoint) as capture_cdp:
-        for width, height in [(1000, 800), (390, 844)]:
+        for width, height, scale in [(1000, 800, 1), (390, 844, 1), (1000, 800, 2)]:
             capture_cdp("Emulation.setDeviceMetricsOverride", {
-                "width": width, "height": height, "deviceScaleFactor": 1, "mobile": False,
+                "width": width, "height": height, "deviceScaleFactor": scale, "mobile": False,
             })
             invoke("open", f"{fixture_base}/layout")
             invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
@@ -1400,12 +1419,27 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
                 "expression": "({width: innerWidth, height: innerHeight, device_scale_factor: devicePixelRatio})",
                 "returnByValue": True,
             })["result"]["value"]
-            assert actual_viewport == {"width": width, "height": height, "device_scale_factor": 1}, actual_viewport
-            capture_path = output / f"layout-{width}x{height}.png"
+            assert actual_viewport == {"width": width, "height": height, "device_scale_factor": scale}, actual_viewport
+            capture_path = output / f"layout-{width}x{height}-dpr{scale}.png"
             captured, _ = invoke("screenshot", "--output", str(capture_path), "--overwrite")
             assert captured.get("ok") is True and capture_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), captured
             png_dimensions = struct.unpack(">II", capture_path.read_bytes()[16:24])
-            assert png_dimensions == (width, height), (actual_viewport, png_dimensions)
+            assert png_dimensions == (width * scale, height * scale), (actual_viewport, png_dimensions)
+            summary = captured["screenshot"]
+            assert (summary["width"], summary["height"]) == (width, height), summary
+            assert (summary["pixel_width"], summary["pixel_height"]) == png_dimensions, summary
+            region_path = output / f"layout-region-dpr{scale}-{width}.png"
+            region_capture, _ = invoke(
+                "screenshot", "--output", str(region_path), "--overwrite",
+                "--region-x", "20", "--region-y", "30",
+                "--region-width", "160", "--region-height", "120",
+            )
+            assert region_capture.get("ok") is True, region_capture
+            region_dimensions = struct.unpack(">II", region_path.read_bytes()[16:24])
+            region_summary = region_capture["screenshot"]
+            assert region_dimensions == (160 * scale, 120 * scale), region_dimensions
+            assert (region_summary["pixel_width"], region_summary["pixel_height"]) == region_dimensions, region_summary
+            assert (region_summary["width"], region_summary["height"]) == (width, height), region_summary
             evidence["visual_captures"].append({
                 "path": str(capture_path), "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
                 "viewport": actual_viewport,
