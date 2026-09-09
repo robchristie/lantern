@@ -4,7 +4,9 @@ use crate::{
     cdp::{CdpCallError, CdpError, CdpWebSocket, OperationDeadline, TargetInfo, command_deadline},
     console::{ConsoleAttribution, ConsoleCollector, ConsoleSummary},
     flow::{FlowError, drain_available_events, push_observation_event},
-    interaction::{ActionRequest, DispatchState, InteractionSummary, interact_on_socket},
+    interaction::{
+        ActionRequest, DispatchState, InteractionSummary, interact_on_socket, undispatched_summary,
+    },
     network::{NetworkCollector, NetworkSummary},
     redaction::{RedactionMode, sanitize_dom_text, sanitize_url},
     screenshot::{CapturedScreenshot, ScreenshotSummary, capture_on_socket},
@@ -82,6 +84,30 @@ pub fn run_action_flow_until(
     mode: RedactionMode,
     budget: OperationDeadline,
     capture_requested: bool,
+    persist: impl FnMut(CapturedScreenshot) -> Result<ScreenshotSummary, &'static str>,
+) -> Result<ActionFlowOutput, FlowError> {
+    run_action_flow_with_preflight_until(
+        target,
+        selector,
+        condition,
+        mode,
+        budget,
+        capture_requested,
+        false,
+        persist,
+    )
+}
+
+/// Strict callers reject a matched baseline before interaction preparation.
+#[allow(clippy::too_many_arguments)]
+pub fn run_action_flow_with_preflight_until(
+    target: &TargetInfo,
+    selector: impl Into<InteractionTarget>,
+    condition: Postcondition,
+    mode: RedactionMode,
+    budget: OperationDeadline,
+    capture_requested: bool,
+    reject_matched_baseline: bool,
     mut persist: impl FnMut(CapturedScreenshot) -> Result<ScreenshotSummary, &'static str>,
 ) -> Result<ActionFlowOutput, FlowError> {
     let url = target
@@ -152,19 +178,30 @@ pub fn run_action_flow_until(
             source: "missing browser epoch milliseconds".into(),
         })?;
     console.begin_action(action_boundary_timestamp_ms);
-    let mut interaction = interact_on_socket(
-        &mut socket,
-        &selector.into(),
-        ActionRequest::default(),
-        budget,
-    );
+    let selector = selector.into();
+    let mut interaction = if before && reject_matched_baseline {
+        let mut summary = undispatched_summary(&selector, ActionRequest::default(), budget);
+        summary.immediate_error = Some("postcondition_already_matched");
+        summary
+    } else {
+        interact_on_socket(&mut socket, &selector, ActionRequest::default(), budget)
+    };
     interaction.target = interaction.target.map(|t| t.summary(mode));
     // Best-effort input release may have used the separate cleanup allowance.
     socket.restore_deadline(budget.end());
+    // Reserve a quarter of the remaining time, capped at 500 ms, for capture
+    // and finalisation. The original attachment and overall deadline survive.
+    let allowance = if capture_requested {
+        (budget.end().saturating_duration_since(Instant::now()) / 4).min(Duration::from_millis(500))
+    } else {
+        Duration::ZERO
+    };
+    let assertion_end = budget.end() - allowance;
+    socket.restore_deadline(assertion_end);
     let mut error = None;
     if interaction.dispatch_state != DispatchState::NotDispatched {
         loop {
-            if Instant::now() >= budget.end() {
+            if Instant::now() >= assertion_end {
                 postcondition.timed_out = true;
                 break;
             }
@@ -190,13 +227,13 @@ pub fn run_action_flow_until(
                 }
             }
             thread::sleep(
-                budget
-                    .end()
+                assertion_end
                     .saturating_duration_since(Instant::now())
                     .min(Duration::from_millis(50)),
             );
         }
     }
+    socket.restore_deadline(budget.end());
     let mut capture = CaptureSummary {
         requested: capture_requested,
         status: if capture_requested {
@@ -247,7 +284,8 @@ pub fn run_action_flow_until(
         console.finish_with_collection_gap(false, "collection_started_before_observed_action");
     let network =
         network.finish_with_collection_gap(false, "collection_started_before_observed_action");
-    let incomplete = before
+    let incomplete = postcondition.timed_out
+        || before
         || error.is_some()
         || console_attribution.unknown_error_count > 0
         || console.truncated
@@ -361,6 +399,14 @@ mod tests {
     use tungstenite::Message;
 
     fn fixture(scenario: &'static str, capture: bool) -> (ActionFlowOutput, Vec<String>) {
+        fixture_preflight(scenario, capture, false)
+    }
+
+    fn fixture_preflight(
+        scenario: &'static str,
+        capture: bool,
+        strict: bool,
+    ) -> (ActionFlowOutput, Vec<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
@@ -452,7 +498,14 @@ mod tests {
                     if scenario == "capture_stall" {
                         continue;
                     }
-                    result = json!({"data":"aW1hZ2U="});
+                    let mut png = Vec::new();
+                    {
+                        let encoder = png::Encoder::new(&mut png, 2, 3);
+                        let mut writer = encoder.write_header().unwrap();
+                        writer.write_image_data(&[0; 6]).unwrap();
+                    }
+                    use base64::Engine as _;
+                    result = json!({"data":base64::engine::general_purpose::STANDARD.encode(png)});
                 }
                 if ws
                     .send(Message::Text(
@@ -478,7 +531,7 @@ mod tests {
             web_socket_debugger_url: Some(format!("ws://{address}/page")),
         };
         let budget = OperationDeadline::from(Duration::from_millis(350));
-        let output = run_action_flow_until(
+        let output = run_action_flow_with_preflight_until(
             &target,
             "#target",
             Postcondition::Text {
@@ -488,6 +541,7 @@ mod tests {
             RedactionMode::Redacted,
             budget,
             capture,
+            strict,
             |image| {
                 if scenario == "write_failure" {
                     return Err("screenshot_write_failed");
@@ -496,6 +550,8 @@ mod tests {
                     format: image.format,
                     width: image.width,
                     height: image.height,
+                    pixel_width: image.pixel_width,
+                    pixel_height: image.pixel_height,
                     region: None,
                     byte_count: image.bytes.len(),
                     path: "test.png".into(),
@@ -542,6 +598,33 @@ mod tests {
             assert_eq!(o.interaction.dispatch_state, DispatchState::Acknowledged);
             assert!(o.postcondition.matched);
             assert_eq!(input, ["mouseMoved", "mousePressed", "mouseReleased"]);
+        }
+    }
+
+    #[test]
+    fn strict_preflight_preserves_state_and_can_capture_diagnostics() {
+        let (output, inputs) = fixture_preflight("preexisting", true, true);
+        assert!(inputs.is_empty());
+        assert_eq!(
+            output.interaction.dispatch_state,
+            DispatchState::NotDispatched
+        );
+        assert_eq!(output.error, Some("postcondition_already_matched"));
+        assert_eq!(output.verdict, Verdict::Incomplete);
+        assert!(!output.postcondition.matched);
+        assert!(output.postcondition.observed.is_none());
+        assert_eq!(output.capture.status, "captured");
+    }
+
+    #[test]
+    fn assertion_timeout_reserves_capture_without_replaying_input() {
+        for scenario in ["timeout", "probe_stall"] {
+            let (output, inputs) = fixture(scenario, true);
+            assert!(output.postcondition.timed_out);
+            assert_eq!(output.verdict, Verdict::Incomplete);
+            assert_eq!(output.capture.status, "captured");
+            assert_eq!(output.capture.screenshot.unwrap().pixel_height, 3);
+            assert_eq!(inputs, ["mouseMoved", "mousePressed", "mouseReleased"]);
         }
     }
 

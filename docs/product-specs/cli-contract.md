@@ -1467,7 +1467,11 @@ baseline followed by an observed match, acknowledged input, complete evidence,
 no action-interval runtime/console error or captured HTTP/network failure, and a successful requested
 capture. This demonstrates observed order, not causation. A condition already
 true before input produces `postcondition_already_matched` and cannot pass even
-if it remains true. It does not suppress the requested click. Unknown outcomes,
+if it remains true. With `--strict`, it rejects the click before interaction
+preparation or input: dispatch is `not_dispatched`, the interaction error is
+`postcondition_already_matched`, post-action `matched` is false and `observed` is
+null. A requested diagnostic capture is still attempted. Without `--strict`, the
+legacy click-and-incomplete behaviour is retained. Unknown outcomes,
 uncertain dispatch, evidence loss, observation errors, deadline exhaustion or
 capture/persistence failure yield `incomplete`; otherwise known failure yields
 `failed`. Known failures remain present even alongside a match or incomplete
@@ -1477,7 +1481,14 @@ cannot promise detection of errors occurring afterwards.
 
 `capture` records `requested`, `status` (`not_requested`, `captured`, `failed`),
 nullable screenshot metadata and an error code. It is attempted after assertion
-success or failure while the original budget permits. A write failure retains
+success or failure while the original budget permits. When capture is requested,
+assertion polling reserves one quarter of the time remaining after interaction,
+capped at 500 ms, for capture and finalisation. Assertion expiry remains
+`timed_out=true` and `verdict=incomplete`, even when the diagnostic PNG succeeds.
+A stalled assertion also uses the shorter deadline; finalisation restores the
+original deadline on the same attachment without reconnecting or replaying input.
+This allowance cannot guarantee capture if setup/input exhausts the budget or the
+browser does not respond in time. A write failure retains
 the interaction, condition and failure observations with `screenshot_write_failed`;
 a capture failure uses `screenshot_capture_failed`; expiry before persistence uses
 `screenshot_deadline_reached`. Its correlation is explicitly
@@ -1857,20 +1868,21 @@ Viewport assumptions:
 
 - `lantern screenshot` captures the target's current visible viewport.
 - The command does not resize the browser, alter device emulation, scroll, capture a full page, or stitch multiple images.
-- `width` and `height` are best-effort viewport dimensions from `Page.getLayoutMetrics` when Chromium provides them; they may be `null`.
+- `width` and `height` retain their best-effort viewport meaning from `Page.getLayoutMetrics` when Chromium provides them; they may be `null`. CSS viewport metrics take precedence over legacy metrics.
+- `pixel_width` and `pixel_height` are the actual returned PNG dimensions read from its metadata. They reflect the captured region and device scale, independently of viewport metadata.
 
 Reported screenshot width and height are best-effort viewport metrics, not
 decoded PNG dimensions. An external CDP emulation session can change the layout
 viewport while a separate capture session retains a different physical surface.
 The owning viewport harness must align both when this matters; inspect the actual
-PNG dimensions and pixels rather than treating viewport metadata as proof.
+`pixel_width`/`pixel_height` and pixels rather than treating viewport metadata as proof.
 
 Human output should include:
 
 - selected target id short form
 - selected page title, truncated by default
 - URL shape, not the full URL by default
-- viewport dimensions when known
+- viewport dimensions when known and actual PNG pixel dimensions
 - requested region when supplied, otherwise `null`
 - image byte count
 - output path
@@ -1879,7 +1891,7 @@ Human output should include:
 Recommended human output shape:
 
 ```text
-screenshot: ABCD1234 title="Example" url=https://example.test/path dimensions=1280x720 region=null bytes=123456 path=artifacts/page.png caveat=screenshot_contains_visible_page_pixels
+screenshot: ABCD1234 title="Example" url=https://example.test/path dimensions=1280x720 pixel_dimensions=1280x720 region=null bytes=123456 path=artifacts/page.png caveat=screenshot_contains_visible_page_pixels
 ```
 
 JSON output shape:
@@ -1898,6 +1910,8 @@ JSON output shape:
     "format": "png",
     "width": 1280,
     "height": 720,
+    "pixel_width": 1280,
+    "pixel_height": 720,
     "region": null,
     "byte_count": 123456,
     "path": "artifacts/page.png",
@@ -1918,6 +1932,8 @@ Required JSON fields:
 - `screenshot.format`
 - `screenshot.width`
 - `screenshot.height`
+- `screenshot.pixel_width`
+- `screenshot.pixel_height`
 - `screenshot.region`
 - `screenshot.byte_count`
 - `screenshot.path`

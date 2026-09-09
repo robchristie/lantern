@@ -7,7 +7,21 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use tungstenite::Message;
+
+fn screenshot_png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(png::ColorType::Grayscale);
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![0; (width * height) as usize])
+            .unwrap();
+    }
+    bytes
+}
 
 fn read_expect(socket: &mut tungstenite::WebSocket<TcpStream>, expected: &str) -> String {
     let message = socket
@@ -675,7 +689,7 @@ impl WebSocketFixture {
             );
             socket
                 .send(Message::Text(
-                    r#"{"id":2,"result":{"data":"iVBORw0KGgo="}}"#.to_owned().into(),
+                    serde_json::json!({"id":2,"result":{"data":STANDARD.encode(screenshot_png(2560, 1440))}}).to_string().into(),
                 ))
                 .expect("fixture should write screenshot response");
         });
@@ -715,7 +729,7 @@ impl WebSocketFixture {
             );
             socket
                 .send(Message::Text(
-                    r#"{"id":2,"result":{"data":"iVBORw0KGgo="}}"#.to_owned().into(),
+                    serde_json::json!({"id":2,"result":{"data":STANDARD.encode(screenshot_png(640, 480))}}).to_string().into(),
                 ))
                 .expect("fixture should write screenshot response");
         });
@@ -2469,7 +2483,12 @@ fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
     assert_eq!(json["screenshot"]["width"], 1280);
     assert_eq!(json["screenshot"]["height"], 720);
     assert_eq!(json["screenshot"]["region"], serde_json::Value::Null);
-    assert_eq!(json["screenshot"]["byte_count"], 8);
+    assert_eq!(json["screenshot"]["pixel_width"], 2560);
+    assert_eq!(json["screenshot"]["pixel_height"], 1440);
+    assert_eq!(
+        json["screenshot"]["byte_count"],
+        screenshot_png(2560, 1440).len()
+    );
     assert_eq!(json["screenshot"]["path"], output_path_string);
     assert_eq!(json["screenshot"]["overwritten"], false);
     assert_eq!(
@@ -2478,7 +2497,7 @@ fn screenshot_json_captures_visible_viewport_to_explicit_output_path() {
     );
     assert_eq!(
         fs::read(&output_path).expect("screenshot file should be written"),
-        b"\x89PNG\r\n\x1a\n"
+        screenshot_png(2560, 1440)
     );
     fs::remove_file(&output_path).expect("screenshot file should clean up");
     fixture.finish();
@@ -2524,13 +2543,17 @@ fn check_viewport_region(page_x: f64, page_y: f64) {
 
     assert_success(&output);
     let json = json_stdout(&output);
+    assert_eq!(json["screenshot"]["width"], 1280);
+    assert_eq!(json["screenshot"]["height"], 720);
+    assert_eq!(json["screenshot"]["pixel_width"], 640);
+    assert_eq!(json["screenshot"]["pixel_height"], 480);
     assert_eq!(json["screenshot"]["region"]["x"], 100.0);
     assert_eq!(json["screenshot"]["region"]["y"], 80.0);
     assert_eq!(json["screenshot"]["region"]["width"], 320.0);
     assert_eq!(json["screenshot"]["region"]["height"], 240.0);
     assert_eq!(
         fs::read(&output_path).expect("screenshot file should be written"),
-        b"\x89PNG\r\n\x1a\n"
+        screenshot_png(640, 480)
     );
     fs::remove_file(&output_path).expect("screenshot file should clean up");
     fixture.finish();
@@ -2560,7 +2583,8 @@ fn screenshot_human_reports_short_metadata_and_path() {
     assert_eq!(
         stdout(&output),
         format!(
-            "screenshot: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted dimensions=1280x720 region=null bytes=8 path={} overwritten=false caveat=screenshot_contains_visible_page_pixels\n",
+            "screenshot: PAGE_ATT title=\"Checkout token page\" url=https://example.test/reset/:redacted dimensions=1280x720 pixel_dimensions=2560x1440 region=null bytes={} path={} overwritten=false caveat=screenshot_contains_visible_page_pixels\n",
+            screenshot_png(2560, 1440).len(),
             output_path_string
         )
     );
@@ -2629,7 +2653,7 @@ fn screenshot_json_overwrites_existing_output_when_requested() {
     assert_eq!(json["screenshot"]["overwritten"], true);
     assert_eq!(
         fs::read(&output_path).expect("screenshot file should be overwritten"),
-        b"\x89PNG\r\n\x1a\n"
+        screenshot_png(2560, 1440)
     );
     fs::remove_file(&output_path).expect("screenshot file should clean up");
     fixture.finish();
