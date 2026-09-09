@@ -1426,7 +1426,7 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             png_dimensions = struct.unpack(">II", capture_path.read_bytes()[16:24])
             assert png_dimensions == (width * scale, height * scale), (actual_viewport, png_dimensions)
             summary = captured["screenshot"]
-            css_viewport = capture_cdp("Page.getLayoutMetrics")["cssVisualViewport"]
+            css_viewport = capture_cdp("Page.getLayoutMetrics", {})["cssVisualViewport"]
             viewport_dimensions = (round(css_viewport["clientWidth"]), round(css_viewport["clientHeight"]))
             assert (summary["width"], summary["height"]) == viewport_dimensions, summary
             assert (summary["pixel_width"], summary["pixel_height"]) == png_dimensions, summary
