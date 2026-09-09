@@ -222,7 +222,7 @@ def fixture_cdp_session(endpoint):
 
         def call(method, params):
             nonlocal sequence
-            assert method in ("Runtime.evaluate", "Emulation.setDeviceMetricsOverride", "Emulation.setVisibleSize")
+            assert method in ("Runtime.evaluate", "Emulation.setDeviceMetricsOverride", "Emulation.setVisibleSize", "Page.getLayoutMetrics")
             sequence += 1
             payload = json.dumps({"id": sequence, "method": method, "params": params}).encode()
             mask = os.urandom(4)
