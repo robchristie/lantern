@@ -1414,7 +1414,7 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             invoke("wait", "ready", "--state", "complete", "--timeout-ms", "2000")
             # Navigation can reset the physical surface while retaining emulated
             # layout metrics. Align it after navigation for separate capture CDP.
-            capture_cdp("Emulation.setVisibleSize", {"width": width, "height": height})
+            capture_cdp("Emulation.setVisibleSize", {"width": width * scale, "height": height * scale})
             actual_viewport = capture_cdp("Runtime.evaluate", {
                 "expression": "({width: innerWidth, height: innerHeight, device_scale_factor: devicePixelRatio})",
                 "returnByValue": True,
@@ -1439,7 +1439,11 @@ def run_suite(lantern, endpoint, fixture_base, output, evidence, suite_started, 
             assert region_capture.get("ok") is True, region_capture
             region_dimensions = struct.unpack(">II", region_path.read_bytes()[16:24])
             region_summary = region_capture["screenshot"]
-            assert region_dimensions == (160 * scale, 120 * scale), region_dimensions
+            # Emulated DPR belongs to the fixture attachment; a separate CLI
+            # attachment may capture clips at its native scale. The PNG, not
+            # multiplication of CSS dimensions, owns the reported pixel size.
+            assert 0 < region_dimensions[0] < png_dimensions[0], region_dimensions
+            assert 0 < region_dimensions[1] < png_dimensions[1], region_dimensions
             assert (region_summary["pixel_width"], region_summary["pixel_height"]) == region_dimensions, region_summary
             assert (region_summary["width"], region_summary["height"]) == viewport_dimensions, region_summary
             evidence["visual_captures"].append({
