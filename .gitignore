@@ -1,3 +1,5 @@
 target/
+.lantern/
+# Legacy local state and historical evidence remain private.
 .smoogle/
 .codex

@@ -187,7 +187,7 @@ lantern page --endpoint http://127.0.0.1:9222
 
 `lantern browser start` creates one disposable Chrome-for-Testing container
 with an isolated profile directory under
-`.smoogle/lantern/browser-instances/<id>/profile`. It publishes container CDP
+`.lantern/browser-instances/<id>/profile`. It publishes container CDP
 port `9222` to a runtime-assigned random host port on `127.0.0.1`; it does not
 use fixed host port `9222` unless a later command explicitly adds that option.
 
@@ -309,7 +309,7 @@ Security boundaries:
 
 - CDP is published to host loopback only.
 - Managed profiles are disposable by default and are stored under untracked
-  `.smoogle/`.
+  `.lantern/`.
 - Named persistent profiles are an explicit exception: they live outside source
   worktrees, use private filesystem modes, and retain sensitive browser-owned
   session state. Do not back them up, share them, inspect their databases, or
@@ -325,3 +325,25 @@ Security boundaries:
 Named persistent profiles can use `disabled`, `swiftshader`, or `gpu` graphics.
 Hardware `webgpu` is restricted to disposable trusted-site sessions: combining
 `--graphics webgpu` with `--profile` is rejected before state or runtime access.
+
+## Local state compatibility
+
+New disposable browser registries live under `.lantern/browser-instances/`.
+When `.smoogle/lantern/browser-instances/` already exists, Lantern continues to
+use it, even if the new directory also exists. This preserves ownership records
+and the absolute profile paths mounted by existing containers. Invalid or
+inaccessible legacy registries remain errors rather than silently hiding state.
+Lantern does not move or delete existing profiles automatically.
+
+To switch an existing checkout, first stop and prune all of its disposable
+instances through `lantern browser stop <ID>` and `lantern browser prune`.
+After confirming that the legacy registry has no instance directories, remove
+only that empty registry and any stale `.lock` directory, with no lifecycle
+commands running. The next browser start uses the new location. Do not rename a registry containing records: their absolute paths
+and existing container mounts would still point to the original directory.
+Named persistent profiles remain in the operator's private Lantern state home.
+
+Both local state roots stay ignored by Git. Historical qualification manifests
+and completed plans retain their original evidence paths; these are records of
+past runs, not dependencies on the retired harness. New scripts write artefacts
+under `.lantern/`.

@@ -6,7 +6,7 @@ Rust-first local CLI shim over Chromium CDP for agentic frontend development.
 
 ## Primary User
 
-A technically fluent local operator using Codex or Smoogle on headless Linux.
+A technically fluent local operator using Codex on headless Linux.
 
 ## Problem
 
@@ -58,7 +58,7 @@ The exact command, shared flag, endpoint resolution, and exit-code contract live
 
 - deliver one end-to-end `cli` workflow that proves the core product loop
 - keep the first release local-first and single-user
-- keep endpoint-based inspection usable without durable product storage; store managed browser runtime records only under untracked `.smoogle/` and reserve SQLite for local task, state, and future session metadata once a real need appears
+- keep endpoint-based inspection usable without durable product storage; store managed browser runtime records only under untracked `.lantern/` and reserve SQLite for local task, state, and future session metadata once a real need appears
 
 ## Value Proposition
 

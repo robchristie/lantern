@@ -12,7 +12,7 @@ discovery section of `cli-contract.md`.
 ## Goals
 
 - Keep human output short enough for agent transcripts.
-- Keep JSON output stable enough for scripts, Smoogle, and future UI adapters.
+- Keep JSON output stable enough for scripts and future UI adapters.
 - Avoid leaking sensitive browser data by default.
 - Preserve enough shape for debugging frontend work.
 - Make truncation and redaction deterministic so tests can assert exact output.

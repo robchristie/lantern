@@ -17,7 +17,7 @@ if(mode!=='serve'){
  const response=await fetch(owner.control+'/'+mode,{method:mode==='status'?'GET':'POST'});
  console.log(await response.text());if(!response.ok)process.exitCode=1;
 }else{
- const require=createRequire(root+'/.smoogle/qualification-tools/package.json');
+ const require=createRequire(root+'/.lantern/qualification-tools/package.json');
  const {chromium}=require('playwright-core');
  const fixture=root+'/scripts/fixtures/comparison/index.html';
  const executable=process.env.LANTERN_CHROMIUM;

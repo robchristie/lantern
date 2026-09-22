@@ -58,8 +58,8 @@ qualification remains separate from synthetic adapter/browser contracts.
 
 ## Operational Expectations
 
-- Keep runtime state under `.smoogle/` and out of Git.
-- Store managed browser records under `.smoogle/lantern/browser-instances/` and treat them as reconstructable local runtime state.
+- Keep runtime state under `.lantern/` and out of Git.
+- Store managed browser records under `.lantern/browser-instances/` and treat them as reconstructable local runtime state. Existing legacy registries retain their location; see `docs/headless-chromium.md` for compatibility and retirement.
 - Store named persistent profiles under the operator state home, never under a
   source checkout; treat their Chromium data as durable sensitive state rather
   than reconstructable runtime metadata.
@@ -67,24 +67,23 @@ qualification remains separate from synthetic adapter/browser contracts.
   profile. A stale stopped or missing attachment may be recovered explicitly
   during the next start.
 - Create an initial Git commit before task worktrees are used.
-- Treat checked-in docs and prompt templates as the system of record.
+- Treat checked-in docs and executable checks as the system of record.
 - Prefer local-first workflows and deterministic local validation.
 - Keep recovery guidance in checked-in docs, task notes, or run artifacts instead of chat history.
 
 ## Validation Budget
 
-- Docs-only changes: inspect the diff and run `smoogle docs check`.
+- Docs-only changes: inspect changed links and paths and run `scripts/validate.sh docs` for whitespace checks.
 - Tight Rust edit loops: run `scripts/validate.sh fast`, using `FAST_TEST_ARGS` when a focused test filter is known.
 - Standard Rust validation: run `scripts/validate.sh`, which composes formatting, `cargo check`, workspace tests, and docs hygiene.
-- Periodic quality sweeps: run `scripts/quality-sweep.sh`; set `SMOOGLE_COVERAGE=1` when coverage evidence is worth the runtime cost.
-- Prompt/template changes: verify template paths and inspect rendered prompt behavior where practical.
+- Periodic quality sweeps: run `scripts/quality-sweep.sh`; set `LANTERN_COVERAGE=1` when coverage evidence is worth the runtime cost.
 - Workflow changes: include a command-level smoke path or test when possible.
 
 ## Recovery Guidance
 
-1. Inspect `smoogle run show <run-id>` before editing prompts or code after a failed run.
+1. Inspect the failed command output and retained local evidence before changing code after a failed run.
 2. Use task notes for durable context that should travel with a task.
-3. Prefer fixing repo-local guidance, checks, templates, or code over repeating one-off operator instructions.
+3. Prefer fixing repo-local guidance, checks, or code over repeating one-off operator instructions.
 4. Put real but deferred reliability work in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
 5. Use `lantern browser profile status <NAME>` before recovering a persistent
    profile. Delete it only after stopping its browser and deciding whether a

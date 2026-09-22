@@ -8,7 +8,7 @@ Lantern exposes an opinionated, text-first CLI for inspecting a browser during f
 
 ## Primary User
 
-A technically fluent local operator using Codex/Smoogle on headless Linux who wants frontend development feedback without MCP token overhead, broad tool-surface bloat, or client-specific DevTools integration problems.
+A technically fluent local operator using Codex on headless Linux who wants frontend development feedback without MCP token overhead, broad tool-surface bloat, or client-specific DevTools integration problems.
 
 ## Problem To Solve
 
@@ -84,7 +84,6 @@ Acceptance criteria:
 - small JavaScript evaluation escape hatch with explicit safety warnings
 - session selection and target pinning for multiple tabs
 - optional daemon mode if repeated CLI startup becomes too slow
-- Smoogle integration so frontend tasks can call Lantern from Codex child runs
 - possible Pythia integration for browser-backed AI web UI workflows
 
 ## Operational Constraints
@@ -100,6 +99,8 @@ Acceptance criteria:
 - no hidden network dependency beyond connecting to the explicit CDP endpoint
 - SQLite is reserved for local task, state, and future session metadata; it should not store sensitive browser artifacts and is not a first-milestone prerequisite
 
-## Harness Context
+## Development Workflow
 
-This project exists partly to advance Smoogle dogfooding. It should use the standard Smoogle docs contract, small ExecPlans, task review, run summaries, and eventually `smoogle next`/queue execution. The first useful outcome is a cleanly bootstrapped repo with a narrow first milestone and tasks that are small enough for unattended Codex runs.
+Use small ExecPlans, independent review, and repository validation to deliver
+bounded improvements to the browser inspection loop. Lantern runs directly from
+Codex, shell scripts, or other agents through its CLI and stable JSON output.

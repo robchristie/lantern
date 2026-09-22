@@ -248,7 +248,7 @@ def fixture_cdp(endpoint, method, params):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lantern", default="target/debug/lantern")
-    parser.add_argument("--output-dir", default=".smoogle/browser-contracts")
+    parser.add_argument("--output-dir", default=".lantern/browser-contracts")
     args = parser.parse_args()
 
     output = Path(args.output_dir).resolve()

@@ -15,7 +15,7 @@ Use this workflow for smoke testing against a dedicated browser profile, such as
 - Do not run `lantern open`, `lantern click`, or `lantern type` until navigation or submission is explicitly intended.
 - Do not submit text with `lantern type` plus `lantern click` unless the operator has reviewed the target page and selector.
 - Review screenshot output paths before capture. Screenshots are visible page pixels and are not redacted.
-- Keep screenshots, terminal transcripts, Smoogle run logs, and copied command output out of Git and external chat unless manually reviewed.
+- Keep screenshots, terminal transcripts, agent run logs, and copied command output out of Git and external chat unless manually reviewed.
 
 ## Dedicated Profile Setup
 
@@ -167,23 +167,23 @@ Lantern does not create, rotate or delete this operator-owned secret.
 Screenshots require an explicit path:
 
 ```sh
-mkdir -p .smoogle/artifacts
+mkdir -p .lantern/artifacts
 lantern screenshot \
   --endpoint http://127.0.0.1:9222 \
   --target-id <PAGE_TARGET_ID> \
-  --output .smoogle/artifacts/chatgpt-smoke.png
+  --output .lantern/artifacts/chatgpt-smoke.png
 
 lantern screenshot \
   --endpoint http://127.0.0.1:9222 \
   --target-id <PAGE_TARGET_ID> \
-  --output .smoogle/artifacts/viewer-region.png \
+  --output .lantern/artifacts/viewer-region.png \
   --region-x 100 \
   --region-y 80 \
   --region-width 320 \
   --region-height 240
 ```
 
-Screenshots are not redacted. They may include conversation contents, account metadata, prompt text, workspace names, avatars, and browser UI. Store them under untracked local state such as `.smoogle/artifacts/` unless the operator intentionally chooses another local path.
+Screenshots are not redacted. They may include conversation contents, account metadata, prompt text, workspace names, avatars, and browser UI. Store them under untracked local state such as `.lantern/artifacts/` unless the operator intentionally chooses another local path.
 
 ## Redaction Expectations
 

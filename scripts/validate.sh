@@ -14,22 +14,6 @@ run() {
   "$@"
 }
 
-run_docs_check() {
-  if [[ -n "${SMOOGLE_BIN:-}" ]]; then
-    run "$SMOOGLE_BIN" docs check
-  elif [[ -x "$repo_root/.smoogle/bin/smoogle-cli" ]]; then
-    run "$repo_root/.smoogle/bin/smoogle-cli" docs check
-  elif command -v smoogle >/dev/null 2>&1; then
-    run smoogle docs check
-  elif command -v smoogle-cli >/dev/null 2>&1; then
-    run smoogle-cli docs check
-  elif [[ -f crates/smoogle-cli/Cargo.toml ]]; then
-    run cargo run -q -p smoogle-cli -- docs check
-  else
-    printf '\n==> skipping smoogle docs check; set SMOOGLE_BIN, keep .smoogle/bin/smoogle-cli, or install smoogle\n'
-  fi
-}
-
 run_tests() {
   if cargo nextest --version >/dev/null 2>&1; then
     run cargo nextest run --workspace --all-targets
@@ -39,6 +23,9 @@ run_tests() {
 }
 
 case "$profile" in
+  docs)
+    run git diff --check HEAD
+    ;;
   fast)
     run cargo fmt --all -- --check
     run cargo check --workspace --all-targets
@@ -48,7 +35,7 @@ case "$profile" in
     else
       printf '\n==> skipping focused tests; set FAST_TEST_ARGS to run a narrow test filter\n'
     fi
-    run_docs_check
+    run git diff --check HEAD
     ;;
   standard)
     run cargo fmt --all -- --check
@@ -56,10 +43,10 @@ case "$profile" in
     run rustup run 1.85.0 cargo check --locked --workspace --all-targets
     run_tests
     run python3 scripts/test-comparison-adjudicator.py
-    run_docs_check
+    run git diff --check HEAD
     ;;
   *)
-    printf 'usage: %s [fast|standard]\n' "$0" >&2
+    printf 'usage: %s [docs|fast|standard]\n' "$0" >&2
     exit 2
     ;;
 esac
