@@ -23,8 +23,7 @@ Confirm the application is running and identify the browser owner before
 navigating or interacting. Prefer an existing operator-owned local CDP endpoint.
 Read [browser-sessions.md](references/browser-sessions.md) for managed,
 container-reachable or authenticated sessions; [gpu-canvas.md](references/gpu-canvas.md)
-for WebGL/WebGPU; and [smoogle-dashboard.md](references/smoogle-dashboard.md)
-only for Smoogle.
+for WebGL/WebGPU.
 
 ```bash
 command -v lantern

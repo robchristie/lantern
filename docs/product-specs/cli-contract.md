@@ -192,7 +192,9 @@ Default `start` behavior:
 - chooses `podman` when available, otherwise `docker`, unless `--runtime` is set
 - uses image `localhost/lantern-browser-cdp:stable`
 - creates a unique id when `--id` is omitted
-- creates a dedicated profile directory under `.smoogle/lantern/browser-instances/<id>/profile`
+- creates a dedicated profile directory under `.lantern/browser-instances/<id>/profile`
+  (existing legacy registries retain their paths; see
+  [local state compatibility](../headless-chromium.md#local-state-compatibility))
 - runs the container detached
 - publishes container CDP port `9222` to a runtime-assigned random host port on `127.0.0.1`
 - also publishes VNC `5900` and noVNC `6080` to random host-loopback ports when the runtime provides those mappings
@@ -284,7 +286,7 @@ output shape for single-instance commands:
     "endpoint": "http://127.0.0.1:43123",
     "cdp_host_port": 43123,
     "novnc_url": "http://127.0.0.1:43124/vnc.html",
-    "profile_dir": ".smoogle/lantern/browser-instances/lantern-browser-123/profile",
+    "profile_dir": ".lantern/browser-instances/lantern-browser-123/profile",
     "profile_kind": "disposable",
     "profile_name": null,
     "host_gateway": null
@@ -1412,7 +1414,7 @@ Observe one click and verify an explicit postcondition on one selected page:
 
 ```sh
 lantern action-flow --selector '#save' --expect-selector '#status' --expect-text 'Saved' --timeout-ms 3000 --strict --json
-lantern action-flow --selector '#draw' --expect-selector '[data-state="drawn"]' --timeout-ms 3000 --output .smoogle/drawn.png --json
+lantern action-flow --selector '#draw' --expect-selector '[data-state="drawn"]' --timeout-ms 3000 --output .lantern/drawn.png --json
 lantern action-flow --selector '#next' --expect-url 'http://localhost:5173/done' --timeout-ms 3000 --json
 ```
 
@@ -2131,7 +2133,7 @@ Command-specific defaults:
 
 ## JSON Conventions
 
-JSON output is designed for Smoogle and future UI adapters.
+JSON output is designed for scripts and future UI adapters.
 
 All successful JSON responses must:
 

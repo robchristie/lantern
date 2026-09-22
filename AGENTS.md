@@ -31,4 +31,4 @@ Build and maintain `Lantern`: Rust-first local CLI shim over Chromium CDP for ag
 - Prefer adding reusable guidance to docs over embedding long prompts in code.
 - Optimize first for the first milestone before expanding scope.
 - Prefer the repo-standard validation entrypoint when one exists.
-- Store local runtime state under `.smoogle/` and keep it out of Git.
+- Store local runtime state under `.lantern/` and keep it out of Git.

@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const DEFAULT_BROWSER_IMAGE: &str = "localhost/lantern-browser-cdp:stable";
-pub const INSTANCE_ROOT: &str = ".smoogle/lantern/browser-instances";
+pub const INSTANCE_ROOT: &str = ".lantern/browser-instances";
+const LEGACY_INSTANCE_ROOT: &str = ".smoogle/lantern/browser-instances";
 pub const MANAGED_LABEL_KEY: &str = "dev.lantern.managed";
 pub const INSTANCE_ID_LABEL_KEY: &str = "dev.lantern.instance-id";
 pub const PROFILE_NAME_LABEL_KEY: &str = "dev.lantern.profile-name";
@@ -38,6 +39,13 @@ impl BrowserRegistry {
     }
 
     pub fn under_repo(repo_root: impl AsRef<Path>) -> Self {
+        let legacy_root = repo_root.as_ref().join(LEGACY_INSTANCE_ROOT);
+        // Keep existing container bind mounts and ownership records usable. Do
+        // not silently abandon an inaccessible or invalid legacy registry.
+        if !matches!(fs::symlink_metadata(&legacy_root), Err(error) if error.kind() == io::ErrorKind::NotFound)
+        {
+            return Self::new(legacy_root);
+        }
         Self::new(repo_root.as_ref().join(INSTANCE_ROOT))
     }
 
@@ -1332,6 +1340,38 @@ fn invalid_data(source: impl std::error::Error + Send + Sync + 'static) -> io::E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_registry_preserves_existing_ownership_without_moving_profiles() {
+        let root = std::env::temp_dir().join(format!(
+            "lantern-registry-location-{}-{}",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        fs::create_dir(&root).unwrap();
+        let new_root = root.join(INSTANCE_ROOT);
+        let legacy_root = root.join(LEGACY_INSTANCE_ROOT);
+        assert_eq!(BrowserRegistry::under_repo(&root).root(), new_root);
+
+        fs::create_dir_all(root.join(".smoogle/artifacts")).unwrap();
+        assert_eq!(BrowserRegistry::under_repo(&root).root(), new_root);
+
+        fs::create_dir_all(&legacy_root).unwrap();
+        fs::write(legacy_root.join("ownership-marker"), "retained").unwrap();
+        fs::create_dir_all(&new_root).unwrap();
+        assert_eq!(BrowserRegistry::under_repo(&root).root(), legacy_root);
+        assert_eq!(
+            fs::read_to_string(legacy_root.join("ownership-marker")).unwrap(),
+            "retained"
+        );
+
+        fs::remove_dir_all(&legacy_root).unwrap();
+        assert_eq!(BrowserRegistry::under_repo(&root).root(), new_root);
+        // A malformed legacy path must fail validation, not hide old state.
+        fs::write(&legacy_root, "invalid registry").unwrap();
+        assert!(BrowserRegistry::under_repo(&root).list_records().is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn runtime_run_command_uses_loopback_random_ports_labels_and_isolated_profile() {

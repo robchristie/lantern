@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--fixture-host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--output-dir', default='.smoogle/artifacts/pointer-smoke')
+    parser.add_argument('--output-dir', default='.lantern/artifacts/pointer-smoke')
     args = parser.parse_args()
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)

@@ -6,8 +6,7 @@ authenticated profile.
 
 ## Resolve and verify Lantern
 
-Use plain `lantern` first. In a Smoogle child run, a run-local shim is injected
-when Lantern is discoverable. If needed, check `$LANTERN_BIN`,
+Use plain `lantern` first. If needed, check `$LANTERN_BIN`,
 `/usr/local/bin/lantern`, `/nvme/development/lantern/target/release/lantern`, then
 `/nvme/development/lantern/target/debug/lantern`. Record the selected path and
 `lantern capabilities --json`; local builds can share a package version while
@@ -46,7 +45,7 @@ Explicitly stop and prune before finishing, even when the trap should run:
 ```
 
 `browser prune` removes stopped, missing or errored instances recorded in this
-repository's `.smoogle/` state. It does not make unrelated runtime containers
+repository's `.lantern/` state (or its existing legacy registry). It does not make unrelated runtime containers
 part of Lantern's ownership.
 
 ## Dedicated authenticated profile

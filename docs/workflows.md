@@ -88,20 +88,13 @@
 6. Stop and prune the managed instance after inspection, but preserve its named
    profile. Use explicit confirmed deletion only when retiring the session.
 
-## Task Review Loop
-
-1. Keep speculative or dependent work in `inbox` until it has been semantically reviewed.
-2. Use `task review <task-id> --apply` when prior landed work may have satisfied or reshaped an unblocked task.
-3. Prefer `run queue --review-inbox` over `--allow-inbox` for unattended dependent chains.
-4. Treat `promote`, `already-satisfied`, `reshape`, and `block` as durable task-state decisions, not chat-only guidance.
-
 ## Codex Loop
 
-1. Use the generated docs as the system of record.
+1. Use checked-in guidance and executable checks as the system of record.
 2. Start with `AGENTS.md`, the active ExecPlan, and `docs/workflows.md` before reading wider repo docs.
 3. Read additional product or design docs only when the task needs them.
 4. Work in bounded loops and validate each slice.
-5. Use `--instructions-file -` with a quoted heredoc when operator instructions contain shell-sensitive text such as backticks or angle brackets.
+5. Use quoted heredocs or files when passing text containing shell-sensitive characters such as backticks or dollar signs.
 
 ## Validation Loop
 
@@ -113,7 +106,7 @@
    standard profile.
 3. Use `scripts/quality-sweep.sh` periodically for slower checks: clippy, dependency advisory posture, typo scanning, TOML formatting, dependency cleanup, and optional coverage evidence.
 4. Prefer `cargo check` over `cargo build` when you only need compile feedback.
-5. Run `smoogle docs check` after changing scorecards, ExecPlan links, prompt templates, or core docs structure. In Codex child runs, use the injected `smoogle` shim or `"$SMOOGLE_BIN" docs check` fallback.
+5. Run `scripts/validate.sh docs` for whitespace checks after documentation changes, and inspect changed links and paths against the repository.
 6. Use ad hoc commands only when isolating a specific failure or narrowing a validation step.
 
 ## Quality Scorecard Loop
@@ -121,15 +114,14 @@
 1. Use `QUALITY_SCORE.md`, `RELIABILITY.md`, and `SECURITY.md` as current-state scorecards, not chronological logs.
 2. Update scorecards when a change materially affects quality, reliability, security, validation expectations, recovery guidance, or automation safety.
 3. Put deferred work in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
-4. For docs-only scorecard changes, inspect the diff and run `smoogle docs check` before landing.
+4. For docs-only scorecard changes, inspect changed links and paths and run `scripts/validate.sh docs` before landing.
 
 ## Review And Landing Loop
 
-1. Use `review codex --run-id <run-id>` when you want an agent-written landing recommendation before applying a change.
-2. Prefer `landing_policy = "assisted"` while a repo is still stabilizing.
-3. Use `landing_policy = "auto"` only when validation, review prompts, and task hygiene are consistently clean.
-4. Treat `already-satisfied` as a valid review outcome for tasks that no longer require a code change.
-5. Inspect dependent-task reconciliation after landing and use task review before executing newly unblocked inbox work.
+1. Work on a task branch and inspect the complete diff against the intended base.
+2. Run repository validation and obtain independent review of the exact candidate revision.
+3. Repair blocking findings and require passing CI before merging.
+4. Verify post-merge CI, reconcile dependent work, and clean up the task branch.
 
 ## Transport budgets and incomplete evidence
 
@@ -181,7 +173,7 @@ exit-status semantics for completed condition results remain unchanged.
 Use `action-flow --selector '#save' --expect-selector '#status' --expect-text
 'Saved' --timeout-ms 3000 --strict --json` for one continuously observed click
 and an explicit condition. Pass exactly one condition form: selector presence,
-selector plus text, or exact URL. `--output .smoogle/saved.png` requests a
+selector plus text, or exact URL. `--output .lantern/saved.png` requests a
 viewport capture after the condition attempt; add `--overwrite` only when
 replacement is intentional. Region flags are not supported by `action-flow`.
 Review dispatch, baseline and final condition, runtime/network findings,
@@ -252,7 +244,7 @@ reporting the task complete:
 4. Exercise representative behaviour with that installed executable. For a
    browser interaction repair, run `scripts/test-browser-contracts.py --lantern
    /absolute/path/to/installed/lantern --output-dir
-   .smoogle/installed-browser-contracts` with the explicitly selected
+   .lantern/installed-browser-contracts` with the explicitly selected
    `LANTERN_CHROMIUM` and necessary local runtime environment. Require the
    relevant regression and full suite verdict to pass. Retain the evidence's
    build, browser, fixture and source identities; inspect captures separately

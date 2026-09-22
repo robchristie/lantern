@@ -30,7 +30,7 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 10
     env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.smoogle/playwright-browsers
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.lantern/playwright-browsers
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85.0
@@ -48,11 +48,11 @@ jobs:
           test -n "$LANTERN_CHROMIUM"
           test -x "$LANTERN_CHROMIUM"
           export LANTERN_CHROMIUM
-          scripts/test-browser-contracts.py --lantern target/debug/lantern --output-dir .smoogle/browser-contracts
+          scripts/test-browser-contracts.py --lantern target/debug/lantern --output-dir .lantern/browser-contracts
       - name: Upload browser contract evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: browser-contract-evidence
-          path: .smoogle/browser-contracts/
+          path: .lantern/browser-contracts/
           if-no-files-found: error

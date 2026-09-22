@@ -13,15 +13,20 @@ interface against the task; a capture alone is not a visual review.
 
 ## Initial Shape
 
-- primary user: A technically fluent local operator using Codex or Smoogle on headless Linux.
+- primary user: A technically fluent local operator using Codex on headless Linux.
 - primary interface: cli
 - storage model: local-first; disposable managed-browser state lives under
-  untracked `.smoogle/`, while explicitly named persistent browser profiles
+  untracked `.lantern/`, while explicitly named persistent browser profiles
   live under the operator's private Lantern state home.
 - current milestone: Keep endpoint-based browser inspection stable and provide
   explicit opt-in managed Chromium/CDP lifecycles for disposable agents and
   dedicated authenticated profiles.
 - future interfaces reserved: tui, web ui
+
+Existing checkouts with `.smoogle/lantern/browser-instances/` continue to use
+that registry so recorded browsers and their container profile mounts remain
+manageable. New checkouts use `.lantern/browser-instances/`. See the
+[local state compatibility notes](docs/headless-chromium.md#local-state-compatibility).
 
 ## Repo Guide
 
@@ -29,7 +34,6 @@ interface against the task; a capture alone is not a visual review.
 - `PLANS.md`: ExecPlan policy and active plan links
 - `ARCHITECTURE.md`: top-level architecture entrypoint
 - `QUALITY_SCORE.md`, `RELIABILITY.md`, `SECURITY.md`: current scorecards and safety contracts
-- `smoogle.toml`: checked-in harness defaults and operation profiles
 - `docs/architecture.md`: detailed architecture
 - `docs/headless-chromium.md`: operator-owned Chromium, container, and VNC-compatible CDP setup
 - `docs/authenticated-browser-testing.md`: safety checklist and workflow for dedicated logged-in browser profiles
@@ -47,22 +51,20 @@ identity, commands, aliases and output schemas without starting or connecting to
 a browser. See the [capability contract](docs/product-specs/cli-contract.md#capability-discovery)
 for unknown or modified source identities.
 
-1. Read the generated docs contract before changing code.
-2. Review the seeded `.smoogle/` tasks.
-3. Tune `smoogle.toml` before long unattended runs.
-4. Start an operator-owned Chromium CDP endpoint using
+1. Read `AGENTS.md` and the CLI contract before changing code.
+2. Start an operator-owned Chromium CDP endpoint using
    `docs/headless-chromium.md`, explicitly start a disposable managed instance
    with `lantern browser start`, or create a dedicated authenticated profile
    with `lantern browser profile create <NAME>` and start it using
    `lantern browser start --profile <NAME>`.
    For a trusted hardware-WebGPU application, use `--graphics webgpu` with an
    explicit `--gpu-device`; Lantern never selects a host device implicitly.
-5. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
-6. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` for one coherent navigation, wait, console and network observation.
-7. Use `lantern action-flow --selector <CSS> --expect-selector <CSS> --timeout-ms <MS> --strict` for one observed click and explicit postcondition. For other interactions, add `--strict`, then verify an application postcondition; never automatically replay uncertain input.
-8. Use `lantern layout --container-selector <CSS>` for heuristic layout evidence. For visual, responsive or canvas work, capture each relevant viewport and open the PNG before judging appearance.
-9. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
-10. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
+3. Use `lantern browser endpoint <ID>` to retrieve the endpoint for a managed browser, then pass it to existing commands with `--endpoint` or `LANTERN_CDP_ENDPOINT`.
+4. Use `lantern flow --open <URL> --timeout-ms <MS> --quiet-ms <MS>` for one coherent navigation, wait, console and network observation.
+5. Use `lantern action-flow --selector <CSS> --expect-selector <CSS> --timeout-ms <MS> --strict` for one observed click and explicit postcondition. For other interactions, add `--strict`, then verify an application postcondition; never automatically replay uncertain input.
+6. Use `lantern layout --container-selector <CSS>` for heuristic layout evidence. For visual, responsive or canvas work, capture each relevant viewport and open the PNG before judging appearance.
+7. Use `scripts/validate.sh fast` for tight loops and `scripts/validate.sh` before landing code changes.
+8. Build new browser-inspection capability in bounded steps rather than broad scaffolding.
 
 For ordinary DOM applications, `lantern accessibility --json` shows a compact
 browser-computed role/name list. Interactions also accept `--role button --name

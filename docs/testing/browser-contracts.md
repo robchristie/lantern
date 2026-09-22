@@ -12,7 +12,7 @@ cargo build --locked --workspace
 LANTERN_CHROMIUM=/path/to/chrome \
   scripts/test-browser-contracts.py \
   --lantern target/debug/lantern \
-  --output-dir .smoogle/browser-contracts
+  --output-dir .lantern/browser-contracts
 ```
 
 The runner owns the whole local test environment. It starts a loopback fixture

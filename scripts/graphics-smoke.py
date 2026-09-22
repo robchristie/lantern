@@ -58,7 +58,7 @@ def main():
     parser.add_argument('--target-id', required=True)
     parser.add_argument('--fixture-url', required=True)
     parser.add_argument('--api', choices=['webgl', 'webgpu'], required=True)
-    parser.add_argument('--output-dir', default='.smoogle/artifacts/graphics-smoke')
+    parser.add_argument('--output-dir', default='.lantern/artifacts/graphics-smoke')
     args = parser.parse_args()
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)

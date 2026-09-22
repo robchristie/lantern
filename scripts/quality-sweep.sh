@@ -38,6 +38,7 @@ if command -v taplo >/dev/null 2>&1; then
   mapfile -d '' toml_files < <(
     find . \
       -path './.git' -prune -o \
+      -path './.lantern' -prune -o \
       -path './.smoogle' -prune -o \
       -path './target' -prune -o \
       -name '*.toml' -print0
@@ -57,12 +58,12 @@ else
   skip "cargo machete" "install cargo-machete"
 fi
 
-if [[ "${SMOOGLE_COVERAGE:-0}" == "1" ]]; then
+if [[ "${LANTERN_COVERAGE:-0}" == "1" ]]; then
   if cargo llvm-cov --version >/dev/null 2>&1; then
     run cargo llvm-cov --workspace --all-features --summary-only
   else
     skip "cargo llvm-cov" "install cargo-llvm-cov"
   fi
 else
-  skip "cargo llvm-cov" "set SMOOGLE_COVERAGE=1 for periodic coverage evidence"
+  skip "cargo llvm-cov" "set LANTERN_COVERAGE=1 for periodic coverage evidence"
 fi

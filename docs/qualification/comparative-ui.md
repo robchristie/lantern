@@ -104,12 +104,13 @@ independent read-only adjudication may use Playwright.
   outputs. It does not perform browser automation. CLI invocations are not
   orchestration tool calls; model context/token and orchestration metrics remain
   unavailable unless the agent runtime exposes actual measurements.
-- Retain run state under `.smoogle/comparison/`. Start the owner with
+- Retain new run state under `.lantern/comparison/`. Start the owner with
   `node scripts/comparison-owner.mjs serve RUN_DIR`; `status`, `restart` and
   `stop` act only on that directory's recorded loopback owner. The owner requires
   `LANTERN_CHROMIUM` and the locally installed `playwright-core` dependency under
-  `.smoogle/qualification-tools/`. Pinned local package lock and executable
-  identities belong in the selected evidence manifest.
+  `.lantern/qualification-tools/`. Historical evidence below retains its original
+  paths; install dependencies in the new location for new runs. Pinned local
+  package lock and executable identities belong in the selected evidence manifest.
 
 For this environment use Chromium 151.0.7922.34, 1280 × 900 CSS pixels, DPR 1,
 headless SwiftShader and sandbox retained. Set `LD_LIBRARY_PATH` to the approved

@@ -14,10 +14,8 @@
 - `ARCHITECTURE.md`: top-level architecture entrypoint
 - `QUALITY_SCORE.md`, `RELIABILITY.md`, `SECURITY.md`: current quality, reliability, and security scorecards
 - `docs/exec-plans/`: substantial work plans and tech debt tracking
-- `docs/prompts/templates/`: reusable run prompt templates
 - `docs/design-docs/`: design rationale
 - `docs/product-specs/`: behavior-level specs
-- `docs/generated/`: generated summaries and interview output
 
 ## Workspace Shape
 
@@ -50,8 +48,9 @@ no alternate backend or broader browser interaction semantics.
 
 - checked-in docs define the system of record
 - disposable managed-browser state lives under
-  `.smoogle/lantern/browser-instances/` in the current repository and remains
-  pruneable runtime state
+  `.lantern/browser-instances/` in the current repository and remains
+  pruneable runtime state; existing legacy registries retain their paths as
+  described in [local state compatibility](headless-chromium.md#local-state-compatibility)
 - persistent browser profiles and their instance records live outside source
   worktrees under `LANTERN_STATE_HOME`, then `XDG_STATE_HOME/lantern`, then
   `$HOME/.local/state/lantern`
@@ -81,7 +80,7 @@ no alternate backend or broader browser interaction semantics.
 - persistence model: SQLite is reserved for local task, state, and future
   session metadata after the inspection loop proves it needs durable state.
   Disposable managed-browser instance metadata is stored as local JSON runtime
-  state under `.smoogle/lantern/browser-instances/`. Explicitly named
+  state under `.lantern/browser-instances/`. Explicitly named
   persistent profiles use private JSON metadata and Chromium data below the
   operator's Lantern state home. Lantern does not read, export or reproduce
   credentials, cookies or browser storage from those profiles. It must not
@@ -123,7 +122,7 @@ The exact command contract is maintained in `docs/product-specs/cli-contract.md`
 ## Integration Boundaries
 
 - CLI commands consume domain services rather than raw CDP responses
-- JSON output shapes remain stable for future Smoogle and UI integration
+- JSON output shapes remain stable for agent and UI integration
 - future TUI and web UI adapters reuse the same services and redaction policies
 - operator-owned Chromium endpoints remain valid; managed disposable containers
   and named persistent profiles are explicit opt-in lifecycle commands

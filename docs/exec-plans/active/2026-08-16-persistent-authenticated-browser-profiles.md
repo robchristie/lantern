@@ -21,7 +21,7 @@ immutable coordination plan is
 - Add `lantern browser profile create|list|status|delete` and
   `lantern browser start --profile <NAME>`.
 - Keep persistent instance metadata under the same operator state home so the
-  workflow is independent of the inspected repository's `.smoogle` directory.
+  workflow is independent of the inspected repository's `.lantern` directory.
 - Preserve profiles across `stop`, ordinary `prune`, failed starts and task
   cleanup; require an explicit confirmed profile delete.
 - Enforce one starting/running browser per profile with recoverable stale

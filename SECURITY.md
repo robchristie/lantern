@@ -8,8 +8,8 @@ Overall grade: **C**
 
 Last reviewed: **2026-09-07**
 
-Rationale: `Lantern` has local-first defaults, `.smoogle/` excluded from Git,
-conservative harness profiles, a documented secrets policy, redacted and
+Rationale: `Lantern` has local-first defaults, `.lantern/` excluded from Git,
+explicit browser ownership, a documented secrets policy, redacted and
 bounded CLI output by default, bounded click/type/key and pointer interaction metadata,
 owner-private no-follow file-backed secret entry for `type`,
 explicit screenshot artefact opt-in including region/crop coordinates, explicit opt-in managed browser
@@ -46,12 +46,12 @@ This repo does not currently provide multi-user access control, hosted service h
 
 Do not commit secrets, tokens, private keys, credentials, customer data, or machine-specific sensitive configuration.
 
-Use untracked local configuration, environment variables, or the operator's credential manager for secrets. Treat `.smoogle/config.toml`, `.smoogle/runs/`, prompts, logs, diagnostics, and shell history as sensitive.
+Use untracked local configuration, environment variables, or the operator's credential manager for secrets. Treat `.lantern/`, prompts, logs, diagnostics, and shell history as sensitive.
 
 ## Safe Automation Boundaries
 
 - Default to local-first operation.
-- Keep `.smoogle/` out of Git.
+- Keep `.lantern/` out of Git.
 - Managed browser lifecycle commands must be explicit; endpoint-based commands must not auto-start containers.
 - GPU devices must be selected explicitly. Do not auto-discover a host GPU or
   silently enable `--enable-unsafe-webgpu`.
@@ -109,7 +109,7 @@ artefact hashes remain exact. Optional screenshots retain visible pixels.
 ## Synthesized Boundaries
 
 - CLI commands consume domain services rather than raw CDP responses
-- JSON output shapes remain stable for future Smoogle and UI integration
+- JSON output shapes remain stable for agent and UI integration
 - future TUI and web UI adapters reuse the same services and redaction policies
 - operator-owned Chromium lifecycle remains supported alongside Lantern's
   explicit managed container and named-profile lifecycles

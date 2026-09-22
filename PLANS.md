@@ -16,13 +16,15 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 - Keep `QUALITY_SCORE.md`, `RELIABILITY.md`, and `SECURITY.md` current when changes affect quality, validation, reliability, threat model, or automation boundaries.
 - Put non-blocking findings in `docs/exec-plans/tech-debt-tracker.md` or follow-up tasks.
-- Run `smoogle docs check` after changing scorecards, ExecPlan links, prompt templates, or core docs structure. In Codex child runs, use the injected `smoogle` shim or `"$SMOOGLE_BIN" docs check` fallback.
+- Run `scripts/validate.sh docs` for whitespace checks after documentation changes, and inspect changed links and paths against the repository.
 
 ## Current Active Plans
 
 - `docs/exec-plans/active/2026-08-16-persistent-authenticated-browser-profiles.md`
 
 ## Recently Completed Plans
+
+- `docs/exec-plans/completed/2026-09-22-remove-retired-harness.md`
 
 - `docs/exec-plans/completed/2026-09-07-observable-ui-programme.md`
 

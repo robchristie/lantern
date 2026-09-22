@@ -55,4 +55,4 @@ The first milestone should prove a read-oriented CDP inspection loop. Interactio
 - How to run Chromium with a CDP endpoint on headless Linux
 - How to configure --endpoint and LANTERN_CDP_ENDPOINT
 - How to run rustfmt, cargo check, cargo test, and clippy
-- How Smoogle ExecPlans and task review should drive implementation
+- How ExecPlans and independent review should guide implementation
