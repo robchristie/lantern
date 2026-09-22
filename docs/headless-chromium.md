@@ -338,8 +338,8 @@ Lantern does not move or delete existing profiles automatically.
 To switch an existing checkout, first stop and prune all of its disposable
 instances through `lantern browser stop <ID>` and `lantern browser prune`.
 After confirming that the legacy registry has no instance directories, remove
-only that empty registry and its `.lock` file. The next browser start uses the
-new location. Do not rename a registry containing records: their absolute paths
+only that empty registry and any stale `.lock` directory, with no lifecycle
+commands running. The next browser start uses the new location. Do not rename a registry containing records: their absolute paths
 and existing container mounts would still point to the original directory.
 Named persistent profiles remain in the operator's private Lantern state home.
 
