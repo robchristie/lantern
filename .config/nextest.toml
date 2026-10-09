@@ -1,0 +1,16 @@
+nextest-version = { required = "0.9.146", recommended = "0.9.146" }
+
+[store]
+dir = ".lantern/nextest"
+
+[profile.default]
+slow-timeout = "5s"
+retries = 0
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+report-name = "lantern-rust-tests"
+report-skipped = "all"

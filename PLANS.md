@@ -24,6 +24,8 @@ Create or update an ExecPlan before starting work that spans multiple sessions, 
 
 ## Recently Completed Plans
 
+- `docs/exec-plans/completed/2026-10-09-nextest-pilot.md`
+
 - `docs/exec-plans/completed/2026-09-22-remove-retired-harness.md`
 
 - `docs/exec-plans/completed/2026-09-07-observable-ui-programme.md`

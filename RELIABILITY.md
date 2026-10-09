@@ -74,8 +74,17 @@ qualification remains separate from synthetic adapter/browser contracts.
 ## Validation Budget
 
 - Docs-only changes: inspect changed links and paths and run `scripts/validate.sh docs` for whitespace checks.
-- Tight Rust edit loops: run `scripts/validate.sh fast`, using `FAST_TEST_ARGS` when a focused test filter is known.
-- Standard Rust validation: run `scripts/validate.sh`, which composes Rust 1.99.0 formatting and workspace checks, locked Rust 1.85 compatibility checks, workspace tests, and docs hygiene. Normal hosted builds use 1.99.0; the separate minimum-version job retains 1.85 checks and tests.
+- Tight Rust edit loops: run `scripts/validate.sh fast` with positional Nextest
+  package/target/filter arguments; legacy `FAST_TEST_ARGS` accepts single-line
+  tokens without shell evaluation or glob expansion.
+- Standard Rust validation: run `scripts/validate.sh`, which composes Rust
+  1.99.0 formatting and locked workspace checks, locked Rust 1.85 compatibility
+  checks, validation-script regressions, Nextest workspace tests, Cargo doctests,
+  comparison adjudication and docs hygiene. Nextest is required; slow warnings
+  are diagnostic and retries are disabled. Both hosted Rust jobs use the shared
+  test entry point, retain JUnit evidence after test failures, and run doctests;
+  the minimum-version job retains 1.85 checks and tests. See the
+  [validation loop](docs/workflows.md#validation-loop) for setup and report paths.
 - Periodic quality sweeps: run `scripts/quality-sweep.sh`; set `LANTERN_COVERAGE=1` when coverage evidence is worth the runtime cost.
 - Workflow changes: include a command-level smoke path or test when possible.
 
