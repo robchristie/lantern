@@ -35,15 +35,30 @@ missing tests, failures or material resource/scheduling regression before
 landing. Retain the reporting improvement if execution is comparable; do not
 claim that this runner reduces compilation or real-browser qualification time.
 
-## State
+## Qualified implementation
 
-- Baseline: `c894dc83ad1408108a92befa8dc9507502bf67b2`; successful main CI run
-  [37871393389](https://github.com/robchristie/lantern/actions/runs/37871393389).
-- Approach: shared local/CI test entry point implemented, with pinned pre-built
-  Nextest, separate doctests, diagnostic slow warnings and failure reports.
-- Early checkpoint: the three representative Rust 1.85 cases passed; a synthetic
-  failed test produced JUnit failure details and durations. Eleven command-level
-  regressions, ShellCheck and actionlint passed. These focused observations do
-  not establish complete candidate qualification.
-- Next: compare full inventories and warm execution, run canonical verification
-  on the committed candidate, then independently review and land.
+The representative probe and full local qualification passed at
+`f09b6b797f7a37343252cbcfc8b1e75a2867cf8d`. The resulting implementation
+retains the reporting improvement:
+
+- Cargo and Nextest discovered the same 241 named tests across six binaries,
+  including matching package, target, test kind and ignored status (none ignored).
+- Canonical validation passed, including eleven command-level regressions,
+  Rust 1.99 checks/tests, Rust 1.85 checks, doctests and comparison adjudication.
+  The complete Rust 1.85 test entry point also passed all 241 tests and doctests.
+  Both toolchains currently collect zero authored doctests; the explicit gates
+  now cover future documentation examples.
+- The representative CLI, socket and nested-build cases passed on Rust 1.85.
+  A deliberately failing synthetic test produced parseable JUnit with failure
+  details and durations. ShellCheck and actionlint passed.
+- On one local warm pair, Cargo took 3.007 seconds and Nextest took 1.845 seconds.
+  Both reported approximately 0.22 seconds of incremental build work. Separate
+  initial build preparation took 4.331 seconds. These observations use Rust
+  1.99.0, Nextest 0.9.146, the same lockfile/target directory and native runner
+  concurrency defaults; they do not establish clean-build or hosted speedups.
+
+Detailed logs, inventories and timings are retained by the operational owner
+and referenced in the pull request. Independent review, GitHub-hosted Rust and
+Chromium checks, merge and post-merge checks remain the normal delivery gates;
+the pull request owns their exact revisions and terminal evidence. No change to
+other portfolio projects is implied by this completed implementation pilot.

@@ -122,7 +122,7 @@ Keep the machine's default toolchain and other installed versions unchanged.
 1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting,
    locked workspace checks, optional focused Nextest tests and docs hygiene.
    Pass package, target and filter arguments directly, for example
-   `scripts/validate.sh fast -p lantern-core -E 'test(cdp) and not test(slow)'`.
+   `scripts/validate.sh fast -p lantern-core -E 'test(action_flow) and not test(expiry)'`.
    The legacy `FAST_TEST_ARGS` variable accepts a single line of
    whitespace-separated tokens; quoting and glob expansion are not interpreted.
    Use positional arguments for filters containing spaces. A filter that selects

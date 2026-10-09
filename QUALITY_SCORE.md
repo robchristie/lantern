@@ -10,8 +10,8 @@ Last reviewed: **2026-09-07**
 
 Rationale: Lantern has bounded CDP transport, guarded semantic/CSS interactions,
 explicit action postconditions, heuristic layout, opened-image workflows and
-source-correlated owner application evidence. Canonical verification covers 231
-Rust tests plus four adjudication contracts; 64 real-Chromium cases audit actual
+source-correlated owner application evidence. Canonical verification covers 241
+Rust tests, eleven validation-script regressions and four adjudication contracts; 64 real-Chromium cases audit actual
 input and application state. A paired agent case study and repeated software-
 rendered Polyorama shell qualify representative use. Known gaps remain bounded:
 broader host/container and hardware coverage, app-wide readiness, non-atomic
