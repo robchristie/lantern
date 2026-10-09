@@ -102,6 +102,9 @@ The repository pins Rust 1.99.0 for normal development, validation and build
 commands. Hosted Rust and macOS browser-contract jobs use the same exact
 version. The separate minimum-Rust CI job retains locked workspace checks and
 tests on 1.85.0; this is compatibility verification, not the normal build pin.
+Both Rust CI jobs use the same `scripts/validate.sh tests` entry point, with
+pre-built Nextest 0.9.146. The minimum-Rust job selects 1.85.0 with `rustup run`;
+installing the runner does not compile it with the project's minimum toolchain.
 
 The virtual workspace explicitly selects Cargo resolver 3, which favours
 dependency versions compatible with the packages' declared `rust-version`.
@@ -109,17 +112,52 @@ Existing lockfile versions remain preferred; this policy does not refresh the
 lockfile or guarantee minimum-version compatibility. Keep the locked 1.85.0
 checks and tests when updating dependencies.
 
-1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting, `cargo check`, optional focused tests from `FAST_TEST_ARGS`, and docs hygiene.
+Install Nextest 0.9.146 or newer and the `1.85.0` rustup toolchain before standard
+validation. Prefer the [pre-built Nextest binaries](https://nexte.st/docs/installation/pre-built-binaries/)
+to avoid compiling the runner. Source installation is also available with
+`cargo +1.99.0 install cargo-nextest --version 0.9.146 --locked`. CI pins the
+runner version; `.config/nextest.toml` enforces the local minimum version.
+Keep the machine's default toolchain and other installed versions unchanged.
+
+1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting,
+   locked workspace checks, optional focused Nextest tests and docs hygiene.
+   Pass package, target and filter arguments directly, for example
+   `scripts/validate.sh fast -p lantern-core -E 'test(cdp) and not test(slow)'`.
+   The legacy `FAST_TEST_ARGS` variable accepts a single line of
+   whitespace-separated tokens; quoting and glob expansion are not interpreted.
+   Use positional arguments for filters containing spaces. A filter that selects
+   zero tests fails rather than claiming successful focused feedback.
 2. Use `scripts/validate.sh` before landing Rust code. It runs formatting,
-   pinned 1.99.0 and declared Rust 1.85 workspace checks, the workspace test
-   suite using `cargo nextest` when available or `cargo test` otherwise, and
-   docs hygiene. Install the `1.85.0` rustup toolchain before running the
-   standard profile. Rustup resolves 1.99.0 from the repository pin; keep the
-   machine's default toolchain and other installed versions unchanged.
+   pinned 1.99.0 and declared Rust 1.85 workspace checks, validation-script
+   regressions, locked Nextest workspace tests across all targets, separate
+   `cargo test --locked --workspace --doc`, comparison adjudication contracts
+   and docs hygiene. Nextest is required; there is no automatic runner fallback.
+   Rustup resolves 1.99.0 from the repository pin. The `tests` profile is the
+   shared local/CI Rust test entry point and omits formatting and workspace
+   checks, which CI runs separately.
 3. Use `scripts/quality-sweep.sh` periodically for slower checks: clippy, dependency advisory posture, typo scanning, TOML formatting, dependency cleanup, and optional coverage evidence.
 4. Prefer `cargo check` over `cargo build` when you only need compile feedback.
 5. Run `scripts/validate.sh docs` for whitespace checks after documentation changes, and inspect changed links and paths against the repository.
 6. Use ad hoc commands only when isolating a specific failure or narrowing a validation step.
+
+Nextest prints each test's duration and marks tests taking more than five
+seconds as slow. This is a diagnostic threshold, with no termination deadline
+or automatic retries. The `ci` runner profile completes the suite after test
+failures and writes `.lantern/nextest/ci/junit.xml`, including failed-test output
+and skipped tests. Each local suite clears the previous report before running;
+installation or compilation failures may produce no report. Focused runs use
+the default profile and do not replace the full-suite report. Nextest profiles
+control runner behaviour; use `--release` or `--cargo-profile` to select a Cargo
+optimisation profile.
+
+GitHub Actions uploads the JUnit report even after test failure, as separate
+`rust-test-results` and `minimum-rust-test-results` artefacts. Missing reports
+are reported without masking the original installation or compilation failure.
+Use those results for per-test diagnosis; JUnit durations measure test execution,
+including any work a test itself launches, rather than compilation of the suite.
+Use job/step timings or separate build measurements to investigate CI compilation
+cost. Retain `cargo test --doc` for doctests; `cargo doc` is a separate API
+documentation build. Browser qualification continues through its own CI job.
 
 ## Quality Scorecard Loop
 

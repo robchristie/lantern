@@ -17,12 +17,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
+      - name: Install pinned Nextest binary
+        uses: taiki-e/install-action@82cd3e7658a6f96c86c0234aeeda1748937cb0a1 # v2.85.13
+        with:
+          tool: cargo-nextest@0.9.146
+          fallback: none
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check workspace
         run: cargo check --locked --workspace --all-targets
-      - name: Test workspace
-        run: cargo test --locked --workspace --all-targets
+      - name: Test workspace and doctests
+        run: scripts/validate.sh tests
+      - name: Upload Rust test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-test-results
+          path: .lantern/nextest/ci/junit.xml
+          if-no-files-found: warn
       - name: Check comparison adjudication contracts
         run: python3 scripts/test-comparison-adjudicator.py
 
@@ -31,10 +43,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install pinned Nextest binary
+        uses: taiki-e/install-action@82cd3e7658a6f96c86c0234aeeda1748937cb0a1 # v2.85.13
+        with:
+          tool: cargo-nextest@0.9.146
+          fallback: none
       - name: Check minimum Rust compatibility
         run: cargo +1.85.0 check --locked --workspace --all-targets
-      - name: Test minimum Rust compatibility
-        run: cargo +1.85.0 test --locked --workspace --all-targets
+      - name: Test minimum Rust compatibility and doctests
+        run: rustup run 1.85.0 scripts/validate.sh tests
+      - name: Upload minimum Rust test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimum-rust-test-results
+          path: .lantern/nextest/ci/junit.xml
+          if-no-files-found: warn
 
   browser-contracts:
     runs-on: macos-15-intel
