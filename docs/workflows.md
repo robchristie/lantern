@@ -117,6 +117,8 @@ validation. Prefer the [pre-built Nextest binaries](https://nexte.st/docs/instal
 to avoid compiling the runner. Source installation is also available with
 `cargo +1.99.0 install cargo-nextest --version 0.9.146 --locked`. CI pins the
 runner version; `.config/nextest.toml` enforces the local minimum version.
+When changing the runner pin, select an installer release whose manifest
+includes that version and verify installation on both CI toolchains.
 Keep the machine's default toolchain and other installed versions unchanged.
 
 1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting,
