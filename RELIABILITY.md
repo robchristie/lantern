@@ -75,7 +75,7 @@ qualification remains separate from synthetic adapter/browser contracts.
 
 - Docs-only changes: inspect changed links and paths and run `scripts/validate.sh docs` for whitespace checks.
 - Tight Rust edit loops: run `scripts/validate.sh fast`, using `FAST_TEST_ARGS` when a focused test filter is known.
-- Standard Rust validation: run `scripts/validate.sh`, which composes formatting, `cargo check`, workspace tests, and docs hygiene.
+- Standard Rust validation: run `scripts/validate.sh`, which composes Rust 1.99.0 formatting and workspace checks, locked Rust 1.85 compatibility checks, workspace tests, and docs hygiene. Normal hosted builds use 1.99.0; the separate minimum-version job retains 1.85 checks and tests.
 - Periodic quality sweeps: run `scripts/quality-sweep.sh`; set `LANTERN_COVERAGE=1` when coverage evidence is worth the runtime cost.
 - Workflow changes: include a command-level smoke path or test when possible.
 

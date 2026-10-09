@@ -98,12 +98,18 @@
 
 ## Validation Loop
 
+The repository pins Rust 1.99.0 for normal development, validation and build
+commands. Hosted Rust and macOS browser-contract jobs use the same exact
+version. The separate minimum-Rust CI job retains locked workspace checks and
+tests on 1.85.0; this is compatibility verification, not the normal build pin.
+
 1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting, `cargo check`, optional focused tests from `FAST_TEST_ARGS`, and docs hygiene.
 2. Use `scripts/validate.sh` before landing Rust code. It runs formatting,
-   current-toolchain and declared Rust 1.85 workspace checks, the workspace test
+   pinned 1.99.0 and declared Rust 1.85 workspace checks, the workspace test
    suite using `cargo nextest` when available or `cargo test` otherwise, and
    docs hygiene. Install the `1.85.0` rustup toolchain before running the
-   standard profile.
+   standard profile. Rustup resolves 1.99.0 from the repository pin; keep the
+   machine's default toolchain and other installed versions unchanged.
 3. Use `scripts/quality-sweep.sh` periodically for slower checks: clippy, dependency advisory posture, typo scanning, TOML formatting, dependency cleanup, and optional coverage evidence.
 4. Prefer `cargo check` over `cargo build` when you only need compile feedback.
 5. Run `scripts/validate.sh docs` for whitespace checks after documentation changes, and inspect changed links and paths against the repository.
