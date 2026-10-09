@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
       - name: Check formatting
@@ -26,6 +26,16 @@ jobs:
       - name: Check comparison adjudication contracts
         run: python3 scripts/test-comparison-adjudicator.py
 
+  minimum-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Check minimum Rust compatibility
+        run: cargo +1.85.0 check --locked --workspace --all-targets
+      - name: Test minimum Rust compatibility
+        run: cargo +1.85.0 test --locked --workspace --all-targets
+
   browser-contracts:
     runs-on: macos-15-intel
     timeout-minutes: 10
@@ -33,7 +43,7 @@ jobs:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.lantern/playwright-browsers
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.99.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22

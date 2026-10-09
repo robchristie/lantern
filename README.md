@@ -46,6 +46,12 @@ manageable. New checkouts use `.lantern/browser-instances/`. See the
 
 ## Quick Start
 
+Development and normal CI builds use exact Rust 1.99.0 through
+`rust-toolchain.toml` and the hosted workflows. The declared minimum remains
+Rust 1.85: canonical validation checks 1.85.0 explicitly, and a separate CI job
+checks and tests the workspace on that minimum. See the
+[validation workflow](docs/workflows.md#validation-loop).
+
 Run `lantern capabilities --json` to discover this executable's package/build
 identity, commands, aliases and output schemas without starting or connecting to
 a browser. See the [capability contract](docs/product-specs/cli-contract.md#capability-discovery)
