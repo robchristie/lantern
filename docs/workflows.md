@@ -103,6 +103,12 @@ commands. Hosted Rust and macOS browser-contract jobs use the same exact
 version. The separate minimum-Rust CI job retains locked workspace checks and
 tests on 1.85.0; this is compatibility verification, not the normal build pin.
 
+The virtual workspace explicitly selects Cargo resolver 3, which favours
+dependency versions compatible with the packages' declared `rust-version`.
+Existing lockfile versions remain preferred; this policy does not refresh the
+lockfile or guarantee minimum-version compatibility. Keep the locked 1.85.0
+checks and tests when updating dependencies.
+
 1. Use `scripts/validate.sh fast` for tight edit loops. It runs formatting, `cargo check`, optional focused tests from `FAST_TEST_ARGS`, and docs hygiene.
 2. Use `scripts/validate.sh` before landing Rust code. It runs formatting,
    pinned 1.99.0 and declared Rust 1.85 workspace checks, the workspace test

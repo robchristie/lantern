@@ -4,7 +4,7 @@ members = [
     "crates/lantern-core",
     "crates/lantern-storage",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 edition = "2024"
