@@ -1,12 +1,10 @@
-# AGENTS.md
+# Contributing to Lantern
 
-This file is intentionally short. Treat it as the repository table of contents.
+Lantern is a Rust-first local CLI shim over Chromium CDP for agentic frontend
+development. This guide is the repository's table of contents for contributors.
+Keep it short and put durable detail in `docs/`.
 
-## Mission
-
-Build and maintain `Lantern`: Rust-first local CLI shim over Chromium CDP for agentic frontend development.
-
-## Start Here
+## Start here
 
 - `README.md`: project overview and quick start
 - `PLANS.md`: ExecPlan policy and current active plans
@@ -25,10 +23,10 @@ Build and maintain `Lantern`: Rust-first local CLI shim over Chromium CDP for ag
 - Completed ExecPlans live under `docs/exec-plans/completed/`.
 - Keep plans current while implementing, not just at the start.
 
-## Core Rules
+## Core rules
 
-- Keep this file short. Put durable detail in `docs/`.
+- Keep this guide short. Put durable detail in `docs/`.
 - Prefer adding reusable guidance to docs over embedding long prompts in code.
-- Optimize first for the first milestone before expanding scope.
+- Optimise first for the first milestone before expanding scope.
 - Prefer the repo-standard validation entrypoint when one exists.
 - Store local runtime state under `.lantern/` and keep it out of Git.

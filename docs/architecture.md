@@ -9,7 +9,7 @@
 
 ## Documentation Layout
 
-- `AGENTS.md`: minimal repo table of contents
+- `CONTRIBUTING.md`: contributor guide and repository table of contents
 - `PLANS.md`: ExecPlan policy and current active plan links
 - `ARCHITECTURE.md`: top-level architecture entrypoint
 - `QUALITY_SCORE.md`, `RELIABILITY.md`, `SECURITY.md`: current quality, reliability, and security scorecards

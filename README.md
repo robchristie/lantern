@@ -30,7 +30,7 @@ manageable. New checkouts use `.lantern/browser-instances/`. See the
 
 ## Repo Guide
 
-- `AGENTS.md`: minimal table of contents for humans and agents
+- `CONTRIBUTING.md`: contributor guide and repository table of contents
 - `PLANS.md`: ExecPlan policy and active plan links
 - `ARCHITECTURE.md`: top-level architecture entrypoint
 - `QUALITY_SCORE.md`, `RELIABILITY.md`, `SECURITY.md`: current scorecards and safety contracts
@@ -57,7 +57,7 @@ identity, commands, aliases and output schemas without starting or connecting to
 a browser. See the [capability contract](docs/product-specs/cli-contract.md#capability-discovery)
 for unknown or modified source identities.
 
-1. Read `AGENTS.md` and the CLI contract before changing code.
+1. Read `CONTRIBUTING.md` and the CLI contract before changing code.
 2. Start an operator-owned Chromium CDP endpoint using
    `docs/headless-chromium.md`, explicitly start a disposable managed instance
    with `lantern browser start`, or create a dedicated authenticated profile

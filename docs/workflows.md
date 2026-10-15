@@ -91,7 +91,7 @@
 ## Codex Loop
 
 1. Use checked-in guidance and executable checks as the system of record.
-2. Start with `AGENTS.md`, the active ExecPlan, and `docs/workflows.md` before reading wider repo docs.
+2. Start with `CONTRIBUTING.md`, the active ExecPlan, and `docs/workflows.md` before reading wider repo docs.
 3. Read additional product or design docs only when the task needs them.
 4. Work in bounded loops and validate each slice.
 5. Use quoted heredocs or files when passing text containing shell-sensitive characters such as backticks or dollar signs.
