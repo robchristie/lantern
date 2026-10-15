@@ -77,3 +77,8 @@ browser-computed role/name list. Interactions also accept `--role button --name
 'Save'` or `--test-id save` in place of CSS. These exact targets retain the usual
 uniqueness, actionability and strict checks; see the
 [CLI contract](docs/product-specs/cli-contract.md#computed-accessibility-and-semantic-targets).
+
+## Licence
+
+Lantern and its workspace crates are licensed under the
+[Apache License 2.0](LICENSE).
